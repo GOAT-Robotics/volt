@@ -1,0 +1,102 @@
+<definition version="0.90" type="element" link_type="simple" width="190" height="150" hotspot_x="122" hotspot_y="119">
+    <uuid uuid="{fd87df81-da23-8349-e570-97f64b68dd64}"/>
+    <names>
+        <name lang="ar">محرك تحريضي، ثلاثي الأوجه Dahlander 12 طرفيات توصيل</name>
+        <name lang="ca">Motor d'inducció, Dahlander trifàsic 12 terminals</name>
+        <name lang="cs">Trojfázový indukční motor Dahlander 12 svorek</name>
+        <name lang="da">Induktionsmotor, tre-faset Dahlander 12 klemmer</name>
+        <name lang="de">Drehstrom-Asynchronmotor Dahlander 12 Klemmen</name>
+        <name lang="el">Επαγωγικός κινητήρας, τριφασικός Dahlander 12 ακροδέκτες</name>
+        <name lang="en">Induction motor, three-phase Dahlander 12 terminlas</name>
+        <name lang="es">Motor de inducción, trifásico Dahlander 12 terminales</name>
+        <name lang="fi">Induktiomoottori, kolmivaihe Dahlander 12 liitintä</name>
+        <name lang="hr">Asinkroni motor, trofazni Dahlander 12 stezaljki</name>
+        <name lang="hu">Aszinkron motor, három fázisú Dahlander 12 kivezetéssel</name>
+        <name lang="it">Motore asincrono trifase Dahlander 12 terminali</name>
+        <name lang="ja">三相ダーランダー誘導電動機 12 端子</name>
+        <name lang="ko">유도 전동기, 삼상 달란더 12 단자</name>
+        <name lang="mn">Индукцийн мотор, гурван фазын Dahlander 12 клемм</name>
+        <name lang="nb">Induksjonsmotor, trefase Dahlander 12 klemmer</name>
+        <name lang="nl">Inductiemotor, driefase Dahlander 12 klemmen</name>
+        <name lang="nl_BE">Inductiemotor, driefasige Dahlander 12 klemmen</name>
+        <name lang="pl">Silnik indukcyjny trójfazowy Dahlandera 12 zacisków</name>
+        <name lang="pt">Motor de indução, trifásico Dahlander 12 terminais</name>
+        <name lang="pt_BR">motor de inducao trifasico Dahlander 12 bornes</name>
+        <name lang="ro">Motor de inducție trifazat Dahlander 12 borne</name>
+        <name lang="ru">Асинхронный двигатель, трёхфазный Дахландера 12 клемм</name>
+        <name lang="sk">Asynchrónny motor, trojfázový Dahlander 12 svoriek</name>
+        <name lang="sl">Indukcijski motor, trifazni Dahlander 12 sponk</name>
+        <name lang="sr">Асинхрони мотор, трофазни Dahlander 12 клема</name>
+        <name lang="sv">Induktionsmotor, trefas Dahlander 12 anslutningar</name>
+        <name lang="tr">Asenkron motor, üç fazlı Dahlander 12 klemens</name>
+        <name lang="uk">Асинхронний двигун, трифазний Dahlander 12 клем</name>
+        <name lang="zh">12端子双速电动机</name>
+    </names>
+    <informations>edited with "QET_ElementScaler"</informations>
+    <description>
+        <dynamic_text x="35" y="-100" z="1" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="ElementInfo" uuid="{ee048211-a890-74f1-f0b5-5537630ad482}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <text text="V6" x="-55" y="-30" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="W6" x="-55" y="-10" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="V5" x="45" y="-30" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="U6" x="-55" y="-51" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="V2" x="1" y="13" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="W5" x="45" y="-10" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="V1" x="1" y="-85" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="U5" x="44" y="-51" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="W1" x="21" y="-85" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="W2" x="21" y="13" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="M" x="-6" y="-46" rotation="0" font="Liberation Sans,11,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="3" x="-11" y="-26" rotation="0" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="U2" x="-19" y="13" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <arc x="-3" y="-32.5" width="6" height="5" start="4" angle="176" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="true"/>
+        <arc x="3" y="-32.5" width="6" height="5" start="180" angle="180" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="true"/>
+        <ellipse x="-40" y="-80" width="80" height="80" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="0" y1="-100" x2="0" y2="-80" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-20" y1="-100" x2="-20" y2="-75" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <dynamic_text x="-110" y="-106" z="19" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{c733d582-c748-b144-f4b3-6b9d0235dc3c}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text>-</text>
+        </dynamic_text>
+        <line x1="20" y1="-100" x2="20" y2="-75" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <dynamic_text x="-110" y="-92" z="20" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{180d7bc5-128a-6abf-55ec-e4822d7e5d22}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text>-</text>
+        </dynamic_text>
+        <dynamic_text x="-111" y="3" z="20" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{8967b96f-db51-429f-25fa-9e96bb791ebc}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text>-</text>
+        </dynamic_text>
+        <dynamic_text x="-111" y="18" z="21" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{fd5f9294-7c30-187a-99d4-ab401f8850b9}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text>-</text>
+        </dynamic_text>
+        <dynamic_text x="-111" y="-12" z="21" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{5dfe8450-e90f-b7fe-ca48-c49695a82b8e}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text>-</text>
+        </dynamic_text>
+        <line x1="0" y1="20" x2="0" y2="0" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-20" y1="20" x2="-20" y2="-5" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="20" y1="20" x2="20" y2="-5" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <arc x="-42" y="-82" width="84" height="84" start="305" angle="15" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="true"/>
+        <text text="Dahlander" x="-20" y="-12" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <line x1="33" y1="-6" x2="29" y2="-9" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <text text="U1" x="-19" y="-85" rotation="0" font="Liberation Sans,7,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <line x1="59" y1="-60" x2="35" y2="-60" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="59" y1="-40" x2="41" y2="-40" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="60" y1="-20" x2="35" y2="-20" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-60" y1="-60" x2="-35" y2="-60" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-60" y1="-40" x2="-40" y2="-40" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-60" y1="-20" x2="-35" y2="-20" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <terminal uuid="{9509ccb1-6da8-4ab3-b2dc-8ddd39600d54}" name="" x="37" y="-6" orientation="e" type="Generic"/>
+        <terminal uuid="{7ba4fc29-79c4-4b65-a424-7001350b985b}" name="" x="-20" y="20" orientation="s" type="Generic"/>
+        <terminal uuid="{a28d6200-e1c1-48bc-b9da-27bcd2e3e1b1}" name="" x="20" y="-100" orientation="n" type="Generic"/>
+        <terminal uuid="{3df6e487-9116-457d-a0c0-a7d9ee2ac288}" name="" x="60" y="-60" orientation="e" type="Generic"/>
+        <terminal uuid="{ad940221-39e1-4e80-9f8c-5839dc6df8f9}" name="" x="60" y="-40" orientation="e" type="Generic"/>
+        <terminal uuid="{bc11bbdc-6191-4f8b-9448-0967c8a6b1b7}" name="" x="0" y="-100" orientation="n" type="Generic"/>
+        <terminal uuid="{4189f356-813c-4cca-b347-67c436d33b6e}" name="" x="60" y="-20" orientation="e" type="Generic"/>
+        <terminal uuid="{34e79b3d-8f25-47a3-8512-7c7a5b290e33}" name="" x="0" y="20" orientation="s" type="Generic"/>
+        <terminal uuid="{3bbf4f38-724d-4025-b555-d3fbecf1c5cf}" name="" x="20" y="20" orientation="s" type="Generic"/>
+        <terminal uuid="{51f6f9e9-4729-4baa-bf4d-d934c964cd40}" name="" x="-20" y="-100" orientation="n" type="Generic"/>
+        <terminal uuid="{d76024c7-eb9f-4c4b-8c57-5cc7c03db32a}" name="" x="-60" y="-60" orientation="w" type="Generic"/>
+        <terminal uuid="{7a24203d-53b4-4f2a-b766-2e001966b367}" name="" x="-60" y="-20" orientation="w" type="Generic"/>
+        <terminal uuid="{ed4cb012-8de6-43d0-a36b-8f8e21e51c88}" name="" x="-60" y="-40" orientation="w" type="Generic"/>
+    </description>
+</definition>

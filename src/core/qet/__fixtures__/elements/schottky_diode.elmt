@@ -1,0 +1,51 @@
+<definition version="0.90" type="element" link_type="simple" width="20" height="60" hotspot_x="10" hotspot_y="30">
+    <uuid uuid="{418b2848-aec4-4748-5315-14937b6cdab4}"/>
+    <names>
+        <name lang="ar">دايود شوتكي</name>
+        <name lang="ca">Díode Schottky</name>
+        <name lang="cs">Schottkyho dioda</name>
+        <name lang="da">Schottky-diode</name>
+        <name lang="de">Schottky Diode</name>
+        <name lang="el">Δίοδος Schottky</name>
+        <name lang="en">Schottky diode</name>
+        <name lang="es">Diodo Schottky</name>
+        <name lang="fi">Schottky-diodi</name>
+        <name lang="fr">Diode Schottky</name>
+        <name lang="hr">Schottkyjeva dioda</name>
+        <name lang="hu">Schottky dióda</name>
+        <name lang="it">Diodo Skottky</name>
+        <name lang="ja">ショットキーダイオード</name>
+        <name lang="ko">쇼트키 다이오드</name>
+        <name lang="mn">Шоттки диод</name>
+        <name lang="nb">Schottky-diode</name>
+        <name lang="nl">Diode Schottky</name>
+        <name lang="nl_BE">Schottkydiode</name>
+        <name lang="pl">Dioda Schottky`ego</name>
+        <name lang="pt">Díodo Schottky</name>
+        <name lang="pt_BR">Diodo Schottky</name>
+        <name lang="ro">Diodă Schottky</name>
+        <name lang="ru">Диод Шоттки</name>
+        <name lang="sk">Schottkyho dióda</name>
+        <name lang="sl">Schottkyjeva dioda</name>
+        <name lang="sr">Шотки диода</name>
+        <name lang="sv">Schottkydiod</name>
+        <name lang="tr">Schottky diyot</name>
+        <name lang="uk">Діод Шотткі</name>
+        <name lang="zh">肖特基二极管</name>
+    </names>
+    <informations>Author: The QElectroTech team
+License: see http://qelectrotech.org/wiki/doc/elements_license</informations>
+    <description>
+        <polygon x1="-5" y1="-5" x2="5" y2="-5" x3="0" y3="5" antialias="true" style="line-style:normal;line-weight:normal;filling:white;color:black"/>
+        <line x1="5" y1="8" x2="5" y2="5" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-5" y1="2" x2="-5" y2="5" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-5" y1="5" x2="5" y2="5" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <dynamic_text x="8" y="-5.83" z="5" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="ElementInfo" uuid="{73a6d2f1-c1f2-4ec2-97a7-777fdc0d2849}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <line x1="0" y1="20" x2="0" y2="-20" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <terminal uuid="{fdd6997e-f762-469f-a99d-bd85f4a6c797}" name="K" x="0" y="20" orientation="s" type="Generic"/>
+        <terminal uuid="{71941f23-e2bc-4094-b098-86a902a00d24}" name="A" x="0" y="-20" orientation="n" type="Generic"/>
+    </description>
+</definition>

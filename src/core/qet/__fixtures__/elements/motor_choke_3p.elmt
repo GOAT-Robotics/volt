@@ -1,0 +1,89 @@
+<definition version="0.100.0" type="element" link_type="simple" width="100" height="80" hotspot_x="60" hotspot_y="40">
+    <uuid uuid="{5e903000-cb09-e750-079b-040ad546b2ed}"/>
+    <names>
+        <name lang="ar">ملف خانق للمحرك 3 قطب</name>
+        <name lang="ca">Estrangulador de motor de 3 pols</name>
+        <name lang="cs">Motorová tlumivka 3 fázová</name>
+        <name lang="da">Motordrossel 3 polet</name>
+        <name lang="de">Motordrossel 3-polig</name>
+        <name lang="el">Πηνίο κινητήρα 3 πόλων</name>
+        <name lang="en">Motor choke 3 pole</name>
+        <name lang="es">Bobina de choque de motor 3 polos</name>
+        <name lang="fi">Moottorikuristin 3 napa</name>
+        <name lang="fr">Self moteur tripolaire</name>
+        <name lang="hr">Motorska prigušnica 3 pola</name>
+        <name lang="hu">Motor fojtó 3 pólus</name>
+        <name lang="it">Induttanza motore 3 poli</name>
+        <name lang="ja">モーター用チョーク 3 極</name>
+        <name lang="ko">모터 초크 3극</name>
+        <name lang="mn">Моторын дроссель 3 туйл</name>
+        <name lang="nb">Motordrossel 3 pol</name>
+        <name lang="nl">Motorsmoorspoel 3 polig</name>
+        <name lang="nl_BE">Motorsmoorspoel 3 polig</name>
+        <name lang="pl">Dławik silnika 3 biegunowy</name>
+        <name lang="pt">Bobina de motor 3 polos</name>
+        <name lang="pt_BR">Reator de motor 3 polos</name>
+        <name lang="ro">Șoc de motor 3 poli</name>
+        <name lang="ru">Дроссель двигателя 3 полюса</name>
+        <name lang="sk">Motorová tlmivka 3 pólová</name>
+        <name lang="sl">Motorska dušilka 3 pola</name>
+        <name lang="sr">Моторна пригушница 3 пол</name>
+        <name lang="sv">Motordrossel 3 pol</name>
+        <name lang="tr">Motor şok bobini 3 kutup</name>
+        <name lang="uk">Дросель двигуна 3 полюс</name>
+        <name lang="zh">三相电机扼流圈</name>
+    </names>
+    <informations>EN 60617: 06-14-03</informations>
+    <description>
+        <line x1="27" y1="-10" x2="27" y2="10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <text text="?A" x="-49" y="-1" rotation="0" font="Liberation Sans,6,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <line x1="7" y1="-10" x2="7" y2="10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <arc x="-3.5" y="-10" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <line x1="-13" y1="-10" x2="-13" y2="10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <arc x="16.5" y="-10" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <text text="W2" x="14" y="24" rotation="0" font="Liberation Sans,6,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <arc x="16.5" y="0" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <arc x="-3.5" y="0" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <arc x="-3.5" y="5" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <arc x="16.5" y="5" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <arc x="-23.5" y="-10" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <arc x="-3.5" y="-5" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <text text="U1" x="-24" y="-19" rotation="0" font="Liberation Sans,6,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <arc x="16.5" y="-5" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <arc x="-23.5" y="0" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <arc x="-23.5" y="5" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <arc x="-23.5" y="-5" width="7" height="5" start="270" angle="180" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="true"/>
+        <line x1="3" y1="30" x2="17" y2="30" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-17" y1="30" x2="-3" y2="30" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <text text="V2" x="-5" y="24" rotation="0" font="Liberation Sans,6,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="V1" x="-4" y="-19" rotation="0" font="Liberation Sans,6,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <ellipse x="-2.5" y="-32.5" width="5" height="5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <text text="W1" x="15" y="-19" rotation="0" font="Liberation Sans,6,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <ellipse x="17.5" y="-32.5" width="5" height="5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <ellipse x="-22.5" y="27.5" width="5" height="5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <ellipse x="-2.5" y="27.5" width="5" height="5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <ellipse x="17.5" y="27.5" width="5" height="5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <dynamic_text x="-70" y="-33" z="29" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="ElementInfo" uuid="{ac77a40b-3b85-44f6-843c-4f23b68a406b}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <text text="U2" x="-25" y="24" rotation="0" font="Liberation Sans,6,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <polygon x1="-23" y1="30" x2="-35" y2="30" x3="-35" y3="-29.88" x4="-23" y4="-29.88" closed="false" antialias="false" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <line x1="-17" y1="-30" x2="-3" y2="-30" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="3" y1="-30" x2="17" y2="-30" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <ellipse x="-22.5" y="-32.5" width="5" height="5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-20" y1="-16" x2="-20" y2="-10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <line x1="-20" y1="10" x2="-20" y2="15" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <line x1="0" y1="15" x2="0" y2="10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <line x1="20" y1="15" x2="20" y2="10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <line x1="0" y1="-10" x2="0" y2="-16" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <line x1="20" y1="-10" x2="20" y2="-16" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <polygon x1="23" y1="-30" x2="35" y2="-30" x3="35" y3="30" x4="23" y4="30" closed="false" antialias="false" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <terminal uuid="{a84254e3-015e-4288-a8ad-ae2375b98171}" name="" x="20" y="-33" orientation="n" type="Generic"/>
+        <terminal uuid="{68cb748e-268f-49c5-b7aa-e928e15ad9b5}" name="" x="0" y="-33" orientation="n" type="Generic"/>
+        <terminal uuid="{62da0a75-fc56-4ca5-81c1-698a65f8c128}" name="" x="-20" y="-33" orientation="n" type="Generic"/>
+        <terminal uuid="{9aba5caa-6376-42dc-885c-8ed8ef0008d7}" name="" x="0" y="33" orientation="s" type="Generic"/>
+        <terminal uuid="{5ab351c5-5787-4eb4-8d69-87ac7e607e5f}" name="" x="20" y="33" orientation="s" type="Generic"/>
+        <terminal uuid="{1eb6de57-34ec-4992-93dc-8bef05551875}" name="" x="-20" y="33" orientation="s" type="Generic"/>
+    </description>
+</definition>

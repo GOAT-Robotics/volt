@@ -1,0 +1,49 @@
+<definition version="0.90" type="element" link_type="simple" width="20" height="60" hotspot_x="10" hotspot_y="30">
+    <uuid uuid="{2d79b3c5-7bc4-307d-548c-a39fe69ac3bb}"/>
+    <names>
+        <name lang="ar">دايود</name>
+        <name lang="ca">Díode</name>
+        <name lang="cs">Dioda</name>
+        <name lang="da">Diode</name>
+        <name lang="de">Diode</name>
+        <name lang="el">Δίοδοι</name>
+        <name lang="en">Diode</name>
+        <name lang="es">Diodo</name>
+        <name lang="fi">Diodi</name>
+        <name lang="fr">Diode</name>
+        <name lang="hr">Dioda</name>
+        <name lang="hu">Dióda</name>
+        <name lang="it">Diodo</name>
+        <name lang="ja">ダイオード</name>
+        <name lang="ko">다이오드</name>
+        <name lang="mn">Диод</name>
+        <name lang="nb">Diode</name>
+        <name lang="nl">Diode</name>
+        <name lang="nl_BE">Diode</name>
+        <name lang="pl">Dioda</name>
+        <name lang="pt">Díodo</name>
+        <name lang="pt_BR">Diodo</name>
+        <name lang="ro">Dioda</name>
+        <name lang="ru">Диоды</name>
+        <name lang="sk">Dióda</name>
+        <name lang="sl">Dioda</name>
+        <name lang="sr">Диода</name>
+        <name lang="sv">Diod</name>
+        <name lang="tr">Diyot</name>
+        <name lang="uk">Діод</name>
+        <name lang="zh">二极管</name>
+    </names>
+    <informations>titus
+titus0818@yahoo.com</informations>
+    <description>
+        <polygon x1="-6" y1="-5" x2="6" y2="-5" x3="0" y3="5" antialias="false" style="line-style:normal;line-weight:normal;filling:white;color:black"/>
+        <line x1="0" y1="20" x2="0" y2="-20" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-5" y1="5" x2="5" y2="5" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <dynamic_text x="8" y="-6.83" z="6" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="ElementInfo" uuid="{7f2960ef-f414-4b47-9924-b1a1854df28a}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <terminal uuid="{9f48f539-d614-4c11-99be-7be9df4956d6}" name="A" x="0" y="-20" orientation="n" type="Generic"/>
+        <terminal uuid="{40077d9a-942a-4a3a-a58a-5e1381cc2efa}" name="K" x="0" y="20" orientation="s" type="Generic"/>
+    </description>
+</definition>

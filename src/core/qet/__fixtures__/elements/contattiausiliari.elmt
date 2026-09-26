@@ -1,0 +1,60 @@
+<definition orientation="dyyy" version="0.80" type="element" link_type="simple" width="70" height="60" hotspot_x="33" hotspot_y="30">
+    <uuid uuid="{8fcde94b-a80c-bdd5-457e-c72227beef76}"/>
+    <names>
+        <name lang="ar">مفتاح بدوّاسة (NO/NC)</name>
+        <name lang="ca">Interruptor de peu (NO/NC)</name>
+        <name lang="cs">Pedálový spínač (NO/NC)</name>
+        <name lang="da">Fodkontakt (NO/NC)</name>
+        <name lang="de">Fußschalter 2-polig Schliesser/Öffner</name>
+        <name lang="el">Ποδοδιακόπτης, ανοικτή και κλειστή επαφή</name>
+        <name lang="en">Foot Switch (NO/NC)</name>
+        <name lang="es">Paro de emergencia con pedal (NA/NC)</name>
+        <name lang="fi">Jalkakytkin (NO/NC)</name>
+        <name lang="fr">Interrupteur à pedale (NO/NC)</name>
+        <name lang="hr">Nožna sklopka (NO/NC)</name>
+        <name lang="hu">Lábkapcsoló (NO/NC)</name>
+        <name lang="it">Comando a pedale (NO/NC)</name>
+        <name lang="ja">フットスイッチ (NO/NC)</name>
+        <name lang="ko">풋 스위치 (NO/NC)</name>
+        <name lang="mn">Хөлийн унтраалга (НТ/ХТ)</name>
+        <name lang="nb">Fotbryter (NO/NC)</name>
+        <name lang="nl">Voetschakelaar (NO/NC)</name>
+        <name lang="nl_BE">Voetschakelaar (NO/NC)</name>
+        <name lang="pl">Łącznik wielozestykowy napędzany nogą</name>
+        <name lang="pt">Interruptor de pedal (NO/NC)</name>
+        <name lang="pt_BR">Interruptor de pedal (NA/NF)</name>
+        <name lang="ro">Întrerupător cu pedală (NO/NC)</name>
+        <name lang="ru">Ножная педаль (НО/НЗ)</name>
+        <name lang="sk">Nožný spínač (NO/NC)</name>
+        <name lang="sl">Nožno stikalo (NO/NC)</name>
+        <name lang="sr">Ножни прекидач (НО/НЗ)</name>
+        <name lang="sv">Fotbrytare (NO/NC)</name>
+        <name lang="tr">Ayak şalteri (NA/NK)</name>
+        <name lang="uk">Ножний перемикач (NO/NC)</name>
+        <name lang="zh">辅助触点</name>
+    </names>
+    <informations>Author: The QElectroTech team
+License: see http://qelectrotech.org/wiki/doc/elements_license</informations>
+    <description>
+        <line x1="-22" y1="-9" x2="-15" y2="-9" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <dynamic_text x="-25" y="-23" z="4" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" text_from="ElementInfo" uuid="{6e15cbca-5884-432a-b376-0eeeaf93807b}" font="Liberation Sans,5,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+        </dynamic_text>
+        <dynamic_text x="-24" y="9" z="5" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" text_from="ElementInfo" uuid="{fec82be4-22c7-47c0-9f88-03e4aa98453b}" font="Liberation Sans,5,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+        </dynamic_text>
+        <polygon x1="-22" y1="20" x2="-22" y2="10" x3="-16" y3="-10" closed="false" antialias="true" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <line x1="-23" y1="0" x2="28" y2="0" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:dashed;line-weight:thin;filling:none;color:black" antialias="false"/>
+        <line x1="-22" y1="-20" x2="-22" y2="-9" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <polygon x1="25" y1="20" x2="25" y2="10" x3="19" y3="-10" closed="false" antialias="true" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <line x1="25" y1="-20" x2="25" y2="-9" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <dynamic_text x="-16" y="-7.83" z="12" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" text_from="ElementInfo" uuid="{710338b0-9eaa-4d59-83d7-04c5d943f372}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <terminal uuid="{d0344bb5-2bee-4b7e-a546-3d1e93cc6c6e}" name="" x="-22" y="-20" orientation="n" type="Generic"/>
+        <terminal uuid="{e5ce146b-8ee7-4911-8b16-3df6e5db95f7}" name="" x="25" y="20" orientation="s" type="Generic"/>
+        <terminal uuid="{cb1c6234-2e2b-4182-a41e-0bd903308857}" name="" x="25" y="-20" orientation="n" type="Generic"/>
+        <terminal uuid="{4c78277d-8476-4fb2-9ca3-49c4e85e6dd3}" name="" x="-22" y="20" orientation="s" type="Generic"/>
+    </description>
+</definition>

@@ -1,0 +1,47 @@
+# Production: docker compose up -d --build
+# First run only (sample library + templates + demo project):
+#   docker compose --profile tools run --rm seed
+services:
+  volt:
+    image: ${VOLT_IMAGE:-ghcr.io/your-org/volt:latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: "file:../data/volt.db"
+      DATA_DIR: /app/data
+      AUTH_DEV_LOGIN: "false"
+      AUTH_TRUST_HOST: "true"
+    expose:
+      - "3000"
+    volumes:
+      - ${VOLT_DATA_DIR:-/opt/volt/data}:/app/data
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      volt:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  seed:
+    profiles: ["tools"]
+    build: { context: ., target: builder }
+    env_file: .env
+    environment:
+      DATABASE_URL: "file:../data/volt.db"
+      DATA_DIR: /app/data
+    volumes:
+      - ${VOLT_DATA_DIR:-/opt/volt/data}:/app/data
+    command: sh -c "npx prisma db push --skip-generate && npx tsx prisma/seed.ts"
+
+volumes:
+  caddy-data:
+  caddy-config:

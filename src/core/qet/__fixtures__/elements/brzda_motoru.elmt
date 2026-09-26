@@ -1,0 +1,62 @@
+<definition version="0.100.0" type="element" link_type="simple" width="60" height="80" hotspot_x="37" hotspot_y="57">
+    <uuid uuid="{33cba019-4886-25e7-e768-7853b3072976}"/>
+    <names>
+        <name lang="ar">مكبح مغناطيسي</name>
+        <name lang="ca">Fre magnètic</name>
+        <name lang="cs">Elektromagnetická brzda</name>
+        <name lang="da">Magnetbremse</name>
+        <name lang="de">Bremse magnetisch</name>
+        <name lang="el">Μαγνητικό φρένο</name>
+        <name lang="en">Magnetic brake</name>
+        <name lang="es">Freno magnetico</name>
+        <name lang="fi">Magneettijarru</name>
+        <name lang="fr">Frein magnetique</name>
+        <name lang="hr">Magnetska kočnica</name>
+        <name lang="hu">Mágneses fék</name>
+        <name lang="it">Freno elettromagnetico</name>
+        <name lang="ja">電磁ブレーキ</name>
+        <name lang="ko">전자 브레이크</name>
+        <name lang="mn">Соронзон тоормос</name>
+        <name lang="nb">Magnetbrems</name>
+        <name lang="nl">Rem Magnetic</name>
+        <name lang="nl_BE">Magnetische rem</name>
+        <name lang="pl">Hamulec elektromagnetyczny</name>
+        <name lang="pt">Freio magnético</name>
+        <name lang="pt_BR">Freio magnético</name>
+        <name lang="ro">Frână magnetică</name>
+        <name lang="ru">Магнитный тормоз</name>
+        <name lang="sk">Magnetická brzda</name>
+        <name lang="sl">Magnetna zavora</name>
+        <name lang="sr">Магнетна кочница</name>
+        <name lang="sv">Magnetbroms</name>
+        <name lang="tr">Manyetik fren</name>
+        <name lang="uk">Магнітне гальмо</name>
+        <name lang="zh">电机制动器</name>
+    </names>
+    <informations>Author: The QElectroTech team
+License: see http://qelectrotech.org/wiki/doc/elements_license</informations>
+    <description>
+        <line x1="-30" y1="0" x2="-14" y2="0" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:dashed;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <polygon x1="-30" y1="6" x2="-30" y2="-6" x3="-35" y3="-10" x4="-35" y4="10" antialias="true" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <dynamic_text x="-18" y="9" z="7" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="true" text_from="ElementInfo" uuid="{8c284d0f-0e54-4a83-8f45-ed4bb2347e8a}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <rect x="-20" y="-54" width="10" height="38" rx="0" ry="0" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <ellipse x="-18" y="-44" width="6" height="6" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <ellipse x="-18" y="-33" width="6" height="6" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <ellipse x="-18" y="-23" width="6" height="6" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <ellipse x="-18" y="-53" width="6" height="6" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-17" y1="-48" x2="-13" y2="-52" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-17" y1="-39" x2="-13" y2="-43" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-17" y1="-28" x2="-13" y2="-32" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-17" y1="-18" x2="-13" y2="-22" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-20" y1="-50" x2="-25" y2="-50" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-20" y1="-20" x2="-25" y2="-20" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <rect x="-14" y="-8" width="28" height="16" rx="0" ry="0" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <polygon x1="-10" y1="-40" x2="20" y2="-40" x3="20" y3="20" x4="0" y4="20" x5="0" y5="8" closed="false" antialias="false" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <polygon x1="-10" y1="-30" x2="0" y2="-30" x3="0" y3="-8" closed="false" antialias="false" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <terminal uuid="{aa6cda03-9e39-4496-9bdd-465472f5385c}" name="" x="-25" y="-20" orientation="w" type="Generic"/>
+        <terminal uuid="{73abfd68-243a-4ebd-95ef-3a321da4b38a}" name="" x="-25" y="-50" orientation="w" type="Generic"/>
+    </description>
+</definition>

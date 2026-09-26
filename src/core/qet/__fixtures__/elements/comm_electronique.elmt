@@ -1,0 +1,60 @@
+<definition version="0.100.0" type="element" link_type="master" width="40" height="60" hotspot_x="21" hotspot_y="32">
+    <uuid uuid="{a0157e1e-8c70-46f7-b4f3-fbbb588aad30}"/>
+    <names>
+        <name lang="ar">مرحل إلكتروني</name>
+        <name lang="ca">Relé electrònic</name>
+        <name lang="cs">Elektronické relé</name>
+        <name lang="da">Elektronisk relæ</name>
+        <name lang="de">Relais elektronisch</name>
+        <name lang="el">Ηλεκτρονικό ρελέ</name>
+        <name lang="en">Electronic relay</name>
+        <name lang="es">Relé electrónico</name>
+        <name lang="fi">Elektroninen rele</name>
+        <name lang="fr">Relais électronique</name>
+        <name lang="hr">Elektronički relej</name>
+        <name lang="hu">Tranzisztoros működtetés</name>
+        <name lang="it">Relè a comando elettronico</name>
+        <name lang="ja">電子リレー</name>
+        <name lang="ko">전자식 릴레이</name>
+        <name lang="mn">Цахим реле</name>
+        <name lang="nb">Elektronisk relé</name>
+        <name lang="nl">relais electronisch</name>
+        <name lang="nl_BE">Electronisch relais</name>
+        <name lang="pl">Przekaźnik elektroniczny</name>
+        <name lang="pt">Relé eletrónico</name>
+        <name lang="pt_BR">Relé eletrônico</name>
+        <name lang="ro">Releu electronic</name>
+        <name lang="ru">Электронное реле</name>
+        <name lang="sk">Elektronické relé</name>
+        <name lang="sl">Elektronski rele</name>
+        <name lang="sr">Електронски релеј</name>
+        <name lang="sv">Elektroniskt relä</name>
+        <name lang="tr">Elektronik röle</name>
+        <name lang="uk">Електронне реле</name>
+        <name lang="zh">电子触点</name>
+    </names>
+    <kindInformations>
+        <kindInformation name="type">coil</kindInformation>
+    </kindInformations>
+    <informations>License: see http://qelectrotech.org/wiki/doc/elements_license</informations>
+    <description>
+        <rect x="-15" y="-10" width="30" height="20" rx="0" ry="0" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-7" y1="0" x2="0" y2="0" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="0" y1="-6" x2="0" y2="6" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="0" y1="20" x2="0" y2="10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="0" y1="-20" x2="0" y2="-10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <dynamic_text x="-14" y="10" z="8" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{89969859-879e-43c2-9a52-a48bf7e3bc3b}" font="Liberation Sans,4,-1,5,25,0,0,0,0,0,Regular">
+            <text>A2</text>
+        </dynamic_text>
+        <dynamic_text x="-14" y="-25" z="9" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{96ec5abe-9642-4b22-b49b-7e97522dfbb9}" font="Liberation Sans,4,-1,5,25,0,0,0,0,0,Regular">
+            <text>A1</text>
+        </dynamic_text>
+        <dynamic_text x="16" y="-12" z="10" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="ElementInfo" uuid="{88dc4499-ea44-436b-b57e-5419557a816b}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <polygon x1="7" y1="-8" x2="0" y2="-2" x3="0" y3="2" x4="7" y4="8" closed="false" antialias="false" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <terminal uuid="{00010eac-39b1-4e53-9763-92e2e05e01e1}" name="A2" x="0" y="20" orientation="s" type="Generic"/>
+        <terminal uuid="{1040d11a-d254-4623-b48d-acede7ce1975}" name="A1" x="0" y="-20" orientation="n" type="Generic"/>
+    </description>
+</definition>

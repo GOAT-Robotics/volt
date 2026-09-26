@@ -1,0 +1,56 @@
+<definition version="0.80" type="element" link_type="master" width="40" height="50" hotspot_x="23" hotspot_y="25">
+    <uuid uuid="{de3598d1-eb8a-da34-03d7-3cb6d172ae23}"/>
+    <names>
+        <name lang="ar">مؤقت TMR48</name>
+        <name lang="ca">Temporitzador TMR48</name>
+        <name lang="cs">Timer TMR48</name>
+        <name lang="da">Timer TMR48</name>
+        <name lang="de">Zeitrelais TMR48</name>
+        <name lang="el">Χρονικό TMR48</name>
+        <name lang="en">Timer TMR48</name>
+        <name lang="es">Temporizador TMR48</name>
+        <name lang="fi">Ajastin TMR48</name>
+        <name lang="hr">Mjerač vremena TMR48</name>
+        <name lang="hu">Időzítő relé TMR48</name>
+        <name lang="it">Temporizzatore TMR48</name>
+        <name lang="ja">タイマー TMR48</name>
+        <name lang="ko">타이머 TMR48</name>
+        <name lang="mn">Таймер TMR48</name>
+        <name lang="nb">Tidsrelé TMR48</name>
+        <name lang="nl">Tijdrelais TMR48</name>
+        <name lang="nl_BE">Tijdschakelaar TMR48</name>
+        <name lang="pl">Zegar TMR48</name>
+        <name lang="pt">Temporizador TMR48</name>
+        <name lang="pt_BR">Temporizador TMR48</name>
+        <name lang="ro">Temporizator TMR48</name>
+        <name lang="ru">Таймер TMR48</name>
+        <name lang="sk">Časovač TMR48</name>
+        <name lang="sl">Časovnik TMR48</name>
+        <name lang="sr">Тајмер TMR48</name>
+        <name lang="sv">Timer TMR48</name>
+        <name lang="tr">Zamanlayıcı TMR48</name>
+        <name lang="uk">Таймер TMR48</name>
+        <name lang="zh">定时器48</name>
+    </names>
+    <kindInformations>
+        <kindInformation name="type" show="1">coil</kindInformation>
+    </kindInformations>
+    <informations>edited with "QET_ElementScaler"</informations>
+    <description>
+        <rect x="-14" y="-8" width="28" height="15" rx="0" ry="0" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <rect x="-20" y="-8" width="5" height="15" rx="0" ry="0" style="line-style:normal;line-weight:normal;filling:black;color:black" antialias="false"/>
+        <dynamic_text x="-45" y="-12" z="3" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" text_from="ElementInfo" uuid="{ec3ddd44-7d10-4947-93f2-d66496e14415}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <text text="2" x="2" y="-10" rotation="0" font="Liberation Sans,5,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="10" x="1" y="15" rotation="0" font="Liberation Sans,5,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="6" x="-9" y="-10" rotation="0" font="Liberation Sans,5,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <line x1="0" y1="-8" x2="0" y2="-15" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="0" y1="7" x2="0" y2="15" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="-10" y1="-8" x2="-10" y2="-15" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <terminal uuid="{2cab732d-93cc-43e6-84d7-48ded4ee3017}" name="" x="0" y="-15" orientation="n" type="Generic"/>
+        <terminal uuid="{678476ba-0a47-480b-b4ad-9c0c68ec4782}" name="" x="-10" y="-15" orientation="n" type="Generic"/>
+        <terminal uuid="{4df61e5b-a18a-46e2-bff9-c1ba9c5ea7b4}" name="" x="0" y="15" orientation="s" type="Generic"/>
+    </description>
+</definition>

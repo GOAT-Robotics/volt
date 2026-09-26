@@ -1,0 +1,51 @@
+<definition version="0.100.0" type="element" link_type="simple" width="20" height="60" hotspot_x="10" hotspot_y="30">
+    <uuid uuid="{dff91c31-ff8d-cb82-3039-8af0d4bd63b6}"/>
+    <names>
+        <name lang="ar">مشبك أرضي</name>
+        <name lang="ca">Barra de terra</name>
+        <name lang="cs">Uzemňovací svorka</name>
+        <name lang="da">Jordskinne</name>
+        <name lang="de">Erdtrennklemme</name>
+        <name lang="el">Μπάρα γείωσης</name>
+        <name lang="en">Ground bar</name>
+        <name lang="es">Barra de tierra</name>
+        <name lang="fi">Maadoituskisko</name>
+        <name lang="fr">Barette de terre</name>
+        <name lang="hr">Sabirnica uzemljenja</name>
+        <name lang="hu">Földelősín</name>
+        <name lang="it">Barra di terra</name>
+        <name lang="ja">接地バー</name>
+        <name lang="ko">접지 바</name>
+        <name lang="mn">Газрын бар</name>
+        <name lang="nb">Jordskinne</name>
+        <name lang="nl">Aardrail</name>
+        <name lang="nl_BE">Aardingsrail</name>
+        <name lang="pl">Złącze gniazdowe dwuprzerwowe</name>
+        <name lang="pt">Barra de terra</name>
+        <name lang="pt_BR">Barra de terra</name>
+        <name lang="ro">Bară de masă</name>
+        <name lang="ru">Шина заземления</name>
+        <name lang="sk">Zemniaca lišta</name>
+        <name lang="sl">Ozemljitvena letvica</name>
+        <name lang="sr">Земљоводна шина</name>
+        <name lang="sv">Jordskena</name>
+        <name lang="tr">Toprak barası</name>
+        <name lang="uk">Заземлювальна шина</name>
+        <name lang="zh">接地排</name>
+    </names>
+    <informations>Author: The QElectroTech team
+License: see http://qelectrotech.org/wiki/doc/elements_license</informations>
+    <description>
+        <dynamic_text x="8" y="-11.95" z="1" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="ElementInfo" uuid="{211238e6-6d02-47a5-8b3d-0001ba60dfde}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <line x1="0" y1="-5" x2="0" y2="5" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <arc x="-5" y="0" width="10" height="10" start="180" angle="180" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="true"/>
+        <line x1="0" y1="20" x2="0" y2="10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <line x1="0" y1="-10" x2="0" y2="-20" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <arc x="-5" y="-10" width="10" height="10" start="0" angle="180" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="true"/>
+        <terminal uuid="{dbfa01b2-43ec-49a6-8be2-35b46f28bb41}" name="" x="0" y="-21" orientation="n" type="Generic"/>
+        <terminal uuid="{b9b44f36-ee9a-4b30-83c5-0a18793b458a}" name="" x="0" y="21" orientation="s" type="Generic"/>
+    </description>
+</definition>

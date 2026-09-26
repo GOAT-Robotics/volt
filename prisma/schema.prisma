@@ -1,0 +1,426 @@
+// Volt — data model (SQLite). String "enums" are validated in src/lib/enums.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String    @id @default(cuid())
+  entraOid    String?   @unique
+  email       String    @unique
+  name        String
+  isGuest     Boolean   @default(false)
+  disabled    Boolean   @default(false)
+  groups      String    @default("[]") // JSON array of Entra group object ids (last sign-in)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  memberships    Membership[]
+  projectMembers ProjectMember[]
+  favorites      Favorite[]
+  notifications  Notification[]
+  comments       Comment[]
+  audit          AuditEvent[]
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  settings  String   @default("{}") // JSON WorkspaceSettings
+  createdAt DateTime @default(now())
+
+  memberships      Membership[]
+  groupMappings    GroupMapping[]
+  projects         Project[]
+  folders          Folder[]
+  libraries        Library[]
+  styleTemplates   StyleTemplate[]
+  projectTemplates ProjectTemplate[]
+  audit            AuditEvent[]
+}
+
+/// roles: ADMIN, OWNER, DESIGNER, REVIEWER, APPROVER, SIGNATORY, VIEWER, GUEST (comma separated)
+model Membership {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  roles       String    @default("VIEWER")
+  source      String    @default("MANUAL") // MANUAL | GROUP
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model GroupMapping {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  entraGroupId String
+  displayName  String
+  roles        String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, entraGroupId])
+}
+
+model Folder {
+  id          String    @id @default(cuid())
+  workspaceId String
+  parentId    String?
+  name        String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projects    Project[]
+}
+
+model Project {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  folderId      String?
+  number        String?
+  name          String
+  description   String    @default("")
+  tags          String    @default("[]")
+  versionScheme String    @default("INTEGER") // INTEGER | DECIMAL | LETTER | CUSTOM
+  customScheme  String?
+  state         String    @default("ACTIVE") // ACTIVE | ARCHIVED
+  templateId    String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folder        Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  members     ProjectMember[]
+  versions    Version[]
+  imports     ImportRecord[]
+  comments    Comment[]
+  favorites   Favorite[]
+  attachments Attachment[]
+
+  @@index([workspaceId, state])
+}
+
+/// per-project roles: OWNER, DESIGNER, REVIEWER, APPROVER, SIGNATORY, VIEWER, GUEST
+model ProjectMember {
+  id        String  @id @default(cuid())
+  projectId String
+  userId    String
+  roles     String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model Favorite {
+  userId    String
+  projectId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId])
+}
+
+/// status: DRAFT | IN_REVIEW | CHANGES_REQUESTED | APPROVED | REJECTED | SIGNED | RELEASED | SUPERSEDED | WITHDRAWN
+model Version {
+  id           String    @id @default(cuid())
+  projectId    String
+  seq          Int
+  label        String
+  parentId     String?
+  status       String    @default("DRAFT")
+  summary      String    @default("")
+  description  String    @default("")
+  ticket       String?
+  doc          String // JSON Doc (see src/core/model.ts)
+  docRev       Int       @default(1)
+  docHash      String?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  submittedAt  DateTime?
+  approvedAt   DateTime?
+  signedAt     DateTime?
+  releasedAt   DateTime?
+  endedAt      DateTime?
+  endReason    String?
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  reviews    Review[]
+  signatures Signature[]
+  comments   Comment[]
+  searchRows SearchEntry[]
+  autosaves  Autosave[]
+
+  @@unique([projectId, seq])
+  @@index([projectId, status])
+}
+
+model Autosave {
+  id        String   @id @default(cuid())
+  versionId String
+  userId    String
+  doc       String
+  createdAt DateTime @default(now())
+  version   Version  @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId, userId])
+}
+
+model ImportRecord {
+  id        String   @id @default(cuid())
+  projectId String
+  versionId String?
+  filename  String
+  sha256    String
+  original  Bytes
+  report    String // JSON CompatReport
+  userId    String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+/// scope: PERSONAL | SHARED | ORG ; LibraryElement.status: DRAFT | PUBLISHED | PENDING_APPROVAL | APPROVED | DEPRECATED
+model Library {
+  id          String           @id @default(cuid())
+  workspaceId String
+  name        String
+  description String           @default("")
+  scope       String           @default("ORG")
+  ownerId     String?
+  source      String?
+  license     String?
+  attribution String?
+  createdAt   DateTime         @default(now())
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  elements    LibraryElement[]
+}
+
+model LibraryElement {
+  id          String    @id @default(cuid())
+  libraryId   String
+  kind        String    @default("ELEMENT") // ELEMENT | BLOCK
+  category    String    @default("") // slash path e.g. "10_electric/20_relays"
+  name        String
+  description String    @default("")
+  tags        String    @default("[]")
+  prefix      String    @default("")
+  uuid        String // QET element uuid
+  content     String // ELEMENT: .elmt XML ; BLOCK: JSON BlockContent
+  meta        String    @default("{}") // manufacturer, partNumber, function, ...
+  visibility  String    @default("PRIVATE") // PRIVATE | SHARED | ORG
+  status      String    @default("DRAFT")
+  revision    Int       @default(1)
+  ownerId     String
+  approvedById String?
+  approvedAt  DateTime?
+  source      String?
+  license     String?
+  attribution String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  library     Library   @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  revisions   LibraryElementRevision[]
+  shares      LibraryShare[]
+
+  @@index([libraryId, category])
+}
+
+model LibraryElementRevision {
+  id        String         @id @default(cuid())
+  elementId String
+  revision  Int
+  content   String
+  meta      String         @default("{}")
+  note      String         @default("")
+  userId    String
+  createdAt DateTime       @default(now())
+  element   LibraryElement @relation(fields: [elementId], references: [id], onDelete: Cascade)
+
+  @@unique([elementId, revision])
+}
+
+model LibraryShare {
+  elementId String
+  userId    String
+  canEdit   Boolean        @default(false)
+  element   LibraryElement @relation(fields: [elementId], references: [id], onDelete: Cascade)
+
+  @@id([elementId, userId])
+}
+
+model StyleTemplate {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  styles      String // JSON Styles
+  version     Int       @default(1)
+  status      String    @default("DRAFT") // DRAFT | APPROVED | RETIRED
+  isDefault   Boolean   @default(false)
+  ownerId     String
+  history     String    @default("[]")
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model ProjectTemplate {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  description String    @default("")
+  content     String // JSON ProjectTemplateContent
+  version     Int       @default(1)
+  status      String    @default("DRAFT")
+  isDefault   Boolean   @default(false)
+  ownerId     String
+  history     String    @default("[]")
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+/// status: OPEN | APPROVED | REJECTED | CHANGES_REQUESTED | CANCELLED
+model Review {
+  id           String             @id @default(cuid())
+  versionId    String
+  submittedById String
+  instructions String             @default("")
+  dueDate      DateTime?
+  sequential   Boolean            @default(false)
+  status       String             @default("OPEN")
+  createdAt    DateTime           @default(now())
+  closedAt     DateTime?
+  version      Version            @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  assignments  ReviewAssignment[]
+}
+
+/// decision: PENDING | APPROVED | REJECTED | CHANGES_REQUESTED
+model ReviewAssignment {
+  id           String    @id @default(cuid())
+  reviewId     String
+  order        Int       @default(0)
+  userId       String?
+  groupId      String? // Entra group object id
+  groupName    String?
+  canApprove   Boolean   @default(true)
+  decision     String    @default("PENDING")
+  reason       String?
+  decidedById  String?
+  decidedAt    DateTime?
+  review       Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+}
+
+/// status: OPEN | RESOLVED | REJECTED | REOPENED
+model Comment {
+  id          String    @id @default(cuid())
+  projectId   String
+  versionId   String?
+  pageId      String?
+  anchor      String? // JSON {type:'element'|'wire'|'text'|'region'|'point', id?, x, y, w?, h?}
+  parentId    String?
+  body        String
+  status      String    @default("OPEN")
+  mentions    String    @default("[]")
+  authorId    String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version     Version?  @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  author      User      @relation(fields: [authorId], references: [id])
+
+  @@index([projectId, versionId])
+}
+
+/// status: REQUESTED | SIGNED | DECLINED | EXPIRED | INVALIDATED | CANCELLED
+model Signature {
+  id           String    @id @default(cuid())
+  versionId    String
+  signatoryId  String
+  requestedById String
+  purpose      String
+  order        Int       @default(0)
+  status       String    @default("REQUESTED")
+  expiresAt    DateTime?
+  docHash      String
+  pdfHash      String?
+  provider     String    @default("builtin")
+  providerRef  String?
+  evidence     String? // JSON
+  seal         String? // provider signature over evidence
+  signedAt     DateTime?
+  declineReason String?
+  batch        String? // signatures requested together (one signing round)
+  createdAt    DateTime  @default(now())
+  version      Version   @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([signatoryId, status])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  projectId String
+  ownerType String // COMMENT | REVIEW | PROJECT | RELEASE
+  ownerId   String
+  filename  String
+  mime      String
+  size      Int
+  sha256    String
+  data      Bytes
+  userId    String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([ownerType, ownerId])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String    @default("")
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+model AuditEvent {
+  id          String     @id @default(cuid())
+  workspaceId String?
+  projectId   String?
+  versionId   String?
+  actorId     String?
+  type        String
+  data        String     @default("{}")
+  ip          String?
+  createdAt   DateTime   @default(now())
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor       User?      @relation(fields: [actorId], references: [id])
+
+  @@index([workspaceId, createdAt])
+  @@index([projectId, createdAt])
+}
+
+model SearchEntry {
+  id        String  @id @default(cuid())
+  projectId String
+  versionId String
+  pageId    String?
+  kind      String // ELEMENT | PIN | LABEL | PAGE | WIRE
+  refId     String?
+  text      String
+  version   Version @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([text])
+  @@index([versionId])
+}

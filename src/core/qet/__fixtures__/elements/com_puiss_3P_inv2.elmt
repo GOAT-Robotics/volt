@@ -1,0 +1,71 @@
+<definition version="0.80" type="element" link_type="slave" width="70" height="60" hotspot_x="29" hotspot_y="30">
+    <uuid uuid="{dda8d4d0-d9f4-168a-a21e-40f4679bc36b}"/>
+    <names>
+        <name lang="ar">كونتكتور 2 تحويل 3 أقطاب</name>
+        <name lang="ca">Contactor 2 canvi 3 pols</name>
+        <name lang="cs">Stykač 2 s mech. blokováním 3p</name>
+        <name lang="da">Kontaktor 2 omkobling 3 poler</name>
+        <name lang="de">Schütz 2 Umschalter 3 polig</name>
+        <name lang="el">Ρελέ 2 εναλλαγής 3 πόλων</name>
+        <name lang="en">Contactor 2 changeover 3 poles</name>
+        <name lang="es">Contactor 2 conmutador 3 polos</name>
+        <name lang="fi">Kontaktori 2 vaihtokosketin 3 napaa</name>
+        <name lang="fr">Contacteur 2 inverseur 3 poles</name>
+        <name lang="hr">Kontaktor 2 preklopni 3 polova</name>
+        <name lang="hu">Kontaktor 2 váltó 3 pólusú</name>
+        <name lang="it">Contattore 2 commutatore 3 poli</name>
+        <name lang="ja">接触器 2 切替 3 極</name>
+        <name lang="ko">접촉기 2 전환 3 극</name>
+        <name lang="mn">Контактор 2 шилжилт 3 туйл</name>
+        <name lang="nb">Kontaktor 2 veksler 3 poler</name>
+        <name lang="nl">Magneetschakelaar 2 wisselcontact 3 polen</name>
+        <name lang="nl_BE">Contacteur 2 wisselcontact 3 polen</name>
+        <name lang="pl">Stycznik 2 przełączny 3 biegunów</name>
+        <name lang="pt">Contactor 2 comutação 3 polos</name>
+        <name lang="pt_BR">Contator 2 contatos reversíveis 3 polos</name>
+        <name lang="ro">Contactor 2 comutator 3 poli</name>
+        <name lang="ru">Контактор 2 переключающий 3 полюсов</name>
+        <name lang="sk">Stýkač 2 prepínací 3 pólov</name>
+        <name lang="sl">Kontaktor 2 preklop 3 polov</name>
+        <name lang="sr">Контактор 2 преклопни 3 полова</name>
+        <name lang="sv">Kontaktor 2 omkopplare 3 poler</name>
+        <name lang="tr">Kontaktör 2 değiştirici 3 kutup</name>
+        <name lang="uk">Контактор 2 перекидний 3 полюсів</name>
+        <name lang="zh">3极常开功率触点反向2</name>
+    </names>
+    <kindInformations>
+        <kindInformation name="number" show="1">3</kindInformation>
+        <kindInformation name="state" show="1">NO</kindInformation>
+        <kindInformation name="type" show="1">power</kindInformation>
+    </kindInformations>
+    <informations>Author: The QElectroTech team
+License: see http://qelectrotech.org/wiki/doc/elements_license</informations>
+    <description>
+        <line x1="-27" y1="0" x2="27" y2="0" end1="none" end2="none" length1="1.5" length2="1.48" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <text text="3&#10;L2" x="15" y="-20" rotation="0" font="Liberation Sans,4,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="5&#10;L3" x="35" y="-20" rotation="0" font="Liberation Sans,4,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="4&#10;T2" x="14" y="19" rotation="0" font="Liberation Sans,4,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="2&#10;T1" x="-6" y="19" rotation="0" font="Liberation Sans,4,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <text text="6&#10;T3" x="34" y="19" rotation="0" font="Liberation Sans,4,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <polygon x1="25" y1="-10" x2="30" y2="10" x3="30" y3="20" closed="false" antialias="true" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <polygon x1="-15" y1="-10" x2="-10" y2="10" x3="-10" y3="20" closed="false" antialias="true" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <dynamic_text x="35" y="-10" z="10" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" text_from="ElementInfo" uuid="{cf89cd93-26be-471d-aaae-5af0536b9bb9}" font="Liberation Sans,9,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <polygon x1="5" y1="-10" x2="10" y2="10" x3="10" y3="20" closed="false" antialias="true" style="line-style:normal;line-weight:normal;filling:none;color:black"/>
+        <line x1="-10" y1="-20" x2="-10" y2="-10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <arc x="-12.5" y="-14.5" width="5" height="5" start="90" angle="180" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="true"/>
+        <line x1="10" y1="-20" x2="10" y2="-10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <arc x="7.5" y="-14.5" width="5" height="5" start="90" angle="180" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="true"/>
+        <line x1="30" y1="-20" x2="30" y2="-10" end1="none" end2="none" length1="1.5" length2="1.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <arc x="27.5" y="-14.5" width="5" height="5" start="90" angle="180" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="true"/>
+        <text text="1&#10;L1" x="-6" y="-20" rotation="0" font="Liberation Sans,4,-1,5,50,0,0,0,0,0,Regular" color="#000000"/>
+        <terminal uuid="{08bb8a28-2da4-4630-91f2-4eb87e5850e5}" name="3" x="10" y="-20" orientation="n" type="Generic"/>
+        <terminal uuid="{3b66052a-252f-49f1-bca6-5b735daf2a84}" name="1" x="-10" y="-20" orientation="n" type="Generic"/>
+        <terminal uuid="{cc6d7085-3b57-460c-8c18-b97dfce67dc3}" name="4" x="10" y="20" orientation="s" type="Generic"/>
+        <terminal uuid="{7e0fa384-4a72-42de-8563-cb8feda81215}" name="2" x="-10" y="20" orientation="s" type="Generic"/>
+        <terminal uuid="{3942e18d-c67f-4728-9272-e96e278d5693}" name="5" x="30" y="-20" orientation="n" type="Generic"/>
+        <terminal uuid="{5eda0853-bd77-487b-8ec1-568e80d15c65}" name="6" x="30" y="20" orientation="s" type="Generic"/>
+    </description>
+</definition>

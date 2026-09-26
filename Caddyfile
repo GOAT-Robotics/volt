@@ -1,0 +1,7 @@
+volt.example.com {
+    encode zstd gzip
+    reverse_proxy volt:3000
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+}

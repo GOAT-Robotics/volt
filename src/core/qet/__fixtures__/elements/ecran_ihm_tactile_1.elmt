@@ -1,0 +1,58 @@
+<definition version="0.90" type="element" link_type="simple" width="250" height="250" hotspot_x="125" hotspot_y="122">
+    <uuid uuid="{e9998262-96d7-e87b-4069-79799785fb06}"/>
+    <names>
+        <name lang="ar">HMI TACTILE 1</name>
+        <name lang="ca">Panell tàctil 1</name>
+        <name lang="cs">Dotykový panel 1</name>
+        <name lang="da">Touchpanel 1</name>
+        <name lang="de">Touchpanel 1</name>
+        <name lang="el">Οθόνη αφής 1</name>
+        <name lang="en">Touch panel 1</name>
+        <name lang="es">HMI TÁCTIL 1</name>
+        <name lang="fi">Kosketusnäyttö 1</name>
+        <name lang="fr">HMI TACTILE 1</name>
+        <name lang="hr">Zaslon osjetljiv na dodir 1</name>
+        <name lang="hu">Érintőpanel 1</name>
+        <name lang="it">Touch Screen 1</name>
+        <name lang="ja">タッチパネル 1</name>
+        <name lang="ko">터치 패널 1</name>
+        <name lang="mn">Мэдрэгч дэлгэц 1</name>
+        <name lang="nb">Berøringspanel 1</name>
+        <name lang="nl">HMI Aanraakscherm groot</name>
+        <name lang="nl_BE">Aanraakpaneel 1</name>
+        <name lang="pl">HMI TACTILE 1</name>
+        <name lang="pt">Painel tátil 1</name>
+        <name lang="pt_BR">Painel touch 1</name>
+        <name lang="ro">Panou tactil 1</name>
+        <name lang="ru">Сенсорная панель 1</name>
+        <name lang="sk">Dotykový panel 1</name>
+        <name lang="sl">Zaslon na dotik 1</name>
+        <name lang="sr">Тачскрин 1</name>
+        <name lang="sv">Pekskärm 1</name>
+        <name lang="tr">Dokunmatik panel 1</name>
+        <name lang="uk">Сенсорна панель 1</name>
+        <name lang="zh">触摸人机界面屏幕1</name>
+    </names>
+    <informations>Author: The QElectroTech team
+License: see http://qelectrotech.org/wiki/doc/elements_license</informations>
+    <description>
+        <dynamic_text x="-87" y="105.5" z="1" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{4bc4cb73-0a67-4fc8-921c-3eb551e65ce5}" font="Liberation Sans,4,-1,5,25,0,0,0,0,0,Regular">
+            <text>-_</text>
+        </dynamic_text>
+        <dynamic_text x="-67" y="105.5" z="3" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{bef377ff-1951-4f18-8618-e5f728cdec08}" font="Liberation Sans,4,-1,5,25,0,0,0,0,0,Regular">
+            <text>PE_</text>
+        </dynamic_text>
+        <rect x="-100" y="-100" width="200" height="200" rx="0" ry="0" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <dynamic_text x="-28" y="-17" z="12" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="ElementInfo" uuid="{6268b392-3be8-432d-a70e-860439c1162f}" font="Liberation Sans,5,-1,5,50,0,0,0,0,0,Regular">
+            <text></text>
+            <info_name>label</info_name>
+        </dynamic_text>
+        <dynamic_text x="-106" y="105.5" z="13" text_width="-1" Halignment="AlignLeft" Valignment="AlignTop" frame="false" rotation="0" keep_visual_rotation="false" text_from="UserText" uuid="{77e6cfd3-b413-497b-8f9b-98aea31a837e}" font="Liberation Sans,4,-1,5,25,0,0,0,0,0,Regular">
+            <text>+_</text>
+        </dynamic_text>
+        <rect x="-120" y="-120" width="240" height="240" rx="7.5" ry="7.5" style="line-style:normal;line-weight:normal;filling:none;color:black" antialias="false"/>
+        <terminal uuid="{69a636e0-9292-4add-9e34-b9e502f1fb4c}" name="L+" x="-100" y="120" orientation="s" type="Generic"/>
+        <terminal uuid="{8fe98469-1350-4b7b-8d96-33fc7b97c0b2}" name="L-" x="-80" y="120" orientation="s" type="Generic"/>
+        <terminal uuid="{776f96f3-72be-4037-947d-054734470804}" name="PE" x="-60" y="120" orientation="s" type="Generic"/>
+    </description>
+</definition>
