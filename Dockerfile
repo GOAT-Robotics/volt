@@ -27,6 +27,8 @@ COPY --from=builder --chown=volt:volt /app/prisma ./prisma
 COPY --from=builder --chown=volt:volt /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=volt:volt /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder --chown=volt:volt /app/node_modules/.prisma ./node_modules/.prisma
+# Prisma 6's CLI loads this runtime dependency when applying the schema at startup.
+COPY --from=builder --chown=volt:volt /app/node_modules/effect ./node_modules/effect
 COPY --chown=volt:volt scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN mkdir -p /app/data && chown volt:volt /app/data && chmod +x ./docker-entrypoint.sh
 USER volt
