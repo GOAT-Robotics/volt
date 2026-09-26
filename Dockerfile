@@ -32,6 +32,8 @@ COPY --from=builder --chown=volt:volt /app/node_modules/effect ./node_modules/ef
 COPY --from=builder --chown=volt:volt /app/node_modules/fast-check ./node_modules/fast-check
 COPY --from=builder --chown=volt:volt /app/node_modules/pure-rand ./node_modules/pure-rand
 COPY --from=builder --chown=volt:volt /app/node_modules/@standard-schema ./node_modules/@standard-schema
+# Keep the complete dependency tree for the Prisma schema migration executed by the entrypoint.
+COPY --from=builder --chown=volt:volt /app/node_modules ./node_modules
 COPY --chown=volt:volt scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN mkdir -p /app/data && chown volt:volt /app/data && chmod +x ./docker-entrypoint.sh
 USER volt
