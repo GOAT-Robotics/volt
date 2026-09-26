@@ -14,6 +14,10 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npx prisma generate && npx next build
 
+# Runtime only: keep Prisma's CLI and production dependencies, remove test/build tooling.
+FROM deps AS proddeps
+RUN npm prune --omit=dev
+
 # ── runtime ───────────────────────────────────────────────────────────
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
@@ -24,8 +28,7 @@ COPY --from=builder --chown=volt:volt /app/.next/standalone ./
 COPY --from=builder --chown=volt:volt /app/.next/static ./.next/static
 COPY --from=builder --chown=volt:volt /app/public ./public
 COPY --from=builder --chown=volt:volt /app/prisma ./prisma
-# The entrypoint runs Prisma's schema migration, so retain one complete dependency tree.
-COPY --from=builder --chown=volt:volt /app/node_modules ./node_modules
+COPY --from=proddeps --chown=volt:volt /app/node_modules ./node_modules
 COPY --chown=volt:volt scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN mkdir -p /app/data && chown volt:volt /app/data && chmod +x ./docker-entrypoint.sh
 USER volt
