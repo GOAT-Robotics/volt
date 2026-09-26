@@ -97,7 +97,7 @@ function Overview({ doc }: { doc: EdDoc }) {
         <dd className="tabular">{doc.prims.length - shapes}</dd>
         <dt className="text-subtle">Pins</dt>
         <dd className="tabular">{doc.pins.length}</dd>
-        <dt className="text-subtle">Size (QET)</dt>
+        <dt className="text-subtle">Size</dt>
         <dd className="tabular">
           {f.width} × {f.height}
         </dd>

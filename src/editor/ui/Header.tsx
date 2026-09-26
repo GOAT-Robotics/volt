@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronDown, CloudOff, Download, GitCompare, History, Loader2, Lock, Redo2, Search, Send, Undo2, AlertTriangle, Palette, Hash, Settings2, FileWarning, Plus, Command } from "lucide-react";
 import { useEditor } from "../store";
+import { LogoMark } from "@/components/brand/Logo";
 import { useEditorUI } from "./context";
 import { runCommand } from "./commands";
 import { Button } from "@/components/ui/button";
@@ -60,7 +61,7 @@ export function Header() {
         </Button>
       </Tip>
       <div className="flex min-w-0 items-center gap-2">
-        <div className="flex size-6 items-center justify-center rounded-md bg-accent text-[11px] font-bold text-white">V</div>
+        <LogoMark size={24} />
         <Menu>
           <MenuTrigger asChild>
             <button className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover">

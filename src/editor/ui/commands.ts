@@ -269,7 +269,7 @@ export const COMMANDS: Command[] = [
   { id: "numbering", label: "Automatic numbering…", section: "Project", run: (ui) => ui.openDialog("numbering") },
   { id: "projectProps", label: "Project properties…", section: "Project", run: (ui) => ui.openDialog("projectProps") },
   { id: "export", label: "Export…", section: "Project", keys: "⌘E", enabled: (s) => s.version?.canExport ?? true, run: (ui) => ui.openDialog("export") },
-  { id: "compat", label: "QElectroTech compatibility report", section: "Project", run: (ui) => ui.openDialog("compat") },
+  { id: "compat", label: "File compatibility report", section: "Project", run: (ui) => ui.openDialog("compat") },
   { id: "save", label: "Save now", section: "Project", keys: "⌘S", enabled: editable, run: (ui) => ui.saveNow() },
   { id: "validate", label: "Run checks", section: "Review", run: (_, s) => s.set("panels", { ...s.panels, right: "validate" }) },
   { id: "compare", label: "Compare with another version…", section: "Review", run: (ui) => ui.openDialog("compare") },

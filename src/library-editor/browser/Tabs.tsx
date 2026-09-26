@@ -188,7 +188,7 @@ export function LibrariesTab({ libraries, canCreateOrg, reload, onBrowse }: { li
                 </td>
                 <td>
                   <div className="flex justify-end gap-0.5">
-                    <Button size="icon-sm" variant="ghost" aria-label={`Export ${l.name} as zip`} title="Export as QElectroTech zip" disabled={!l.count} onClick={() => (location.href = `/api/library/export?libraryId=${l.id}`)}>
+                    <Button size="icon-sm" variant="ghost" aria-label={`Export ${l.name} as zip`} title="Export as .zip" disabled={!l.count} onClick={() => (location.href = `/api/library/export?libraryId=${l.id}`)}>
                       <Download />
                     </Button>
                     {l.canManage && (

@@ -64,6 +64,9 @@ export async function createElementRecord(n: NewElement): Promise<LibraryElement
 export async function addRevision(el: LibraryElement, content: string, userId: string, note: string, extra: Partial<Pick<LibraryElement, "name" | "category" | "prefix" | "description" | "tags" | "meta" | "status" | "uuid">> = {}) {
   const revision = el.revision + 1;
   return db.$transaction(async (tx) => {
+    // bulk-installed elements (standard library) have no stored row for their current revision yet
+    const cur = await tx.libraryElementRevision.findUnique({ where: { elementId_revision: { elementId: el.id, revision: el.revision } } });
+    if (!cur) await tx.libraryElementRevision.create({ data: { elementId: el.id, revision: el.revision, content: el.content, meta: el.meta, note: "Installed", userId: el.ownerId } });
     const upd = await tx.libraryElement.update({ where: { id: el.id }, data: { content, revision, ...extra } });
     await tx.libraryElementRevision.create({ data: { elementId: el.id, revision, content, meta: extra.meta ?? el.meta, note: note.slice(0, 500), userId } });
     return upd;
@@ -76,7 +79,7 @@ export function checkElmt(xml: string, path = "element"): ElementDef {
   try {
     def = parseElmt(xml, { id: path });
   } catch (e) {
-    throw new Error(`${path}: not a valid QElectroTech element (${(e as Error).message.slice(0, 160)})`);
+    throw new Error(`${path}: not a valid element file (${(e as Error).message.slice(0, 160)})`);
   }
   if (!def.prims.length && !def.pins.length) throw new Error(`${path}: the element has no drawing and no terminals`);
   return def;

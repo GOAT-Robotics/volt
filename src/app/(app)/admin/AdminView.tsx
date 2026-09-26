@@ -229,7 +229,7 @@ function GeneralTab({ data }: { data: AdminData }) {
         </Row>
       </Section>
       <Section title="Editor & compatibility">
-        <Row label="QElectroTech baseline version" hint="Version written into exported .qet files.">
+        <Row label=".qet format version" hint="Version written into exported .qet files.">
           <Input value={s.qetBaseline} onChange={(e) => up("qetBaseline", e.target.value)} className="w-28 text-right" aria-label="QET baseline" />
         </Row>
         <Row label="Autosave interval" hint="Seconds between editor autosaves.">

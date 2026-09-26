@@ -302,7 +302,7 @@ export function MetadataForm({ readOnly, categories }: { readOnly: boolean; cate
         <TextField label="License" value={meta.license} disabled={d} placeholder="e.g. CC-BY 3.0, internal" onChange={(v) => setMeta({ license: v })} />
         <TextField label="Attribution / author" value={meta.attribution} disabled={d} onChange={(v) => setMeta({ attribution: v })} />
         <TextField label="Source (URL or document)" value={meta.source} disabled={d} onChange={(v) => setMeta({ source: v })} />
-        <TextField label="QElectroTech information text" multiline value={informations} disabled={d} placeholder="Author / license notes stored inside the .elmt file" onChange={(v) => change((dd) => void (dd.informations = v), "informations")} />
+        <TextField label="Information text" multiline value={informations} disabled={d} placeholder="Author / license notes stored inside the .elmt file" onChange={(v) => change((dd) => void (dd.informations = v), "informations")} />
       </section>
     </div>
   );

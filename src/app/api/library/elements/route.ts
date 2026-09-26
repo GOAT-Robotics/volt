@@ -34,9 +34,10 @@ export const GET = route(async (req) => {
   if (kind === "ELEMENT" || kind === "BLOCK") and.push({ kind });
   if (status && (LIB_STATUSES as string[]).includes(status)) and.push({ status });
   if (libraryId) and.push({ libraryId });
-  if (category) {
+  if (category === "" && sp.get("exact") === "1") and.push({ category: "" });
+  else if (category) {
     const c = normCategory(category);
-    and.push({ OR: [{ category: c }, { category: { startsWith: c + "/" } }] });
+    and.push(sp.get("exact") === "1" ? { category: c } : { OR: [{ category: c }, { category: { startsWith: c + "/" } }] });
   }
   if (tag) and.push({ tags: { contains: JSON.stringify(tag).slice(0, -1) } });
   if (idsParam) and.push({ id: { in: idsParam.split(",").filter(Boolean).slice(0, 500) } });
@@ -52,16 +53,21 @@ export const GET = route(async (req) => {
       ],
     });
   }
-  const rows = await db.libraryElement.findMany({
-    where: { AND: and },
-    include: { library: true, shares: { select: { userId: true, canEdit: true } } },
-    orderBy: [{ category: "asc" }, { name: "asc" }],
-    take: limit,
-    omit: { content: true },
-  });
+  const offset = Math.max(0, Number(sp.get("offset")) || 0);
+  const [rows, total] = await Promise.all([
+    db.libraryElement.findMany({
+      where: { AND: and },
+      include: { library: true, shares: { select: { userId: true, canEdit: true } } },
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+      skip: offset,
+      take: limit,
+      omit: { content: true },
+    }),
+    db.libraryElement.count({ where: { AND: and } }),
+  ]);
   const owners = await db.user.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.ownerId))] } }, select: { id: true, name: true } });
   const names = new Map(owners.map((u) => [u.id, u.name]));
-  return { items: rows.map((r) => toLibItem(ctx, { ...r, content: "" }, names.get(r.ownerId))), limit, truncated: rows.length === limit };
+  return { items: rows.map((r) => toLibItem(ctx, { ...r, content: "" }, names.get(r.ownerId))), limit, total, truncated: offset + rows.length < total };
 });
 
 const Create = z.object({

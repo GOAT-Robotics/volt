@@ -92,47 +92,69 @@ export function LibraryBrowser({ user }: { user: LibUser }) {
       .catch(() => {});
   }, [user.isApprover, reload]);
 
+  const PAGE = 240;
+  const [total, setTotal] = useState(0);
+  const [cats, setCats] = useState<{ path: string; count: number }[] | null>(null);
+  const [more, setMore] = useState(0);
+
+  // category tree with counts (server side: the standard library alone has ~9,000 symbols)
   useEffect(() => {
     let off = false;
-    setItems(null);
-    const p = new URLSearchParams({ q: dq, scope, kind, limit: "2000" });
+    const p = new URLSearchParams({ scope, kind });
+    if (status) p.set("status", status);
+    if (libraryId) p.set("libraryId", libraryId);
+    api<{ total: number; categories: { path: string; count: number }[] }>(`/api/library/categories?${p}`)
+      .then((j) => !off && setCats(j.categories))
+      .catch(() => !off && setCats([]));
+    return () => {
+      off = true;
+    };
+  }, [scope, kind, status, libraryId, reload]);
+
+  useEffect(() => setMore(0), [dq, scope, kind, status, tag, libraryId, category, reload]);
+
+  useEffect(() => {
+    let off = false;
+    if (!more) setItems(null);
+    const p = new URLSearchParams({ q: dq, scope, kind, limit: String(PAGE), offset: String(more * PAGE) });
     if (status) p.set("status", status);
     if (tag) p.set("tag", tag);
     if (libraryId) p.set("libraryId", libraryId);
-    api<{ items: LibItem[]; truncated: boolean }>(`/api/library/elements?${p}`)
+    if (category && category !== "__none") p.set("category", category);
+    api<{ items: LibItem[]; truncated: boolean; total?: number }>(`/api/library/elements?${p}`)
       .then((j) => {
         if (off) return;
-        setItems(j.items);
+        setItems((cur) => (more && cur ? [...cur, ...j.items] : j.items));
         setTruncated(j.truncated);
+        setTotal(j.total ?? j.items.length);
       })
       .catch((e) => !off && (toast.error((e as Error).message), setItems([])));
     return () => {
       off = true;
     };
-  }, [dq, scope, kind, status, tag, libraryId, reload]);
+  }, [dq, scope, kind, status, tag, libraryId, category, more, reload]);
 
   const tree = useMemo(() => {
     const root: TreeNode = { name: "", path: "", count: 0, children: new Map() };
-    for (const it of items ?? []) {
-      root.count++;
+    for (const c of cats ?? []) {
+      root.count += c.count;
       let n = root;
-      const parts = it.category ? it.category.split("/") : ["Uncategorized"];
+      const parts = c.path ? c.path.split("/") : ["Uncategorized"];
       parts.forEach((seg, i) => {
-        const path = it.category ? parts.slice(0, i + 1).join("/") : "__none";
-        let c = n.children.get(seg);
-        if (!c) n.children.set(seg, (c = { name: seg, path, count: 0, children: new Map() }));
-        c.count++;
-        n = c;
+        const path = c.path ? parts.slice(0, i + 1).join("/") : "__none";
+        let ch = n.children.get(seg);
+        if (!ch) n.children.set(seg, (ch = { name: seg, path, count: 0, children: new Map() }));
+        ch.count += c.count;
+        n = ch;
       });
     }
     return root;
-  }, [items]);
+  }, [cats]);
 
   const shown = useMemo(() => {
     const list = items ?? [];
-    if (!category) return list;
     if (category === "__none") return list.filter((i) => !i.category);
-    return list.filter((i) => i.category === category || i.category.startsWith(category + "/"));
+    return list;
   }, [items, category]);
 
   const allTags = useMemo(() => {
@@ -277,7 +299,7 @@ export function LibraryBrowser({ user }: { user: LibUser }) {
                     </Badge>
                   )}
                   <span className="ml-auto text-2xs text-subtle">
-                    {items ? `${shown.length} ${kind === "BLOCK" ? "block" : "element"}${shown.length === 1 ? "" : "s"}${truncated ? " (refine the search to see more)" : ""}` : ""}
+                    {items ? `${truncated ? `${shown.length} of ${total.toLocaleString()}` : total.toLocaleString()} ${kind === "BLOCK" ? "block" : "element"}${total === 1 ? "" : "s"}` : ""}
                   </span>
                 </div>
               </div>
@@ -285,7 +307,7 @@ export function LibraryBrowser({ user }: { user: LibUser }) {
                 <div className="flex items-center gap-2 border-b border-accent/20 bg-accent-soft px-5 py-1.5 text-xs">
                   <span className="font-medium text-accent">{sel.size} selected</span>
                   <Button size="xs" variant="primary" onClick={exportSel} disabled={exporting || kind === "BLOCK"}>
-                    <Download /> Export as QElectroTech .zip
+                    <Download /> Export as .zip
                   </Button>
                   <Button size="xs" variant="ghost" onClick={() => setSel(new Set(shown.map((i) => i.id)))}>
                     Select all {shown.length}
@@ -308,7 +330,7 @@ export function LibraryBrowser({ user }: { user: LibUser }) {
                       !q && (
                         <div className="flex gap-2">
                           <Button onClick={() => setImportOpen(true)}>
-                            <Upload /> Import .elmt / .zip
+                            <Upload /> Import
                           </Button>
                           <Button variant="primary" onClick={() => setWizard(true)}>
                             <Plus /> New element
@@ -317,14 +339,23 @@ export function LibraryBrowser({ user }: { user: LibUser }) {
                       )
                     }
                   >
-                    {q || tag || status || category ? "Try another search or clear the filters." : "Create a symbol from a template, import QElectroTech elements, or ask a colleague to share theirs."}
+                    {q || tag || status || category ? "Try another search or clear the filters." : "Create a symbol from a template, import .elmt files, or ask a colleague to share theirs."}
                   </Empty>
                 ) : (
-                  <ul className="grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] gap-3" aria-label="Library elements">
-                    {shown.map((it) => (
-                      <Card key={it.id} it={it} selected={sel.has(it.id)} selecting={sel.size > 0} onToggle={(v) => toggle(it.id, v)} onTag={(t) => setTag(t)} />
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] gap-3" aria-label="Library elements">
+                      {shown.map((it) => (
+                        <Card key={it.id} it={it} selected={sel.has(it.id)} selecting={sel.size > 0} onToggle={(v) => toggle(it.id, v)} onTag={(t) => setTag(t)} />
+                      ))}
+                    </ul>
+                    {truncated && (
+                      <div className="mt-5 flex justify-center">
+                        <Button variant="secondary" onClick={() => setMore((m) => m + 1)}>
+                          Show more ({(total - shown.length).toLocaleString()} left)
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

@@ -85,7 +85,7 @@ export function CompatDialog({ onClose }: { onClose: () => void }) {
   const rep = tab === "export" ? exp : imp;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title="QElectroTech compatibility" description={`Baseline: QElectroTech ${doc.qet?.version ?? "0.100"} project format`} wide>
+      <DialogContent title="File compatibility" description={`.qet format ${doc.qet?.version ?? "0.100"}`} wide>
         <div className="mb-3 flex gap-1 text-xs">
           <Button size="xs" variant={tab === "export" ? "secondary" : "ghost"} onClick={() => setTab("export")}>
             If exported now

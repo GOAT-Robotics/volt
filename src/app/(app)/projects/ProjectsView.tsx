@@ -154,7 +154,7 @@ export function ProjectsView(p: {
                   ) : undefined
                 }
               >
-                {p.canCreate ? "Start from a blank drawing or a project template, or import an existing QElectroTech .qet file — its compatibility report is kept with the project." : "You haven’t been added to any project yet. Ask a project owner to invite you."}
+                {p.canCreate ? "Start from a blank drawing or a project template, or import an existing .qet file." : "You haven’t been added to any project yet. Ask a project owner to invite you."}
               </Empty>
             )
           ) : (

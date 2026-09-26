@@ -376,17 +376,29 @@ export function pasteClip(doc: Doc, page: Page, clip: Clip, offset: Pt, renumber
   const map = new Map<string, string>();
   for (const [id, d] of Object.entries(clip.defs)) if (!doc.defs[id]) doc.defs[id] = d;
   const sel = emptySel();
-  for (const e of clip.elements) {
+  const relabel = new Map<string, string>();
+  // masters first so slaves pick up the master's new reference regardless of clip order
+  const rank = (e: ElemInst) => ((clip.defs[e.defId] ?? doc.defs[e.defId])?.linkType === "slave" ? 1 : 0);
+  const ordered = [...clip.elements].sort((a, b) => rank(a) - rank(b));
+  for (const e of ordered) {
     const n: ElemInst = { ...JSON.parse(JSON.stringify(e)), id: uid(), x: e.x + offset.x, y: e.y + offset.y, qet: undefined, group: e.group, links: undefined };
     n.texts = n.texts.map((t) => ({ ...t, id: uid(), uuid: undefined }));
     map.set(e.id, n.id);
-    if (renumber && doc.numbering.autoOnPlace && !n.refLocked) {
+    const old = e.info.label ?? "";
+    const lt = clip.defs[e.defId]?.linkType ?? doc.defs[e.defId]?.linkType ?? "simple";
+    if (renumber && doc.numbering.autoOnPlace && !n.refLocked && old && !relabel.has(old) && lt !== "slave" && lt !== "next_report" && lt !== "previous_report") {
       n.info.label = "";
       page.elements.push(n);
-      n.info.label = nextRef(doc, page, n);
-    } else page.elements.push(n);
-    sel.elements.push(n.id);
+      const ref = nextRef(doc, page, n);
+      n.info.label = ref || old;
+      relabel.set(old, n.info.label);
+    } else {
+      // elements sharing a reference (coil ↔ its contacts) keep sharing the renumbered one
+      if (old && relabel.has(old)) n.info.label = relabel.get(old)!;
+      page.elements.push(n);
+    }
   }
+  sel.elements = clip.elements.map((e) => map.get(e.id)!); // clip order (placeBlock maps by index)
   for (const j of clip.junctions) {
     const n = { ...j, id: uid(), x: j.x + offset.x, y: j.y + offset.y, qetElemId: undefined };
     map.set(j.id, n.id);

@@ -4,8 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: { default: "Volt", template: "%s · Volt" },
-  description: "Electrical diagrams, QElectroTech-compatible, with review and release control.",
-  icons: { icon: "/favicon.svg" },
+  description: "Electrical diagrams with review and release control.",
 };
 export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: dark)", color: "#0e0e10" }, { color: "#f7f7f8" }] };
 

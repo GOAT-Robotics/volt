@@ -703,7 +703,7 @@ function importDiagram(ctx: ImportCtx, diag: XElement, di: number): Page {
     // Element::valideXml(): type, x and y are mandatory
     if (!type || optNum(el, "x") === undefined || optNum(el, "y") === undefined) {
       keepElements.push(idx);
-      rep.add("degraded", "elements", "invalid element instance (ignored by QET too) — kept in file, not shown", 1, title);
+      rep.add("degraded", "elements", "invalid element instance — kept in file, not shown", 1, title);
       return;
     }
     const jdef = ctx.junctionDefs.get(type);
@@ -833,8 +833,8 @@ function importDiagram(ctx: ImportCtx, diag: XElement, di: number): Page {
   });
   if (keepConductors.length) page.meta["qet:keepConductors"] = keepConductors.join(",");
   if (page.wires.length) rep.add("supported", "conductors", "conductors", page.wires.length, title);
-  if (autoRouted - inconsistent) rep.add("supported", "conductors", "conductors without stored path auto-routed like QET", autoRouted - inconsistent, title);
-  if (inconsistent) rep.add("degraded", "conductors", "conductor path inconsistent with its terminals — auto-routed like QET", inconsistent, title);
+  if (autoRouted - inconsistent) rep.add("supported", "conductors", "wires without a stored path were routed automatically", autoRouted - inconsistent, title);
+  if (inconsistent) rep.add("degraded", "conductors", "wire path did not match its terminals — routed automatically", inconsistent, title);
 
   /* ---------------- independent texts ---------------- */
   subChildren(diag, "inputs", "input").forEach((t, idx) => {
@@ -866,7 +866,7 @@ function importDiagram(ctx: ImportCtx, diag: XElement, di: number): Page {
 export function importQet(xml: string, filename: string): { doc: Doc; report: CompatReport } {
   const xdoc = parseXml(xml);
   const root = xdoc.documentElement as XElement;
-  if (root.tagName !== "project") throw new Error(`not a QElectroTech project (root <${root.tagName}>)`);
+  if (root.tagName !== "project") throw new Error(`not a .qet project (root <${root.tagName}>)`);
   const version = attr(root, "version");
   const doc = newDoc(attr(root, "title") || basename(filename));
   doc.pages = [];
@@ -1328,7 +1328,7 @@ function writeElement(ctx: ExportCtx, orig: XElement | undefined, inst: ElemInst
     if (inst.refLocked !== undefined && (attr(el, "freezeLabel") === "true") !== inst.refLocked) el.setAttribute("freezeLabel", inst.refLocked ? "true" : "false");
     if (inst.locked !== undefined && (attr(el, "is_movable", "1") === "0") !== inst.locked) el.setAttribute("is_movable", inst.locked ? "0" : "1");
   }
-  if (inst.mirror) ctx.rep.add("degraded", "elements", "mirrored elements exported unmirrored (QET cannot mirror instances)", 1, pageTitle);
+  if (inst.mirror) ctx.rep.add("degraded", "elements", "mirrored elements are exported unmirrored (the .qet format has no mirroring)", 1, pageTitle);
   if (def.placeholder) ctx.rep.add("degraded", "elements", "instances of unavailable definitions keep their original reference", 1, pageTitle);
 
   const ids = writeTerminals(ctx, el, def, typeChanged ? undefined : inst.qet?.terminalIds, alloc, taken);

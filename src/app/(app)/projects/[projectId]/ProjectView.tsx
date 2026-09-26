@@ -373,7 +373,7 @@ function VersionsTab({ data, onStart }: { data: ProjectData; onStart?: (v: Versi
                         )}
                         {data.perms.export && ["RELEASED", "SUPERSEDED"].includes(v.status) && (
                           <MenuItem onSelect={() => download(`/api/versions/${v.id}/file.qet`)}>
-<FileCode2 /> QElectroTech .qet
+<FileCode2 /> Project file (.qet)
 </MenuItem>
                         )}
                         {v.importId && data.perms.view && (

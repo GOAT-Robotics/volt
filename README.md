@@ -1,6 +1,6 @@
 # Volt
 
-A browser-based electrical diagram editor that opens and saves **QElectroTech** projects (`.qet`) and elements (`.elmt`), with an organization-wide component library, project-wide styles, controlled versions, review/approval, digital signatures and a full audit trail. Sign-in is Microsoft Entra ID.
+A browser-based electrical diagram editor with a complete standard symbol library, an organization-wide component library, project-wide styles, controlled versions, review/approval, digital signatures and a full audit trail. Sign-in is Microsoft Entra ID.
 
 Volt is a drawing and document-control tool. It does not simulate circuits, lay out PCBs, or certify anything. Its checks look for drawing consistency, not electrical safety.
 
@@ -43,6 +43,7 @@ Guests (B2B) follow the guest policy you set in Administration.
 ## Production (Docker)
 
 The production image is built and published by GitHub Actions to GHCR. On the server, log in to GHCR with the supplied read-only `GITHUB_TOKEN`, copy `.env` into `/opt/volt`, and run `docker compose pull && docker compose up -d`.
+The standard library, blocks and title blocks install automatically when the container starts.
 
 - Data (SQLite DB + signing key) lives in the host bind directory `/opt/volt/data`, mounted at `/app/data`. Back it up.
 - The container applies additive schema changes on start.
@@ -70,7 +71,7 @@ The production image is built and published by GitHub Actions to GHCR. On the se
   - Right: inspector, comments & review, checks, and history & versions.
   - Command palette (⌘K), context menus, keyboard shortcuts (`?`), and undo/redo.
   - Autosave with conflict detection.
-- **Clickable labels (cross references).** Component references (K1 coil ↔ K1 contacts), wire numbers, and QElectroTech folio-report / master–slave links are links.
+- **Clickable labels (cross references).** Component references (K1 coil ↔ K1 contacts), wire numbers, and folio-report / master–slave links are links.
   - ⌘/Ctrl-click a label to jump to its next occurrence on any page; on read-only versions a plain click works. Press `L` to follow the selection, ⌘[ or Alt+← to go back.
   - The inspector lists every occurrence with its page and grid reference (e.g. page 3 · 5C).
   - Exported PDFs carry the same links as internal PDF links.
@@ -86,6 +87,7 @@ The production image is built and published by GitHub Actions to GHCR. On the se
 - **Accessibility.** Keyboard alternatives for the canvas (Connect pins dialog, nudging, commands) and a screen-reader live region.
 
 **Library** (`/library`)
+- **Standard library.** About 8,800 symbols (electric, logic, hydraulic, pneumatic, energy), starter circuit blocks (DOL starter, start/stop with self-holding, pilot lamp, relay, 24 V supply, terminal strip) and standard title blocks. They are installed into every workspace when the server starts, or with `npm run db:seed`, and updated in place when a newer collection ships.
 - **Sharing.** Elements and blocks can be private, shared with named people (view or edit), or published to the whole organization. Org publishing can require approval.
 - **History and provenance.** Every element keeps its revision history. Imported libraries keep their license and attribution. Import `.elmt` files, folders or `.zip` archives; export `.elmt` or `.zip`.
 - **Element editor.** Canvas symbol editor with lines, rectangles, ellipses, arcs, polygons, text, dynamic text and pins; pin table; validation; live previews. A New-element wizard offers templates and SVG import.
@@ -96,9 +98,9 @@ The production image is built and published by GitHub Actions to GHCR. On the se
 - **Signatures and release.** Built-in, provider-neutral signing: fresh sign-in, Ed25519 seal over the version hashes, a signed release PDF with an evidence page, and a verification endpoint. See `docs/SIGNING.md`. Versions can then be released, superseded or withdrawn.
 - **Traceability.** Notifications (in-app, email, Teams webhook), an audit log with CSV export, search across all versions, admin settings, and style and project templates.
 
-## QElectroTech compatibility
+## File compatibility
 
-- **Import.** `src/core/qet` reads QET 0.3 to 0.100 projects. Anything it doesn't model is kept and written back unchanged, so an untouched project exports byte-identical. Tested on the bundled QElectroTech examples.
+- **Import.** `src/core/qet` reads QET 0.3 to 0.100 projects. Anything it doesn't model is kept and written back unchanged, so an untouched project exports byte-identical. Tested on the bundled examples.
 - **Compatibility report.** Shown on import and before export: what is supported, degraded, preserved-but-not-editable, or unsupported.
 - **Junctions.** Volt junctions and dangling wire ends are exported as a tiny embedded `volt_junction` element, because QET has no free junctions. Volt recognizes them on re-import.
 - **Limitations.** QET has no mirroring, so mirrored elements are exported unmirrored. Composite texts show their last computed value. Shapes, cross-references and terminal strips are kept and drawn, but can't be edited.

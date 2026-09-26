@@ -50,7 +50,7 @@ export const authConfig: NextAuthConfig = {
   trustHost: true,
   providers,
   session: { strategy: "jwt", maxAge: sessionHours * 3600 },
-  pages: { signIn: "/login", error: "/login" },
+  pages: { signIn: "/login", signOut: "/logout", error: "/login" },
   callbacks: {
     async signIn({ user, account, profile }) {
       const p = (profile ?? {}) as Record<string, unknown>;

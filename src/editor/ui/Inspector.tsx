@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { RotateCw, RotateCcw, FlipHorizontal2, Lock, Unlock, RotateCcw as Reset, Plus, X, Link2, Unlink, ExternalLink, Pencil, Eye, EyeOff } from "lucide-react";
+import { toast } from "sonner";
 import { useEditor } from "../store";
 import { useEditorUI } from "./context";
 import { runCommand } from "./commands";
@@ -8,7 +9,7 @@ import { Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge, Switch, Tip } from "@/components/ui/misc";
 import { getPage, emptySel } from "@/core/ops";
-import type { Doc, ElemInst, LineStyle, Page, PlacedText, TextRole, TextStyle, Wire, WireEnd } from "@/core/model";
+import type { Doc, ElemInst, LineStyle, Page, PlacedText, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
 import { TEXT_ROLES } from "@/core/model";
 import { ROLE_LABELS } from "@/core/styles";
 import { docStyles } from "@/core/render/scene";
@@ -112,11 +113,29 @@ export function Inspector() {
 
 /* ------------------------------------------------------------------ */
 
+let stdCache: Promise<string[]> | null = null;
+function useStandardTitleBlocks() {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    stdCache ??= fetch("/api/titleblocks")
+      .then((r) => (r.ok ? r.json() : { templates: [] }))
+      .then((j: { templates: { name: string }[] }) => j.templates.map((t) => t.name))
+      .catch(() => []);
+    let live = true;
+    void stdCache.then((n) => live && setNames(n));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return names;
+}
+
 function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable: boolean }) {
   const ui = useEditorUI();
   const s = useEditor.getState;
   const upd = (label: string, fn: (p: Page) => void) => s().apply(label, (d) => fn(getPage(d, page.id)));
   const tpl = doc.titleBlocks[page.titleBlock.template];
+  const std = useStandardTitleBlocks();
   const fieldNames = useMemo(() => {
     const names = new Set<string>(["title", "author", "date", "filename", "indexrev", "version", "plant", "locmach"]);
     for (const c of tpl?.cells ?? []) if (c.type === "field") for (const m of (c.value ?? "").matchAll(/%\{?(\w+)\}?/g)) names.add(m[1]);
@@ -144,10 +163,38 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
           <Switch checked={page.titleBlock.show} disabled={!editable} onCheckedChange={(v) => upd("Toggle title block", (p) => (p.titleBlock.show = v))} />
         </Row>
         <Row label="Template">
-          <NativeSelect value={page.titleBlock.template} disabled={!editable} onChange={(e) => upd("Title block template", (p) => (p.titleBlock.template = e.target.value))}>
-            {Object.keys(doc.titleBlocks).map((k) => (
-              <option key={k}>{k}</option>
-            ))}
+          <NativeSelect
+            value={page.titleBlock.template}
+            disabled={!editable}
+            onChange={async (e) => {
+              const v = e.target.value;
+              if (!v.startsWith("std:")) return upd("Title block template", (p) => (p.titleBlock.template = v));
+              const name = v.slice(4);
+              const r = await fetch(`/api/titleblocks/${encodeURIComponent(name)}`);
+              if (!r.ok) return void toast.error("Could not load title block");
+              const { template } = (await r.json()) as { template: TitleBlockTemplate };
+              s().apply("Title block template", (d) => {
+                d.titleBlocks[template.name] = template;
+                getPage(d, page.id).titleBlock.template = template.name;
+              });
+            }}
+          >
+            <optgroup label="In this project">
+              {Object.keys(doc.titleBlocks).map((k) => (
+                <option key={k}>{k}</option>
+              ))}
+            </optgroup>
+            {std.filter((k) => !doc.titleBlocks[k]).length > 0 && (
+              <optgroup label="Standard">
+                {std
+                  .filter((k) => !doc.titleBlocks[k])
+                  .map((k) => (
+                    <option key={k} value={`std:${k}`}>
+                      {k}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
           </NativeSelect>
         </Row>
         {fieldNames.map((f) => (

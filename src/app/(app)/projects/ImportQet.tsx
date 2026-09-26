@@ -21,7 +21,7 @@ export function ImportQetButton({ folders, currentFolder }: { folders: FolderRow
   const [parsed, setParsed] = React.useState<Parsed | null>(null);
   const onFile = async (file: File | undefined) => {
     if (!file) return;
-    if (!/\.qet$/i.test(file.name)) return toast.error("Choose a QElectroTech project file (.qet)");
+    if (!/\.qet$/i.test(file.name)) return toast.error("Choose a project file (.qet)");
     if (file.size > 50 * 1024 * 1024) return toast.error("File exceeds the 50 MB limit");
     setParsing(true);
     try {
@@ -121,7 +121,7 @@ function ImportPreview({ parsed, folders, currentFolder, onClose }: { parsed: Pa
   };
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
-      <DialogContent title="Import QElectroTech project" description={`${parsed.file.name} · ${(parsed.file.size / 1024).toFixed(0)} KB · QET ${r.qetVersion || "unknown version"}`} wide="xl">
+      <DialogContent title="Import project" description={`${parsed.file.name} · ${(parsed.file.size / 1024).toFixed(0)} KB · format ${r.qetVersion || "unknown"}`} wide="xl">
         <div className="grid gap-4 md:grid-cols-[1fr_1.4fr]">
           <div className="space-y-3">
             <div className="rounded-md border border-border bg-panel-2 p-3">

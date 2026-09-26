@@ -5,7 +5,7 @@
  *  - default APPROVED style template (built-in styles) + default project template
  *  - demo project imported from a real QElectroTech fixture: v1 RELEASED (synthetic approval record), v2 DRAFT
  *  - dev users (only when AUTH_DEV_LOGIN=true): approver, signatory, designer, reviewer
- *  - library seed from src/lib/library/seed.ts when present
+ *  - standard element library (src/lib/library/standard.ts)
  */
 import { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -221,19 +221,10 @@ async function main() {
     console.log(`demo        ${name}: ${report.pageCount} pages, ${report.elementCount} components, ${n1} search rows; v1 RELEASED, v2 DRAFT`);
   }
 
-  // library (agent L)
-  const libSeed = path.join(process.cwd(), "src/lib/library/seed.ts");
-  if (existsSync(libSeed)) {
-    try {
-      const mod = (await import("../src/lib/library/seed" as string)) as { seedLibrary?: (workspaceId: string, ownerId: string) => Promise<unknown> };
-      if (typeof mod.seedLibrary === "function") {
-        await mod.seedLibrary(ws.id, admin.id);
-        console.log("library     seeded");
-      }
-    } catch (e) {
-      console.warn("library     seed failed:", (e as Error).message);
-    }
-  }
+  // standard element library (full default collection + starter blocks)
+  const { ensureStandardLibrary } = await import("../src/lib/library/standard");
+  const r = await ensureStandardLibrary(ws.id, { ownerId: admin.id, log: (m) => process.stdout.write(`\r${m}`) });
+  console.log(`\rlibrary     standard collection ${r.version}: +${r.created} elements (${r.skipped} already present), ${r.blocks} blocks in ${(r.ms / 1000).toFixed(1)} s`);
 }
 
 main()

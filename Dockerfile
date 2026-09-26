@@ -29,6 +29,7 @@ COPY --from=builder --chown=volt:volt /app/.next/static ./.next/static
 COPY --from=builder --chown=volt:volt /app/public ./public
 COPY --from=builder --chown=volt:volt /app/prisma ./prisma
 COPY --from=proddeps --chown=volt:volt /app/node_modules ./node_modules
+COPY --from=builder --chown=volt:volt /app/seed ./seed
 COPY --chown=volt:volt scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN mkdir -p /app/data && chown volt:volt /app/data && chmod +x ./docker-entrypoint.sh
 USER volt

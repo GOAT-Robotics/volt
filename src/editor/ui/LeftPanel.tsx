@@ -115,11 +115,28 @@ function LibraryPanel() {
   const ui = useEditorUI();
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [cats, setCats] = useState<{ path: string; count: number }[] | null>(null);
   useEffect(() => {
-    if (scope === "project") return;
+    if (scope === "project" || dq.trim()) return;
     let off = false;
     setErr(null);
-    const params = new URLSearchParams({ q: dq, scope, kind, limit: "400" });
+    setCats(null);
+    fetch(`/api/library/categories?${new URLSearchParams({ scope, kind })}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Library unavailable"))))
+      .then((j: { categories: { path: string; count: number }[] }) => !off && setCats(j.categories))
+      .catch((e) => !off && setErr(e.message));
+    return () => {
+      off = true;
+    };
+  }, [dq, scope, kind, reload]);
+  const tree = useMemo(() => buildCatTree(cats ?? []), [cats]);
+
+  useEffect(() => {
+    if (scope === "project" || !dq.trim()) return;
+    let off = false;
+    setErr(null);
+    setItems(null);
+    const params = new URLSearchParams({ q: dq, scope, kind, limit: "300" });
     fetch(`/api/library/elements?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Library unavailable"))))
       .then((j: { items: LibItem[] }) => !off && setItems(j.items))
@@ -221,7 +238,7 @@ function LibraryPanel() {
                   <RefreshCw />
                 </Button>
               </Tip>
-              <Tip content="Import .elmt files or a .zip into your library">
+              <Tip content="Import element files or a .zip into your library">
                 <Button variant="ghost" size="icon-sm" onClick={() => fileRef.current?.click()} aria-label="Import elements">
                   <Upload />
                 </Button>
@@ -246,13 +263,25 @@ function LibraryPanel() {
           )
         ) : err ? (
           <Empty title="Library unavailable">{err}</Empty>
+        ) : !dq.trim() ? (
+          !cats ? (
+            <div className="flex justify-center p-6 text-subtle">
+              <Spinner />
+            </div>
+          ) : !cats.length ? (
+            <Empty icon={kind === "BLOCK" ? <Boxes /> : <Library />} title={kind === "BLOCK" ? "No blocks yet" : "No elements yet"}>
+              {kind === "BLOCK" ? "Select components on the canvas and choose “Create reusable block”." : "Import elements or create one in the element editor."}
+            </Empty>
+          ) : (
+            <CatTree nodes={tree} scope={scope} kind={kind} onPick={pickLib} projectDefs={defs} depth={0} />
+          )
         ) : !items ? (
           <div className="flex justify-center p-6 text-subtle">
             <Spinner />
           </div>
         ) : !items.length ? (
           <Empty icon={kind === "BLOCK" ? <Boxes /> : <Library />} title={q ? "No matches" : kind === "BLOCK" ? "No blocks yet" : "No elements yet"}>
-            {kind === "BLOCK" ? "Select components on the canvas and choose “Create reusable block”." : "Import .elmt files or create a new element in the element editor."}
+            {q ? `Nothing matches “${q}” in ${kind === "BLOCK" ? "blocks" : "elements"}.` : kind === "BLOCK" ? "Select components on the canvas and choose “Create reusable block”." : "Import elements or create one in the element editor."}
           </Empty>
         ) : (
           grouped.map(([cat, list]) => <Category key={cat} name={cat} items={list} onPick={pickLib} defaultOpen={grouped.length < 6 || !!q} projectDefs={defs} />)
@@ -282,9 +311,41 @@ function DefTile({ def, onPick }: { def: ElementDef; onPick: () => void }) {
   );
 }
 
-function Category({ name, items, onPick, defaultOpen, projectDefs }: { name: string; items: LibItem[]; onPick: (i: LibItem) => void; defaultOpen: boolean; projectDefs: Record<string, ElementDef> }) {
+function Category({
+  name,
+  items: given,
+  onPick,
+  defaultOpen,
+  projectDefs,
+  count,
+  lazy,
+  children,
+  depth = 0,
+}: {
+  name: string;
+  items?: LibItem[];
+  onPick: (i: LibItem) => void;
+  defaultOpen: boolean;
+  projectDefs: Record<string, ElementDef>;
+  count?: number;
+  lazy?: { path: string; scope: string; kind: string; direct: number };
+  children?: React.ReactNode;
+  depth?: number;
+}) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => setOpen(defaultOpen), [defaultOpen]);
+  const [loaded, setLoaded] = useState<LibItem[] | null>(null);
+  const started = useRef(false);
+  useEffect(() => {
+    if (!open || !lazy || !lazy.direct || loaded || started.current) return;
+    started.current = true;
+    const p = new URLSearchParams({ scope: lazy.scope, kind: lazy.kind, category: lazy.path, exact: "1", limit: "600" });
+    fetch(`/api/library/elements?${p}`)
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((j: { items: LibItem[] }) => setLoaded(j.items))
+      .catch(() => setLoaded([]));
+  }, [open, lazy, loaded]);
+  const items = given ?? loaded ?? [];
   const ui = useEditorUI();
   const inProject = useMemo(() => {
     const m = new Map<string, number>();
@@ -292,14 +353,20 @@ function Category({ name, items, onPick, defaultOpen, projectDefs }: { name: str
     return m;
   }, [projectDefs]);
   return (
-    <div className="mb-1">
-      <button onClick={() => setOpen(!open)} className="flex h-6 w-full items-center gap-1 rounded px-1 text-2xs font-medium text-muted hover:bg-hover" aria-expanded={open}>
-        <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
+    <div className={cn(depth === 0 && "mb-0.5")}>
+      <button onClick={() => setOpen(!open)} className="flex h-6 w-full items-center gap-1 rounded px-1 text-2xs font-medium text-muted hover:bg-hover" style={{ paddingLeft: 4 + depth * 10 }} aria-expanded={open}>
+        <ChevronRight className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")} />
         <span className="truncate">{name.replace(/^\d+_/, "").replace(/\/\d+_/g, " / ")}</span>
-        <span className="ml-auto text-subtle tabular">{items.length}</span>
+        <span className="ml-auto text-subtle tabular">{count ?? items.length}</span>
       </button>
-      {open && (
-        <div className="grid grid-cols-3 gap-1 pl-1">
+      {open && children}
+      {open && lazy && lazy.direct > 0 && !loaded && (
+        <div className="flex justify-center py-2 text-subtle">
+          <Spinner />
+        </div>
+      )}
+      {open && items.length > 0 && (
+        <div className="grid grid-cols-3 gap-1 pl-1" style={{ paddingLeft: 4 + depth * 10 }}>
           {items.map((it) => {
             const rev = inProject.get(it.id);
             const outdated = rev !== undefined && rev < it.revision;
@@ -538,5 +605,40 @@ function BlockModeSelect() {
       <option value="derived">Place derived</option>
       <option value="independent">Place as copy</option>
     </select>
+  );
+}
+
+type CatNodeT = { name: string; path: string; count: number; direct: number; children: CatNodeT[] };
+
+function buildCatTree(cats: { path: string; count: number }[]): CatNodeT[] {
+  const root: CatNodeT = { name: "", path: "", count: 0, direct: 0, children: [] };
+  for (const c of cats) {
+    const parts = c.path ? c.path.split("/") : ["Uncategorized"];
+    let n = root;
+    parts.forEach((seg, i) => {
+      let ch = n.children.find((x) => x.name === seg);
+      if (!ch) n.children.push((ch = { name: seg, path: parts.slice(0, i + 1).join("/"), count: 0, direct: 0, children: [] }));
+      ch.count += c.count;
+      if (i === parts.length - 1) ch.direct += c.count;
+      n = ch;
+    });
+  }
+  const sort = (n: CatNodeT) => {
+    n.children.sort((a, b) => a.name.localeCompare(b.name));
+    n.children.forEach(sort);
+  };
+  sort(root);
+  return root.children;
+}
+
+function CatTree({ nodes, scope, kind, onPick, projectDefs, depth }: { nodes: CatNodeT[]; scope: string; kind: string; onPick: (i: LibItem) => void; projectDefs: Record<string, ElementDef>; depth: number }) {
+  return (
+    <>
+      {nodes.map((n) => (
+        <Category key={n.path} name={n.name} count={n.count} onPick={onPick} defaultOpen={nodes.length === 1 && depth < 2} projectDefs={projectDefs} lazy={{ path: n.path === "Uncategorized" ? "" : n.path, scope, kind, direct: n.direct }} depth={depth}>
+          {n.children.length > 0 && <CatTree nodes={n.children} scope={scope} kind={kind} onPick={onPick} projectDefs={projectDefs} depth={depth + 1} />}
+        </Category>
+      ))}
+    </>
   );
 }

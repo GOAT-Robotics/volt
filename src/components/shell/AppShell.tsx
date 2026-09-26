@@ -8,6 +8,8 @@ import { Avatar, TooltipProvider } from "@/components/ui/misc";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { NotificationBell } from "./NotificationBell";
 import { Toaster } from "sonner";
+import { LogoMark } from "@/components/brand/Logo";
+import { signOutAction } from "@/app/actions/auth";
 
 export type ShellUser = { name: string; email: string; roles: string[]; isAdmin: boolean; workspace: string; workspaces: { id: string; name: string }[]; workspaceId: string };
 
@@ -25,11 +27,7 @@ export function AppShell({ user, children, inboxCount }: { user: ShellUser; chil
       <div className="flex h-dvh overflow-hidden">
         <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-panel">
           <div className="flex h-12 items-center gap-2 px-3">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-accent">
-              <svg viewBox="0 0 32 32" className="size-5">
-                <path d="M18 5 9 18h6l-2 9 9-13h-6z" fill="#fff" />
-              </svg>
-            </div>
+            <LogoMark size={28} />
             <Menu>
               <MenuTrigger asChild>
                 <button className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 py-1 text-left hover:bg-hover">
@@ -133,7 +131,7 @@ function UserMenu({ user }: { user: ShellUser }) {
           <Monitor /> System {theme === "system" && "✓"}
         </MenuItem>
         <MenuSeparator />
-        <MenuItem onSelect={() => (location.href = "/api/auth/signout")}>
+        <MenuItem onSelect={() => void signOutAction()}>
           <LogOut /> Sign out
         </MenuItem>
       </MenuContent>

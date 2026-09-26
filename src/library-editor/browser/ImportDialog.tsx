@@ -95,7 +95,7 @@ export function ImportDialog({ open, onClose, libraries, onDone }: { open: boole
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent title="Import QElectroTech elements" description="Imported elements are private drafts until you share or publish them. Folders become categories." wide>
+      <DialogContent title="Import elements" description="Imported elements are private drafts until you share or publish them. Folders become categories." wide>
         {result ? (
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2 text-center">

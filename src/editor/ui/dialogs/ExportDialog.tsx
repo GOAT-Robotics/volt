@@ -24,7 +24,7 @@ const FORMATS: { id: Fmt; label: string; icon: React.ReactNode; desc: string }[]
   { id: "pdf", label: "PDF", icon: <FileText />, desc: "Vector, multi-page, print-ready" },
   { id: "svg", label: "SVG", icon: <PenTool />, desc: "Vector, one file per page" },
   { id: "png", label: "PNG", icon: <ImageIcon />, desc: "Raster image at chosen DPI" },
-  { id: "qet", label: "QElectroTech", icon: <FileCode2 />, desc: ".qet project for QElectroTech" },
+  { id: "qet", label: ".qet", icon: <FileCode2 />, desc: "Editable project file" },
   { id: "dxf", label: "DXF", icon: <FileDown />, desc: "CAD exchange (R12), per page" },
 ];
 
@@ -201,7 +201,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           </div>
         ) : (
           <div className="mt-4 space-y-2">
-            <p className="text-xs text-muted">Exports the whole project. Unknown QElectroTech content from the imported file is preserved.</p>
+            <p className="text-xs text-muted">Exports the whole project, including content from the original file that Volt doesn’t edit.</p>
             {qetReport && (
               <ul className="max-h-48 space-y-1 overflow-auto rounded-md border border-border p-2 text-2xs">
                 {qetReport.items.filter((i) => i.level !== "supported").length === 0 && <li className="text-success">Everything in this project is written natively.</li>}

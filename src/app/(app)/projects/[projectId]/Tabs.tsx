@@ -489,7 +489,7 @@ export function AttachmentsTab({ data }: { data: ProjectData }) {
   return (
     <div className="space-y-4">
       {data.imports.length > 0 && (
-        <Section title="Imported source files" description="Original QElectroTech files are preserved unchanged with their SHA-256 and compatibility report.">
+        <Section title="Imported source files" description="Original files are kept unchanged with their SHA-256 and compatibility report.">
           <ul className="divide-y divide-border">
             {data.imports.map((i) => (
               <li key={i.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
@@ -598,7 +598,7 @@ export function AttachmentsTab({ data }: { data: ProjectData }) {
       )}
       {report?.report && (
         <Dialog open onOpenChange={(o) => !o && setReport(null)}>
-          <DialogContent title={`Compatibility report — ${report.filename}`} description={`${report.report.pageCount} pages · ${report.report.elementCount} components · ${report.report.wireCount} wires · QET ${report.report.qetVersion}`} wide="xl">
+          <DialogContent title={`Compatibility report — ${report.filename}`} description={`${report.report.pageCount} pages · ${report.report.elementCount} components · ${report.report.wireCount} wires · format ${report.report.qetVersion}`} wide="xl">
             <CompatReportView report={report.report} />
           </DialogContent>
         </Dialog>

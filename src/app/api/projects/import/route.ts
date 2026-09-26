@@ -24,14 +24,14 @@ export const POST = route(async (req) => {
   if (!(file instanceof File)) throw new HttpError(400, "No file uploaded");
   if (file.size > MAX) throw new HttpError(413, "File exceeds the 50 MB limit");
   const filename = (file.name || "project.qet").split(/[\\/]/).pop()!.slice(0, 200);
-  if (!/\.qet$/i.test(filename)) throw new HttpError(415, "Only QElectroTech .qet project files can be imported");
+  if (!/\.qet$/i.test(filename)) throw new HttpError(415, "Only .qet project files can be imported");
   const bytes = Buffer.from(await file.arrayBuffer());
   const xml = bytes.toString("utf8");
   let parsed;
   try {
     parsed = importQet(xml, filename);
   } catch (e) {
-    throw new HttpError(422, `This file could not be read as a QElectroTech project: ${(e as Error).message}`);
+    throw new HttpError(422, `This file could not be read as a project: ${(e as Error).message}`);
   }
   const { doc, report } = parsed;
   const name = String(fd.get("name") ?? "").trim() || doc.meta.title || filename.replace(/\.qet$/i, "");

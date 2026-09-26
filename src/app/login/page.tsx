@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { signIn, DEV_LOGIN, ENTRA_ENABLED } from "@/auth";
 import { getCtx } from "@/lib/session";
+import { AuthShell } from "@/components/brand/AuthLayout";
 
 const ERRORS: Record<string, string> = {
   AccessDisabled: "Your access has been disabled. Contact your workspace administrator.",
@@ -11,7 +12,7 @@ const ERRORS: Record<string, string> = {
   Configuration: "Sign-in is not configured correctly.",
 };
 
-export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string; callbackUrl?: string; reauth?: string }> }) {
+export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string; callbackUrl?: string; reauth?: string; signedOut?: string }> }) {
   const sp = await searchParams;
   // Only skip the login page for a session whose user still exists and has access. A stale cookie
   // (e.g. after the database was reset) must not bounce between /login and the app forever.
@@ -20,22 +21,12 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   const reauth = !!sp.reauth;
   const cb = safeCallback(sp.callbackUrl);
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-bg p-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-accent shadow-float">
-            <svg viewBox="0 0 32 32" className="size-6">
-              <path d="M18 5 9 18h6l-2 9 9-13h-6z" fill="#fff" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-base font-semibold">Volt</p>
-            <p className="text-2xs text-muted">Electrical diagrams & document control</p>
-          </div>
-        </div>
-        <div className="rounded-xl border border-border bg-panel p-6 shadow-float">
+    <AuthShell>
           <h1 className="text-sm font-semibold">Sign in</h1>
           <p className="mt-1 text-xs text-muted">Use your organization account.</p>
+          {sp.signedOut && !sp.error && !reauth && (
+            <p className="mt-4 rounded-md border border-success/20 bg-success-soft px-3 py-2 text-xs text-success">You’ve been signed out.</p>
+          )}
           {reauth && !sp.error && (
             <p className="mt-4 rounded-md border border-accent/20 bg-accent-soft px-3 py-2 text-xs text-accent">
               Signing a drawing requires a fresh sign-in. Please confirm your identity to continue.
@@ -77,10 +68,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
               <button className="h-8 w-full rounded-md bg-accent text-xs font-medium text-white">Sign in (dev)</button>
             </form>
           )}
-        </div>
-        <p className="mt-4 text-center text-2xs text-subtle">Compatible with QElectroTech .qet projects and .elmt elements.</p>
-      </div>
-    </main>
+    </AuthShell>
   );
 }
 

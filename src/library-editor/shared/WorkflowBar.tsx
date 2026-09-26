@@ -128,7 +128,7 @@ export function WorkflowBar({ d, user, reload, extra, dirty }: { d: ElementDetai
                 <Copy /> Duplicate to my library
               </MenuItem>
               <MenuItem onSelect={() => (location.href = `/api/library/elements/${d.id}/export?rev=${d.revision}`)}>
-                <Download /> {d.kind === "BLOCK" ? "Export block (.json)" : "Export .elmt (QElectroTech)"}
+                <Download /> {d.kind === "BLOCK" ? "Export block (.json)" : "Export .elmt"}
               </MenuItem>
               <MenuItem
                 onSelect={() => {
