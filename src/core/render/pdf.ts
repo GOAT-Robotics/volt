@@ -266,12 +266,12 @@ export type PdfExportOptions = {
   rasterizeSvg?: (svg: string, w: number, h: number) => Promise<Uint8Array | null>;
 };
 
-/** Embeds the title block logos used by the exported pages, keyed like ImageDraw.key. */
+/** Embeds the title block logos and page pictures of the exported pages, keyed like ImageDraw.key. */
 async function embedLogos(pdf: PDFDocument, doc: Doc, pages: Page[], raster: PdfExportOptions["rasterizeSvg"]) {
   const out = new Map<string, PDFImage>();
   for (const page of pages) {
-    if (!page.titleBlock.show) continue;
-    for (const logo of Object.values(templateLogos(tbTemplate(doc, page)))) {
+    const imgs = [...(page.titleBlock.show ? Object.values(templateLogos(tbTemplate(doc, page))) : []), ...page.shapes.flatMap((sh) => (sh.image ? [sh.image] : [])), ...(page.kind === "cover" && page.cover?.image ? [page.cover.image] : [])];
+    for (const logo of imgs) {
       const key = logoKey(logo);
       if (out.has(key)) continue;
       try {

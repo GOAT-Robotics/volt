@@ -45,7 +45,11 @@ export function cleanSvg(text: string): string {
   return new XMLSerializer().serializeToString(root);
 }
 
-export async function readLogoFile(file: File): Promise<{ name: string; logo: TitleBlockLogo; note?: string }> {
+/** limits for pictures placed on pages (larger than logos: photos, product views) */
+export const PICTURE_LIMITS = { maxPx: 1600, maxStored: 600 * 1024 };
+
+export async function readLogoFile(file: File, limits: { maxPx: number; maxStored: number } = { maxPx: LOGO_MAX_PX, maxStored: LOGO_MAX_STORED }): Promise<{ name: string; logo: TitleBlockLogo; note?: string }> {
+  const LOGO_MAX_PX = limits.maxPx, LOGO_MAX_STORED = limits.maxStored;
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
   const type = file.type === "image/svg+xml" || ext === "svg" ? "svg" : file.type === "image/png" || ext === "png" ? "png" : file.type === "image/jpeg" || ext === "jpg" || ext === "jpeg" ? "jpg" : null;
   if (!type) throw new Error("Use a PNG, JPEG or SVG image");

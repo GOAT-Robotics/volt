@@ -173,6 +173,8 @@ export type PlacedText = {
   y: number | null;
   override?: Partial<TextStyle>;
   uuid?: string; // QET dynamic text uuid
+  /** fixed page rotation in degrees (0 horizontal, 90 vertical), independent of the component's rotation; unset = follows the component */
+  rotation?: number;
 };
 
 export type ElemInst = {
@@ -182,6 +184,8 @@ export type ElemInst = {
   y: number;
   rot: 0 | 1 | 2 | 3; // ×90° clockwise
   mirror: boolean;
+  /** uniform size factor (aspect ratio kept); unset = 1 */
+  scale?: number;
   /** elementInformations (label, comment, function, manufacturer, ...) */
   info: Record<string, string>;
   texts: PlacedText[];
@@ -199,6 +203,8 @@ export type ElemInst = {
   group?: GroupRef;
   /** QElectroTech cross-reference links (folio report pairs, master ↔ slaves): ids of linked elements */
   links?: string[];
+  /** mated connector: the counterpart (plug ↔ socket) and this side's gender; pins connect by number */
+  mate?: { id: string; gender: "male" | "female" };
   qet?: { idx?: number; terminalIds?: Record<string, string> }; // original node index; pinId -> original terminal id
 };
 
@@ -288,6 +294,20 @@ export type FreeText = {
   text: string;
   role: TextRole;
   override?: Partial<TextStyle>;
+  /** formatted text box (bullets, headings, **bold**, wrapping…); unset = plain text as typed */
+  rich?: {
+    /** wrap width in scene units; unset / 0 = no wrapping */
+    width?: number;
+    align?: "left" | "center" | "right" | "justify";
+    /** line height multiplier (default from the text style) */
+    lineHeight?: number;
+    /** extra space between paragraphs, pt */
+    paraGap?: number;
+    /** inner padding, scene units (default 4) */
+    padding?: number;
+    border?: { color: string; width: number } | null;
+    background?: string | null;
+  };
   qet?: { idx?: number };
 };
 
@@ -302,6 +322,8 @@ export type Shape = {
   width: number;
   dash: LineStyle["dash"];
   fill: string | null;
+  /** picture placed on the page (rect shapes only): drawn fitted inside the rectangle */
+  image?: TitleBlockLogo & { name?: string };
   qet?: { idx?: number };
 };
 
@@ -346,8 +368,33 @@ export type Page = {
   meta: Record<string, string>;
   archived?: boolean;
   revMarker?: string;
+  /** generated pages: a cover sheet or a table of contents (drawn from project data) */
+  kind?: "drawing" | "cover" | "contents";
+  cover?: CoverSheet;
   qet?: { idx?: number };
 };
+
+/** Cover sheet content (IEC 61082-1 / common practice: identification, data, manufacturer, revisions) */
+export type CoverSheet = {
+  /** big title; default: the project name */
+  title?: string;
+  subtitle?: string;
+  /** product picture shown on the right */
+  image?: TitleBlockLogo & { name?: string };
+  /** project / product data (label → value; values may use %variables and project properties) */
+  fields: { label: string; value: string }[];
+  /** manufacturer name and address (one line per line) */
+  manufacturer?: string;
+  /** free notes (formatted: bullets, **bold**…) */
+  notes?: string;
+  /** confidentiality / copyright line at the bottom */
+  notice?: string;
+  /** show the revision history table (default true) */
+  showRevisions?: boolean;
+};
+
+/** a row of the document revision history (shown on the cover sheet) */
+export type RevisionEntry = { rev: string; date: string; description: string; drawn?: string; checked?: string; approved?: string };
 
 export type NumberingRule = {
   id: string;
@@ -361,6 +408,8 @@ export type NumberingRule = {
 export type Doc = {
   schema: 1;
   meta: { title: string; props: Record<string, string> };
+  /** document revision history (cover sheet); newest last */
+  revisions?: RevisionEntry[];
   /** snapshot of org template styles used as base (deterministic render) */
   baseStyles: Styles;
   baseStylesRef?: { templateId: string; version: number; name: string };

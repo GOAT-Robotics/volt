@@ -39,7 +39,7 @@ export function shapeBounds(s: Shape): { x: number; y: number; w: number; h: num
 
 /** Distance from p to the shape (0 inside a filled shape). */
 export function shapeDistance(s: Shape, p: Pt): number {
-  if (s.fill && s.kind !== "line") {
+  if ((s.fill || s.image) && s.kind !== "line") {
     const b = shapeBounds(s);
     if (s.kind === "ellipse") {
       const rx = b.w / 2 || 1, ry = b.h / 2 || 1;

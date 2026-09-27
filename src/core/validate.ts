@@ -118,7 +118,7 @@ function validateWiring(doc: Doc, pages: Page[], issues: Issue[]) {
   for (const page of pages) {
     const P = page.title;
     const netOf = new Map<string, string>();
-    for (const n of computeNets(page)) for (const w of n.wires) netOf.set(w, `${page.id}:${n.id}`);
+    for (const n of computeNets(page, doc)) for (const w of n.wires) netOf.set(w, `${page.id}:${n.id}`);
     for (const w of page.wires) {
       const i = wireInfo(doc, w);
       const code = i.look?.code;

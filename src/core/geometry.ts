@@ -3,9 +3,13 @@ import type { ElemInst, ElementDef, Orient, Pt, Rect } from "./model";
 export const ORIENTS: Orient[] = ["n", "e", "s", "w"];
 
 /** Transform a point from element-local (hotspot origin) to scene. */
-export function toScene(e: Pick<ElemInst, "x" | "y" | "rot" | "mirror">, p: Pt): Pt {
-  let x = e.mirror ? -p.x : p.x;
-  let y = p.y;
+/** placement of an element: position, quarter turns, mirror and an optional uniform scale */
+type Place = Pick<ElemInst, "x" | "y" | "rot" | "mirror"> & { scale?: number };
+
+export function toScene(e: Place, p: Pt): Pt {
+  const k = e.scale && e.scale > 0 ? e.scale : 1;
+  let x = (e.mirror ? -p.x : p.x) * k;
+  let y = p.y * k;
   for (let i = 0; i < e.rot; i++) {
     const t = x;
     x = -y;
@@ -15,9 +19,10 @@ export function toScene(e: Pick<ElemInst, "x" | "y" | "rot" | "mirror">, p: Pt):
 }
 
 /** Inverse of toScene. */
-export function toLocal(e: Pick<ElemInst, "x" | "y" | "rot" | "mirror">, p: Pt): Pt {
-  let x = p.x - e.x;
-  let y = p.y - e.y;
+export function toLocal(e: Place, p: Pt): Pt {
+  const k = e.scale && e.scale > 0 ? e.scale : 1;
+  let x = (p.x - e.x) / k;
+  let y = (p.y - e.y) / k;
   for (let i = 0; i < e.rot; i++) {
     const t = x;
     x = y;
@@ -37,11 +42,12 @@ export const orientVec = (o: Orient): Pt => (o === "n" ? { x: 0, y: -1 } : o ===
 
 /** 2D affine matrix [a b c d e f] like canvas setTransform */
 export type Mat = [number, number, number, number, number, number];
-export function elemMatrix(e: Pick<ElemInst, "x" | "y" | "rot" | "mirror">): Mat {
-  const cos = [1, 0, -1, 0][e.rot];
-  const sin = [0, 1, 0, -1][e.rot];
+export function elemMatrix(e: Place): Mat {
+  const k = e.scale && e.scale > 0 ? e.scale : 1;
+  const cos = [1, 0, -1, 0][e.rot] * k;
+  const sin = [0, 1, 0, -1][e.rot] * k;
   const sx = e.mirror ? -1 : 1;
-  // M = T * R * S
+  // M = T * R * S (S: mirror and uniform scale)
   return [cos * sx, sin * sx, -sin, cos, e.x, e.y];
 }
 export const applyMat = (m: Mat, p: Pt): Pt => ({ x: m[0] * p.x + m[2] * p.y + m[4], y: m[1] * p.x + m[3] * p.y + m[5] });
@@ -60,7 +66,7 @@ export function defLocalRect(d: ElementDef): Rect {
   return { x: -d.hotspotX, y: -d.hotspotY, w: d.width, h: d.height };
 }
 
-export function transformRect(e: Pick<ElemInst, "x" | "y" | "rot" | "mirror">, r: Rect): Rect {
+export function transformRect(e: Place, r: Rect): Rect {
   const a = toScene(e, { x: r.x, y: r.y });
   const b = toScene(e, { x: r.x + r.w, y: r.y + r.h });
   return normRect(a, b);

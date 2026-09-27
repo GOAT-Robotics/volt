@@ -1,4 +1,7 @@
 import { COMPONENT_INFO } from "../model";
+import { layoutRich, type RichLayout } from "../richtext";
+import { drawContents, drawCoverSheet } from "./cover";
+import { mateLabel } from "../mating";
 import type { Doc, ElemInst, ElementDef, FreeText, Junction, Page, PinDef, PlacedText, Pt, Rect, Styles, TextStyle, TitleBlockTemplate, Wire } from "../model";
 import { effectiveText, projectStyles } from "../styles";
 import { elemMatrix, pointAlong, rotOrient, toScene, transformRect, unionRect } from "../geometry";
@@ -103,7 +106,8 @@ export function layoutElementTexts(e: ElemInst, sym: CompiledSymbol, styles: Sty
     }
     const alignOff = style.align === "center" ? -w / 2 : style.align === "right" ? -w : 0;
     const p = toScene(e, { x: lx + alignOff, y: ly });
-    const baseRot = e.rot * 90 + (style.rotation || 0);
+    // a fixed rotation (set on the text) ignores the component's rotation
+    const baseRot = t.rotation !== undefined ? t.rotation : e.rot * 90 + (style.rotation || 0);
     // element rotation also rotates the text box origin; keep readable
     const r = readable(p.x, p.y, baseRot, w, h);
     const lt: LaidText = { text, x: r.x, y: r.y, rotation: r.rot, style, w, h };
@@ -259,6 +263,53 @@ export function layoutPinTexts(e: ElemInst, pin: PinDef, styles: Styles, showNum
     out.push({ text: pin.name, x: x + st.dx, y: y + st.dy, rotation: 0, style: st, w, h });
   }
   return out;
+}
+
+/** layout of a free text in its own box coordinates (cached per text object and style) */
+const freeLayouts = new WeakMap<FreeText, { key: string; l: RichLayout }>();
+export function freeTextLayout(t: FreeText, styles: Styles, measure: Painter["measure"]): { l: RichLayout; st: TextStyle } {
+  const st = effectiveText(styles, t.role, t.override);
+  const key = JSON.stringify(st) + (t.rich ? JSON.stringify(t.rich) : "");
+  const hit = freeLayouts.get(t);
+  if (hit && hit.key === key) return { l: hit.l, st };
+  let l: RichLayout;
+  if (t.rich) l = layoutRich(t.text, st, t.rich, measure);
+  else {
+    // plain text: one line per text line, as typed
+    const size = st.size * PT;
+    const lines = t.text.split("\n");
+    const items = lines.map((line, i) => ({ text: line, x: 4, y: 4 + i * size * st.lineHeight, size, weight: st.weight, italic: st.italic }));
+    const w = Math.max(10, ...lines.map((line) => measure(line, size, st.font, st.weight)));
+    l = { w: w + 8, h: lines.length * size * st.lineHeight + 8, items, rules: [], pad: 4 };
+  }
+  freeLayouts.set(t, { key, l });
+  return { l, st };
+}
+
+/** scene bounds of a free text (its box, rotated) */
+export function freeTextBounds(t: FreeText, styles: Styles, measure: Painter["measure"]): Rect {
+  const { l, st } = freeTextLayout(t, styles, measure);
+  const ox = t.x + st.dx, oy = t.y + st.dy;
+  return textBounds({ text: "", x: ox, y: oy, rotation: st.rotation || 0, style: st, w: l.w, h: l.h });
+}
+
+export function drawFreeText(pt: Painter, t: FreeText, styles: Styles, measure: Painter["measure"], alpha?: number, tint?: string) {
+  const { l, st } = freeTextLayout(t, styles, measure);
+  if (!st.visible) return;
+  const a = ((st.rotation || 0) * Math.PI) / 180;
+  pt.save();
+  pt.transform([Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), t.x + st.dx, t.y + st.dy]);
+  const r = t.rich;
+  if (r?.background) pt.fill(new PathBuilder().R(0, 0, l.w, l.h).build(), r.background, alpha);
+  if (r?.border && r.border.width > 0) pt.stroke(new PathBuilder().R(0, 0, l.w, l.h).build(), { color: tint ?? r.border.color, width: r.border.width, alpha });
+  if (l.rules.length) {
+    const b = new PathBuilder();
+    for (const ru of l.rules) b.M(ru.x1, ru.y).L(ru.x2, ru.y);
+    pt.stroke(b.build(), { color: tint ?? st.color, width: 0.75, alpha });
+  }
+  for (const it of l.items)
+    pt.text({ text: it.text, x: it.x, y: it.y, size: it.size, font: st.font, weight: it.weight, italic: it.italic, color: tint ?? st.color, baseline: "top", background: r ? null : st.background, alpha });
+  pt.restore();
 }
 
 export function drawLaidText(pt: Painter, t: LaidText, alpha?: number, colorOverride?: string) {
@@ -448,6 +499,9 @@ export function drawPage(pt: Painter, o: DrawOpts) {
   const measure = pt.measure.bind(pt);
 
   if (o.decor !== false) drawDecor(pt, o, styles);
+  // generated sheets
+  if (page.kind === "cover") drawCoverSheet(pt, doc, page, styles, titleVars(o), measure);
+  else if (page.kind === "contents") drawContents(pt, doc, page, styles, measure);
 
   pt.begin?.("shapes");
   for (const s of page.shapes) {
@@ -461,7 +515,13 @@ export function drawPage(pt: Painter, o: DrawOpts) {
     } else b.poly(s.pts, s.kind === "polygon" && s.closed !== false);
     const path = b.build();
     if (s.fill) pt.fill(path, s.fill);
-    pt.stroke(path, { color: s.color, width: s.width, dash: DASHES[s.dash], minPx: 1 });
+    if (s.image && s.pts.length >= 2 && pt.image) {
+      const [a, c] = s.pts;
+      const box = { x: Math.min(a.x, c.x), y: Math.min(a.y, c.y), w: Math.abs(c.x - a.x), h: Math.abs(c.y - a.y) };
+      const size = logoSize(s.image);
+      if (size) pt.image({ key: logoKey(s.image), mime: LOGO_MIME[s.image.type], data: s.image.data, ...fitContain(size, box, 0) });
+    }
+    if (!s.image || s.width > 0) pt.stroke(path, { color: s.color, width: s.width, dash: DASHES[s.dash], minPx: 1 });
   }
   pt.end?.();
 
@@ -538,21 +598,23 @@ export function drawPage(pt: Painter, o: DrawOpts) {
       degrees: deg,
     });
   }
+  // mated connectors: "⇄ counterpart" under the symbol (with its sheet when elsewhere)
+  if (lod > 0.35)
+    for (const e of page.elements) {
+      if (!e.mate || e.hidden) continue;
+      const def = doc.defs[e.defId];
+      const label = def && mateLabel(doc, e, page);
+      if (!def || !label) continue;
+      const b = elementBounds(e, def);
+      const st = styles.text.componentName;
+      pt.text({ text: `${e.mate.gender === "male" ? "▸" : "◂"} ${label}`, x: b.x, y: b.y + b.h + 2, size: st.size * PT * 0.9, font: st.font, italic: true, color: o.tint?.get(e.id) ?? "#6b7280", baseline: "top", alpha: o.alpha });
+    }
   pt.end?.();
 
   // free texts
   if (lod > 0.25) {
     pt.begin?.("texts");
-    for (const t of o.texts ?? page.texts) {
-      const st = effectiveText(styles, t.role, t.override);
-      if (!st.visible) continue;
-      const size = st.size * PT;
-      const lines = t.text.split("\n");
-      lines.forEach((line, i) => {
-        const w = measure(line, size, st.font, st.weight);
-        drawLaidText(pt, { text: line, x: t.x + 4 + st.dx, y: t.y + 4 + st.dy + i * size * st.lineHeight, rotation: st.rotation, style: st, w, h: size }, o.alpha, o.tint?.get(t.id));
-      });
-    }
+    for (const t of o.texts ?? page.texts) drawFreeText(pt, t, styles, measure, o.alpha, o.tint?.get(t.id));
     pt.end?.();
   }
 

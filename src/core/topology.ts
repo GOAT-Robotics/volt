@@ -1,5 +1,6 @@
 import type { Doc, ElemInst, Page, Pt, Wire, WireEnd } from "./model";
 import { toScene } from "./geometry";
+import { pageMateLinks } from "./mating";
 
 export const endKey = (e: WireEnd): string | null => (e.k === "pin" ? `p:${e.el}/${e.pin}` : e.k === "junction" ? `j:${e.j}` : null);
 
@@ -36,8 +37,11 @@ class DSU {
 
 export type Net = { id: string; pins: { el: string; pin: string }[]; junctions: string[]; wires: string[] };
 
-/** Electrical nets of a page: nodes are pins and junctions, edges are wires. */
-export function computeNets(page: Page): Net[] {
+/**
+ * Electrical nets of a page: nodes are pins and junctions, edges are wires (and, with `doc`,
+ * the pin pairs of mated connectors on the page).
+ */
+export function computeNets(page: Page, doc?: Doc): Net[] {
   const d = new DSU();
   const wireNode = (w: Wire) => `w:${w.id}`;
   // every pin / junction node touched by a wire (DSU roots are not stored in d.p, so track them here)
@@ -48,6 +52,15 @@ export function computeNets(page: Page): Net[] {
     if (b) d.union(wireNode(w), b), nodes.add(b);
     d.find(wireNode(w));
   }
+  if (doc)
+    for (const [a, b] of pageMateLinks(doc, page)) {
+      // only pins that carry wires on both sides need joining; the others would be empty nets
+      if (nodes.has(a) || nodes.has(b)) {
+        d.union(a, b);
+        nodes.add(a);
+        nodes.add(b);
+      }
+    }
   const nets = new Map<string, Net>();
   const get = (k: string) => {
     const r = d.find(k);

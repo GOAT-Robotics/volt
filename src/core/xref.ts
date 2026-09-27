@@ -74,7 +74,7 @@ export function buildXref(doc: Doc, measure: Painter["measure"], styles: Styles 
       if (!def || def.name === "volt_junction" || e.hidden) continue;
       const label = (e.info.label ?? "").trim();
       const report = isReport(def.linkType);
-      const linked = !!e.links?.length;
+      const linked = !!e.links?.length || !!e.mate;
       if (!label && !linked) continue;
       const body = elementBounds(e, def);
       const rect = labelRect(e, page, doc, styles, measure) ?? body;
@@ -109,8 +109,13 @@ export function buildXref(doc: Doc, measure: Painter["measure"], styles: Styles 
   for (const page of pages)
     for (const e of page.elements) {
       const a = byElement.get(e.id);
-      if (a === undefined || !e.links) continue;
-      for (const l of e.links) {
+      if (a === undefined || (!e.links && !e.mate)) continue;
+      // a mated plug / socket leads to its counterpart
+      if (e.mate) {
+        const b = byElement.get(e.mate.id);
+        if (b !== undefined) dsu.union(a, b);
+      }
+      for (const l of e.links ?? []) {
         const b = byElement.get(l);
         if (b !== undefined) dsu.union(a, b);
       }

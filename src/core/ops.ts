@@ -141,6 +141,17 @@ function rotateShapePts(s: Shape, rot: (p: Pt) => Pt): Pt[] {
   return s.pts.map(r);
 }
 
+/** Sets the size factor of elements (1 = normal) and keeps their wires attached. */
+export function scaleElements(doc: Doc, page: Page, ids: string[], next: (cur: number) => number) {
+  const els = page.elements.filter((e) => ids.includes(e.id) && !e.locked);
+  for (const e of els) {
+    const k = Math.min(5, Math.max(0.2, Math.round(next(e.scale ?? 1) * 100) / 100));
+    if (Math.abs(k - 1) < 0.001) delete e.scale;
+    else e.scale = k;
+  }
+  refreshAttached(doc, page, new Set(els.map((e) => e.id)));
+}
+
 export function mirrorSelection(doc: Doc, page: Page, sel: Sel) {
   const els = page.elements.filter((e) => sel.elements.includes(e.id) && !e.locked);
   const shapes = page.shapes.filter((s) => sel.shapes?.includes(s.id));
@@ -185,6 +196,8 @@ function centroid(els: { x: number; y: number }[]): Pt {
 
 export function deleteSelection(doc: Doc, page: Page, sel: Sel) {
   const els = new Set(sel.elements.filter((id) => !page.elements.find((e) => e.id === id)?.locked));
+  // the counterpart of a deleted mated connector is no longer mated
+  for (const p of doc.pages) for (const e of p.elements) if (e.mate && els.has(e.mate.id) && !els.has(e.id)) delete e.mate;
   const js = new Set(sel.junctions);
   const ws = new Set(sel.wires);
   // Deleting a component (or junction) keeps its wires exactly where they are: the ends that were
@@ -410,7 +423,7 @@ export function pasteClip(doc: Doc, page: Page, clip: Clip, offset: Pt, renumber
   const rank = (e: ElemInst) => ((clip.defs[e.defId] ?? doc.defs[e.defId])?.linkType === "slave" ? 1 : 0);
   const ordered = [...clip.elements].sort((a, b) => rank(a) - rank(b));
   for (const e of ordered) {
-    const n: ElemInst = { ...JSON.parse(JSON.stringify(e)), id: uid(), x: e.x + offset.x, y: e.y + offset.y, qet: undefined, group: e.group, links: undefined };
+    const n: ElemInst = { ...JSON.parse(JSON.stringify(e)), id: uid(), x: e.x + offset.x, y: e.y + offset.y, qet: undefined, group: e.group, links: undefined, mate: undefined };
     n.texts = n.texts.map((t) => ({ ...t, id: uid(), uuid: undefined }));
     map.set(e.id, n.id);
     const old = e.info.label ?? "";
@@ -426,6 +439,12 @@ export function pasteClip(doc: Doc, page: Page, clip: Clip, offset: Pt, renumber
       if (old && relabel.has(old)) n.info.label = relabel.get(old)!;
       page.elements.push(n);
     }
+  }
+  // a plug and its socket copied together stay mated (to each other)
+  for (const e of clip.elements) {
+    const a = e.mate && map.get(e.id), b = e.mate && map.get(e.mate.id);
+    const n = a && b ? page.elements.find((x) => x.id === a) : null;
+    if (n && e.mate) n.mate = { id: b!, gender: e.mate.gender };
   }
   sel.elements = clip.elements.map((e) => map.get(e.id)!); // clip order (placeBlock maps by index)
   for (const j of clip.junctions) {

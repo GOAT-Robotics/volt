@@ -5,7 +5,7 @@ import type { Doc, ElemInst, ElementDef, Page, Pt, Rect, Styles, TextRole } from
 import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, toLocal, eqPt, dist } from "@/core/geometry";
 import { CanvasPainter, imageLoadListeners, measureText } from "@/core/render/canvas";
 import { PathBuilder } from "@/core/render/painter";
-import { contentBounds, docStyles, drawPage, elementBounds, layoutElementTexts, pageGeometry, textBounds, wireStroke, drawElement } from "@/core/render/scene";
+import { contentBounds, docStyles, drawPage, elementBounds, layoutElementTexts, pageGeometry, textBounds, freeTextBounds, wireStroke, drawElement } from "@/core/render/scene";
 import { symbolFor } from "@/core/render/symbol";
 import { deepMerge } from "@/core/styles";
 import {
@@ -345,11 +345,8 @@ export class Engine {
       });
     for (const t of page.texts)
       upsert("t:" + t.id, t, () => {
-        const st = styles.text[t.role] ?? styles.text.annotation;
-        const size = st.size * (4 / 3);
-        const lines = t.text.split("\n");
-        const w = Math.max(10, ...lines.map((l) => measureText(l, size, st.font, st.weight)));
-        return [{ minX: t.x, minY: t.y, maxX: t.x + w + 8, maxY: t.y + lines.length * size * st.lineHeight + 8, kind: "text", id: t.id }];
+        const b = freeTextBounds(t, styles, measureText);
+        return [{ minX: b.x, minY: b.y, maxX: b.x + b.w, maxY: b.y + b.h, kind: "text", id: t.id }];
       });
     for (const [k, v] of this.indexed)
       if (!seen.has(k)) {
@@ -604,7 +601,7 @@ export class Engine {
     if (s.tool === "text" && editable) {
       const p = { x: snapGrid(wp.x, this.doc.grid.size), y: snapGrid(wp.y, this.doc.grid.size) };
       const id = uid();
-      s.apply("Add text", (d) => getPage(d, s.pageId).texts.push({ id, x: p.x, y: p.y, text: "Text", role: "annotation" }), { sel: { ...emptySel(), texts: [id] } });
+      s.apply("Add text", (d) => getPage(d, s.pageId).texts.push({ id, x: p.x, y: p.y, text: "Text", role: "annotation", rich: {} }), { sel: { ...emptySel(), texts: [id] } });
       s.setTool("select");
       requestAnimationFrame(() => this.editFreeText(id));
       return;
@@ -1011,6 +1008,8 @@ export class Engine {
     let lx = delta.x, ly = delta.y;
     for (let i = 0; i < e.rot; i++) [lx, ly] = [ly, -lx];
     if (e.mirror) lx = -lx;
+    const k = e.scale && e.scale > 0 ? e.scale : 1;
+    ((lx /= k), (ly /= k));
     if (t.x === null || t.y === null) {
       const sym = symbolFor(def);
       const lt = layoutElementTexts({ ...e, texts: [t] }, sym, docStyles(d), measureText)[0];
@@ -1432,7 +1431,7 @@ export class Engine {
   selectNet(fromSel?: Sel) {
     const sel = fromSel ?? this.s.sel;
     const page = this.s.page();
-    const nets = computeNets(page);
+    const nets = computeNets(page, this.s.doc);
     const out = emptySel();
     const hl = new Set<string>();
     for (const n of nets) {

@@ -4,6 +4,7 @@ import {
   MousePointer2,
   Spline,
   Type,
+  ImagePlus,
   Hand,
   MessageSquarePlus,
   RotateCw,
@@ -131,6 +132,7 @@ function ToolRail() {
   const editable = useEditor((s) => !!s.version?.editable);
   const canComment = useEditor((s) => !!s.version?.canComment);
   const set = useEditor((s) => s.setTool);
+  const ui = useEditorUI();
   const tools = [
     { id: "select", icon: <MousePointer2 />, label: "Select", key: "V", on: true },
     { id: "wire", icon: <Spline />, label: "Wire", key: "W", on: editable },
@@ -149,6 +151,13 @@ function ToolRail() {
             </Button>
           </Tip>
         ))}
+      {editable && (
+        <Tip content="Insert picture (logo, photo…)" side="right">
+          <Button variant="tool" size="icon" aria-label="Insert picture" onClick={() => runCommand("insertPicture", ui)}>
+            <ImagePlus />
+          </Button>
+        </Tip>
+      )}
     </div>
   );
 }

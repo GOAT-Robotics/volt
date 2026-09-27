@@ -158,6 +158,10 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
         return;
       }
       if (e.altKey && e.key === "ArrowLeft") return run("navBack");
+      if (e.altKey && e.code === "KeyR") {
+        e.preventDefault();
+        return run("rotateRefText");
+      }
       if (e.key === "Escape") {
         if (eng?.cancel()) return;
         const s = useEditor.getState();
@@ -185,7 +189,7 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
         import("@/core/ops").then(({ moveSelection, getPage }) => s.apply("Nudge", (dr) => moveSelection(dr, getPage(dr, s.pageId), s.sel, d)));
         return;
       }
-      const map: Record<string, string> = { v: "tool-select", w: e.shiftKey ? "connect" : "tool-wire", t: "tool-text", h: "tool-pan", c: "tool-comment", r: e.shiftKey ? "rotateCcw" : "rotate", x: "mirror", f: e.shiftKey ? "fitPage" : "fit", z: "zoomSel", "0": "zoom100", g: "grid", n: "selectNet", l: "followLabel", "+": "zoomIn", "=": "zoomIn", "-": "zoomOut", "?": "shortcuts" };
+      const map: Record<string, string> = { v: "tool-select", w: e.shiftKey ? "connect" : "tool-wire", t: "tool-text", h: "tool-pan", c: "tool-comment", r: e.shiftKey ? "rotateCcw" : "rotate", x: "mirror", f: e.shiftKey ? "fitPage" : "fit", z: "zoomSel", "0": "zoom100", g: "grid", n: "selectNet", l: "followLabel", "+": "zoomIn", "=": "zoomIn", "-": "zoomOut", "?": "shortcuts", "]": "scaleUp", "[": "scaleDown" };
       const id = map[e.key === "?" ? "?" : k];
       if (id) run(id);
     };

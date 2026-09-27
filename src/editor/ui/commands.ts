@@ -5,6 +5,7 @@ import {
   copySelection,
   deleteSelection,
   emptySel,
+  scaleElements,
   getPage,
   mirrorSelection,
   moveSelection,
@@ -14,6 +15,7 @@ import {
   type Clip,
 } from "@/core/ops";
 import { newPage } from "@/core/doc";
+import { DEFAULT_COVER } from "@/core/render/cover";
 import { convertShapesToWires, isOpenPath } from "@/core/shapes";
 import { uid } from "@/core/ids";
 
@@ -180,6 +182,38 @@ export const COMMANDS: Command[] = [
   },
   { id: "rotate", label: "Rotate 90° clockwise", section: "Arrange", keys: "R", enabled: (s) => editable(s) && (hasEls(s) || hasShapes(s) || s.tool === "place"), run: (ui, s) => void (ui.engine.current?.rotatePlacement() || s.apply("Rotate", (d) => rotateSelection(d, getPage(d, s.pageId), s.sel, true))) },
   { id: "rotateCcw", label: "Rotate 90° counter-clockwise", section: "Arrange", keys: "⇧R", enabled: (s) => editable(s) && (hasEls(s) || hasShapes(s)), run: (_, s) => void s.apply("Rotate", (d) => rotateSelection(d, getPage(d, s.pageId), s.sel, false)) },
+  {
+    id: "rotateRefText",
+    label: "Rotate reference text (follow component → horizontal → vertical)",
+    section: "Arrange",
+    keys: "⌥R",
+    enabled: (s) => editable(s) && hasEls(s),
+    run: (_, s) =>
+      void s.apply("Rotate reference text", (d) => {
+        const pg = getPage(d, s.pageId);
+        for (const id of s.sel.elements) {
+          const e = pg.elements.find((x) => x.id === id);
+          const t = e?.texts.find((x) => x.info === "label");
+          if (!t) continue;
+          t.rotation = t.rotation === undefined ? 0 : t.rotation === 0 ? 90 : undefined;
+          if (t.rotation === undefined) delete t.rotation;
+        }
+      }),
+  },
+  ...([
+    ["scaleUp", "Enlarge component (+10 %)", "]", 1.1],
+    ["scaleDown", "Shrink component (−10 %)", "[", 1 / 1.1],
+    ["scaleReset", "Component at normal size (100 %)", undefined, 0],
+  ] as const).map(
+    ([id, label, keys, f]): Command => ({
+      id,
+      label,
+      section: "Arrange",
+      keys,
+      enabled: (s) => editable(s) && hasEls(s),
+      run: (_, s) => void s.apply("Resize", (d) => scaleElements(d, getPage(d, s.pageId), s.sel.elements, (k) => (f === 0 ? 1 : k * f))),
+    }),
+  ),
   { id: "mirror", label: "Mirror", section: "Arrange", keys: "X", enabled: (s) => editable(s) && (hasEls(s) || hasShapes(s) || s.tool === "place"), run: (ui, s) => void (ui.engine.current?.mirrorPlacement() || s.apply("Mirror", (d) => mirrorSelection(d, getPage(d, s.pageId), s.sel))) },
   ...(["left", "center", "right", "top", "middle", "bottom"] as const).map(
     (a): Command => ({
@@ -235,6 +269,45 @@ export const COMMANDS: Command[] = [
   },
   { id: "tool-select", label: "Select tool", section: "Tools", keys: "V", run: (_, s) => s.setTool("select") },
   { id: "tool-wire", label: "Wire tool", section: "Tools", keys: "W", enabled: editable, run: (_, s) => s.setTool("wire") },
+  {
+    id: "insertPicture",
+    label: "Insert picture… (logo, photo, product view)",
+    section: "Tools",
+    enabled: editable,
+    run: (ui, s) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/png,image/jpeg,image/svg+xml,.png,.jpg,.jpeg,.svg";
+      input.onchange = async () => {
+        const f = input.files?.[0];
+        if (!f) return;
+        const { readLogoFile, PICTURE_LIMITS } = await import("./logoUpload");
+        const { logoSize } = await import("@/core/logos");
+        const { uid } = await import("@/core/ids");
+        try {
+          const { name, logo, note } = await readLogoFile(f, PICTURE_LIMITS);
+          const nat = logoSize(logo) ?? { w: 200, h: 150 };
+          const eng = ui.engine.current;
+          const vp = eng?.worldViewport() ?? { x: 0, y: 0, w: 800, h: 600 };
+          // a third of the visible width at most, natural aspect ratio, on the grid
+          const k = Math.min(1, (vp.w / 3) / nat.w, (vp.h / 3) / nat.h);
+          const w = Math.round(nat.w * k), h = Math.round(nat.h * k);
+          const g = s.doc.grid.size || 10;
+          const x = Math.round((vp.x + vp.w / 2 - w / 2) / g) * g, y = Math.round((vp.y + vp.h / 2 - h / 2) / g) * g;
+          const id = uid();
+          s.apply(
+            "Insert picture",
+            (d) => getPage(d, s.pageId).shapes.push({ id, kind: "rect", pts: [{ x, y }, { x: x + w, y: y + h }], color: "#000000", width: 0, dash: "solid", fill: null, image: { ...logo, name } }),
+            { sel: { ...emptySel(), shapes: [id] } },
+          );
+          ui.toast(`Picture added${note ? ` (${note})` : ""} — drag the corners to resize`);
+        } catch (e) {
+          ui.toast((e as Error).message, { tone: "error" });
+        }
+      };
+      input.click();
+    },
+  },
   { id: "tool-text", label: "Text tool", section: "Tools", keys: "T", enabled: editable, run: (_, s) => s.setTool("text") },
   { id: "tool-pan", label: "Pan tool", section: "Tools", keys: "H", run: (_, s) => s.setTool("pan") },
   { id: "tool-comment", label: "Comment tool", section: "Tools", keys: "C", enabled: (s) => !!s.version?.canComment, run: (_, s) => s.setTool("comment") },
@@ -285,6 +358,33 @@ export const COMMANDS: Command[] = [
       s.setPage(id);
     },
   },
+  ...(["cover", "contents"] as const).map(
+    (kind): Command => ({
+      id: kind === "cover" ? "insertCover" : "insertContents",
+      label: kind === "cover" ? "Insert cover sheet (project data, manufacturer, revisions)" : "Insert table of contents",
+      section: "Page",
+      enabled: editable,
+      run: (_, s) => {
+        const id = uid();
+        s.apply(kind === "cover" ? "Insert cover sheet" : "Insert table of contents", (d) => {
+          const title = kind === "cover" ? "Cover sheet" : "Table of contents";
+          const p = newPage(0, title);
+          p.id = id;
+          p.kind = kind;
+          if (kind === "cover") p.cover = structuredClone(DEFAULT_COVER);
+          const ref = [...d.pages].sort((a, b) => a.order - b.order)[0];
+          if (ref) (p.border = { ...ref.border }), (p.titleBlock = { ...ref.titleBlock, fields: { ...ref.titleBlock.fields, title } });
+          // cover first, contents right after the cover
+          const sorted = [...d.pages].sort((a, b) => a.order - b.order);
+          const at = kind === "cover" ? 0 : sorted.findIndex((x) => x.kind !== "cover");
+          sorted.splice(at < 0 ? sorted.length : at, 0, p);
+          sorted.forEach((x, i) => (x.order = i));
+          d.pages.push(p);
+        });
+        s.setPage(id);
+      },
+    }),
+  ),
   { id: "pageSettings", label: "Page settings…", section: "Page", run: (ui) => ui.openDialog("page") },
   { id: "titleBlockEditor", label: "Edit title block template…", section: "Page", run: (ui) => ui.openDialog("titleBlock") },
   { id: "styles", label: "Global styles…", section: "Project", keys: "⌘⇧S", run: (ui) => ui.openDialog("styles") },

@@ -8,12 +8,17 @@ import { runCommand } from "./commands";
 import { Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge, Switch, Tip } from "@/components/ui/misc";
-import { getPage, emptySel } from "@/core/ops";
+import { getPage, emptySel, scaleElements } from "@/core/ops";
 import type { Doc, ElemInst, LineStyle, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
 import { TEXT_ROLES, COMPONENT_INFO, type ComponentInfoFlags, type ComponentInfoKey, type InfoLayout, type InfoPlacement } from "@/core/model";
 import { ConductorSection, Swatch } from "./Conductor";
 import { StylePicker } from "./StylePicker";
 import { TitleBlockLogos } from "./TitleBlockLogos";
+import { FreeTextInspector } from "./FreeTextInspector";
+import { MatingSection } from "./MatingSection";
+import { CoverSection, PageTypeRow } from "./CoverInspector";
+import { logoBytes, logoDataUrl, logoSize } from "@/core/logos";
+import { PICTURE_LIMITS, readLogoFile } from "./logoUpload";
 import { endAddress, wireEndLabel, wireInfo, wiringOf } from "@/core/wiring";
 import { ROLE_LABELS } from "@/core/styles";
 import { docStyles, tbTemplate, wireTextAnchor } from "@/core/render/scene";
@@ -85,7 +90,7 @@ export function ColorInput({ value, onChange, disabled }: { value: string; onCha
   );
 }
 
-const Overridden = ({ on, onReset }: { on: boolean; onReset: () => void }) =>
+export const Overridden = ({ on, onReset }: { on: boolean; onReset: () => void }) =>
   on ? (
     <Tip content="Overrides the project style — click to reset">
       <button onClick={onReset} className="ml-1 inline-flex items-center gap-0.5 rounded bg-warning-soft px-1 text-[9px] font-medium text-warning" aria-label="Reset override">
@@ -196,6 +201,7 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
         <Row label="Page name">
           <Commit value={page.title} disabled={!editable} aria-label="Page name" onCommit={(v) => upd("Rename page", (p) => (p.title = v || p.title))} />
         </Row>
+        <PageTypeRow page={page} editable={editable} />
         <Row label="Elements">
           <span className="text-xs tabular">
             {page.elements.length} components · {page.wires.length} wires
@@ -205,6 +211,7 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
           Border & sheet settings…
         </Button>
       </Section>
+      {page.kind === "cover" && <CoverSection page={page} doc={doc} editable={editable} />}
       <Section title="Title block">
         <Row label="Show">
           <Switch checked={page.titleBlock.show} disabled={!editable} onCheckedChange={(v) => upd("Toggle title block", (p) => (p.titleBlock.show = v))} />
@@ -387,6 +394,7 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
       if (x) fn(x);
     });
   const deg = useMemo(() => pinDegree(page), [page]);
+  const resize = (f: (k: number) => number) => s().apply("Resize", (d) => scaleElements(d, getPage(d, page.id), [e.id], f));
   const [showAll, setShowAll] = useState(false);
   const [newKey, setNewKey] = useState("");
   if (!def) return <p className="p-3 text-xs text-danger">Definition missing.</p>;
@@ -408,6 +416,7 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
         </div>
       </div>
       <XrefSection id={e.id} />
+      <MatingSection e={e} page={page} doc={doc} editable={editable} />
       {e.group && <BlockSection e={e} page={page} editable={editable} />}
       <Section title="Identity">
         <Row label="Reference">
@@ -420,6 +429,39 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
             </Tip>
           </div>
         </Row>
+        {e.texts.some((t) => t.info === "label") && (
+          <Row label="Text direction">
+            <div className="flex rounded-md border border-border p-0.5 text-2xs" role="radiogroup" aria-label="Reference text direction">
+              {([
+                [undefined, "With component"],
+                [0, "Horizontal"],
+                [90, "Vertical"],
+              ] as const).map(([v, l]) => {
+                const cur = e.texts.find((t) => t.info === "label")?.rotation;
+                return (
+                  <button
+                    key={l}
+                    role="radio"
+                    aria-checked={cur === v}
+                    disabled={!editable}
+                    title={v === undefined ? "Turns with the component" : "Stays like this when the component is rotated (⌥R cycles)"}
+                    className={cn("flex-1 rounded px-1.5 py-0.5", cur === v ? "bg-hover font-medium text-fg" : "text-subtle")}
+                    onClick={() =>
+                      upd("Reference text direction", (x) => {
+                        const t = x.texts.find((y) => y.info === "label");
+                        if (!t) return;
+                        if (v === undefined) delete t.rotation;
+                        else t.rotation = v;
+                      })
+                    }
+                  >
+                    {l}
+                  </button>
+                );
+              })}
+            </div>
+          </Row>
+        )}
         {visibleKeys
           .filter((k) => k !== "label")
           .map((k) => (
@@ -471,6 +513,24 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
             <Button variant="tool" size="icon-sm" active={e.mirror} disabled={!editable} onClick={() => runCommand("mirror", ui)} aria-label="Mirror">
               <FlipHorizontal2 />
             </Button>
+          </div>
+        </Row>
+        <Row label="Size" hint={e.scale && e.scale !== 1 ? "Pins move with the size: wires stay attached; off-grid pins are possible" : undefined}>
+          <div className="flex items-center gap-1">
+            <NativeSelect
+              value={[0.5, 0.75, 1, 1.25, 1.5, 2, 3].includes(e.scale ?? 1) ? String(e.scale ?? 1) : "custom"}
+              disabled={!editable || e.locked}
+              aria-label="Component size"
+              onChange={(ev) => ev.target.value !== "custom" && resize(() => Number(ev.target.value))}
+            >
+              {[0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((k) => (
+                <option key={k} value={k}>
+                  {Math.round(k * 100)} %
+                </option>
+              ))}
+              {![0.5, 0.75, 1, 1.25, 1.5, 2, 3].includes(e.scale ?? 1) && <option value="custom">{Math.round((e.scale ?? 1) * 100)} %</option>}
+            </NativeSelect>
+            <Commit type="number" min={20} max={500} step={5} value={Math.round((e.scale ?? 1) * 100)} disabled={!editable || e.locked} aria-label="Size percent" onCommit={(v) => resize(() => Number(v) / 100 || 1)} className="w-16" />
           </div>
         </Row>
         <Row label="Locked">
@@ -847,10 +907,63 @@ function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; ed
   const closable = list.filter((x) => x.kind === "polygon");
   const fillable = list.some((x) => x.kind !== "line" && !(x.kind === "polygon" && x.closed === false));
   const kinds = [...new Set(list.map((x) => SHAPE_NAMES[x.kind]))];
-  const title = list.length === 1 ? SHAPE_NAMES[first.kind] : `${list.length} drawing shapes`;
+  const title = list.length === 1 ? (first.image ? "Picture" : SHAPE_NAMES[first.kind]) : `${list.length} drawing shapes`;
+  const pic = list.length === 1 && first.image ? first.image : null;
   return (
     <div>
-      <Section title={title}>
+      {pic && (
+        <Section title="Picture">
+          <div className="flex h-24 items-center justify-center rounded border border-border bg-white">
+            <img src={logoDataUrl(pic)} alt="" className="max-h-full max-w-full object-contain p-1" />
+          </div>
+          <p className="truncate text-2xs text-muted">
+            {pic.name ?? "picture"} · {Math.max(1, Math.round(logoBytes(pic) / 1024))} KB · drawn fitted inside its box (never stretched)
+          </p>
+          {editable && (
+            <div className="flex flex-wrap gap-1.5">
+              <Button
+                size="xs"
+                onClick={() =>
+                  upd("Fit box to picture", (x) => {
+                    const n = x.image && logoSize(x.image);
+                    if (!n || x.pts.length < 2) return;
+                    const [a, c] = x.pts;
+                    const w = Math.abs(c.x - a.x);
+                    x.pts = [{ x: Math.min(a.x, c.x), y: Math.min(a.y, c.y) }, { x: Math.min(a.x, c.x) + w, y: Math.min(a.y, c.y) + (w * n.h) / n.w }];
+                  })
+                }
+              >
+                Fit box to picture
+              </Button>
+              <Button
+                size="xs"
+                onClick={() => {
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = "image/png,image/jpeg,image/svg+xml,.png,.jpg,.jpeg,.svg";
+                  input.onchange = async () => {
+                    const f = input.files?.[0];
+                    if (!f) return;
+                    try {
+                      const { name, logo } = await readLogoFile(f, PICTURE_LIMITS);
+                      upd("Replace picture", (x) => void (x.image = { ...logo, name }));
+                    } catch (e) {
+                      toast.error((e as Error).message);
+                    }
+                  };
+                  input.click();
+                }}
+              >
+                Replace…
+              </Button>
+              <Button size="xs" onClick={() => upd(first.width > 0 ? "Remove frame" : "Add frame", (x) => void (x.width = x.width > 0 ? 0 : 1))}>
+                {first.width > 0 ? "Remove frame" : "Add frame"}
+              </Button>
+            </div>
+          )}
+        </Section>
+      )}
+      <Section title={title} defaultOpen={!pic}>
         {list.length > 1 && (
           <Row label="Kinds">
             <span className="text-xs">{kinds.join(", ")}</span>
@@ -894,60 +1007,6 @@ function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; ed
             </div>
           </Row>
         )}
-      </Section>
-    </div>
-  );
-}
-
-function FreeTextInspector({ id, page, doc, editable }: { id: string; page: Page; doc: Doc; editable: boolean }) {
-  const t = page.texts.find((x) => x.id === id)!;
-  const styles = docStyles(doc);
-  const eff = { ...styles.text[t.role], ...(t.override ?? {}) };
-  const s = useEditor.getState;
-  const upd = (label: string, fn: (x: typeof t) => void) =>
-    s().apply(label, (d) => {
-      const x = getPage(d, page.id).texts.find((y) => y.id === id);
-      if (x) fn(x);
-    });
-  const [v, setV] = useState(t.text);
-  useEffect(() => setV(t.text), [t.text]);
-  return (
-    <div>
-      <Section title="Text">
-        <Textarea value={v} disabled={!editable} onChange={(e) => setV(e.target.value)} onBlur={() => v !== t.text && upd("Edit text", (x) => (x.text = v))} onKeyDown={(e) => e.stopPropagation()} rows={3} />
-        <Row label="Style role">
-          <NativeSelect value={t.role} disabled={!editable} onChange={(e) => upd("Text role", (x) => (x.role = e.target.value as TextRole))}>
-            {TEXT_ROLES.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABELS[r]}
-              </option>
-            ))}
-          </NativeSelect>
-        </Row>
-      </Section>
-      <Section title="Appearance" actions={<Overridden on={!!t.override} onReset={() => upd("Reset text style", (x) => (x.override = undefined))} />}>
-        <Row label="Size (pt)">
-          <Commit type="number" step={0.5} value={eff.size} disabled={!editable} onCommit={(v) => upd("Text size", (x) => (x.override = { ...(x.override ?? {}), size: Number(v) || eff.size }))} />
-        </Row>
-        <Row label="Color">
-          <ColorInput value={eff.color} disabled={!editable} onChange={(c) => upd("Text color", (x) => (x.override = { ...(x.override ?? {}), color: c }))} />
-        </Row>
-        <Row label="Weight">
-          <NativeSelect value={eff.weight} disabled={!editable} onChange={(e) => upd("Text weight", (x) => (x.override = { ...(x.override ?? {}), weight: Number(e.target.value) }))}>
-            <option value={400}>Regular</option>
-            <option value={600}>Semibold</option>
-            <option value={700}>Bold</option>
-          </NativeSelect>
-        </Row>
-        <Row label="Rotation">
-          <NativeSelect value={eff.rotation} disabled={!editable} onChange={(e) => upd("Text rotation", (x) => (x.override = { ...(x.override ?? {}), rotation: Number(e.target.value) }))}>
-            {[0, 90, 180, 270].map((r) => (
-              <option key={r} value={r}>
-                {r}°
-              </option>
-            ))}
-          </NativeSelect>
-        </Row>
       </Section>
     </div>
   );

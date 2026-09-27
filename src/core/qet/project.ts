@@ -61,6 +61,7 @@ import {
   QET_VERSION,
 } from "./elmt";
 import { parseTitleBlockNode, serializeTitleBlockTemplate, titleBlockModified } from "./titleblock";
+import { plainText } from "../richtext";
 import {
   allAttrs,
   attr,
@@ -1236,6 +1237,8 @@ function writeDynamicTexts(ctx: ExportCtx, el: XElement, inst: ElemInst, def: El
     const di = defTexts.findIndex((p, i) => !coveredDef.has(i) && (t.info ? p.from === "ElementInfo" && p.info === t.info : p.from !== "ElementInfo" && p.text === t.text));
     if (di >= 0) coveredDef.add(di);
     const dp = di >= 0 ? defTexts[di] : undefined;
+    // QET text rotation is relative to the element; a fixed page rotation is converted
+    const relRot = t.rotation !== undefined ? (((t.rotation - inst.rot * 90) % 360) + 360) % 360 : t.override?.rotation;
     if (node) {
       used.add(node);
       if (t.x !== null) setNumAttr(node, "x", t.x);
@@ -1245,7 +1248,7 @@ function writeDynamicTexts(ctx: ExportCtx, el: XElement, inst: ElemInst, def: El
         const tn = child(node, "text") ?? node.appendChild(ctx.x.createElement("text"));
         if (isElement(tn) && textOf(tn) !== t.text) setText(ctx.x, tn, t.text);
       }
-      if (t.override?.rotation !== undefined) setNumAttr(node, "rotation", t.override.rotation);
+      if (relRot !== undefined) setNumAttr(node, "rotation", relRot);
       if (t.override?.size !== undefined) {
         const f = parseQtFont(optAttr(node, "font"));
         if (f.size !== t.override.size) node.setAttribute("font", qtFontString(f.family ?? "Sans Serif", t.override.size, f.bold, f.italic));
@@ -1263,7 +1266,7 @@ function writeDynamicTexts(ctx: ExportCtx, el: XElement, inst: ElemInst, def: El
         info: t.info,
         text: t.info ? (inst.info[t.info] ?? t.text) : t.text,
         size: t.override?.size ?? dp?.size ?? 9,
-        rotation: t.override?.rotation ?? dp?.rotation ?? 0,
+        rotation: relRot ?? dp?.rotation ?? 0,
         halign: t.override?.align ?? dp?.halign ?? "left",
         valign: dp?.valign,
         uuid: t.uuid && isUuid(t.uuid) ? t.uuid : isUuid(t.id) ? t.id : uid(),
@@ -1632,7 +1635,9 @@ function writeDiagram(ctx: ExportCtx, diag: XElement, page: Page, order: number)
   const origInputs = children(inputsFound, "input");
   const textOut: XElement[] = [];
   const usedInputs = new Set<XElement>();
-  for (const t of page.texts) {
+  for (const t0 of page.texts) {
+    // formatted texts go out as plain text (bullets kept as characters)
+    const t = t0.rich ? { ...t0, text: plainText(t0.text) } : t0;
     let n = t.qet?.idx !== undefined ? origInputs[t.qet.idx] : undefined;
     if (n && usedInputs.has(n)) n = undefined;
     if (n) {
@@ -1672,6 +1677,8 @@ function writeShapes(ctx: ExportCtx, diag: XElement, page: Page): void {
   const used = new Set<XElement>();
   const M = (p: Pt) => ({ x: p.x + QET_MARGIN, y: p.y + QET_MARGIN });
   for (const sh of page.shapes) {
+    // pictures are not QElectroTech shapes (they stay in Volt)
+    if (sh.image) continue;
     let n = sh.qet?.idx !== undefined ? orig[sh.qet.idx] : undefined;
     if (n && used.has(n)) n = undefined;
     const type = sh.kind === "line" ? "Line" : sh.kind === "rect" ? "Rectangle" : sh.kind === "ellipse" ? "Ellipse" : "Polygon";
