@@ -118,8 +118,9 @@ export function layoutElementTexts(e: ElemInst, sym: CompiledSymbol, styles: Sty
   // definition dynamic texts are templates: QElectroTech (≥0.7) and Volt instantiate them on the
   // element when placed, so they are only drawn for legacy instances that carry no texts at all.
   const instantiated = e.texts.length > 0;
+  const pinNums = e.showPinNumbers ?? styles.text.pinNumber.visible;
   for (const ct of sym.texts) {
-    if (!ct.dyn || instantiated) continue;
+    if (!ct.dyn || instantiated || (ct.pinDup && pinNums)) continue;
     const dp = def.prims.find((p) => p.t === "dyntext" && p.x + 4 === ct.x && p.y + 4 === ct.y && p.text === ct.text);
     if (dp && dp.t === "dyntext" && dp.uuid && used.has(dp.uuid)) continue;
     const role = ct.dyn.info === "label" || ct.dyn.info === "formula" ? "componentRef" : ct.dyn.info === "comment" ? "componentName" : "annotation";
@@ -655,9 +656,11 @@ export function drawElement(
   for (const s of sym.strokes) pt.stroke(s.path, { ...s.style, color: oc ?? s.style.color, width: s.style.width * ws, alpha: o.alpha });
   pt.stroke(sym.pinStubs, { color: oc ?? "#000000", width: 1, minPx: 1, alpha: o.alpha, cap: "butt" });
   // static texts (definition)
+  const showNum = e.showPinNumbers ?? styles.text.pinNumber.visible;
+  const showName = e.showPinNames ?? styles.text.pinName.visible;
   if (o.lod > 0.3) {
     for (const t of sym.texts) {
-      if (t.dyn) continue;
+      if (t.dyn || (t.pinDup && showNum)) continue;
       pt.text({ text: t.text, x: t.x, y: t.y, size: t.size, font: styles.text.componentName.font, color: o.tint ?? t.color, baseline: t.baseline, rotation: t.rotation, alpha: o.alpha });
     }
   }
@@ -665,8 +668,6 @@ export function drawElement(
 
   if (o.lod > 0.3) {
     for (const lt of cachedElementTexts(e, sym, styles, o.measure, o.measureKey ?? pt.kind)) drawLaidText(pt, lt, o.alpha, o.tint);
-    const showNum = e.showPinNumbers ?? styles.text.pinNumber.visible;
-    const showName = e.showPinNames ?? styles.text.pinName.visible;
     if ((showNum || showName) && o.lod > 0.6) {
       for (const pin of def.pins) for (const lt of layoutPinTexts(e, pin, styles, showNum, showName, o.measure)) drawLaidText(pt, lt, o.alpha, o.tint);
     }
@@ -960,10 +961,88 @@ function layoutWireTexts(doc: Doc, page: Page, wires: Wire[], styles: Styles, me
     return out;
   };
 
+  /*
+   * Parallel runs (wires side by side, like a bus) get their texts in one column: every wire of the
+   * group puts its number at the same spot along the run and its conductor spec at the same spot too.
+   * Placement is tried for the whole group at once; if no common spot is free the wires fall back to
+   * their own positions.
+   */
+  type Group = { members: Ctx[]; at: number };
+  const axisOf = (sg: Seg) => (sg.horizontal ? { lo: Math.min(sg.a.x, sg.b.x), hi: Math.max(sg.a.x, sg.b.x), perp: sg.a.y } : { lo: Math.min(sg.a.y, sg.b.y), hi: Math.max(sg.a.y, sg.b.y), perp: sg.a.x });
+  const cAt = (sg: Seg, at: number) => (sg.horizontal ? (at - sg.a.x) / (sg.ux || 1) : (at - sg.a.y) / (sg.uy || 1));
+  const groups: Group[] = [];
+  {
+    const need = (cx: Ctx) => {
+      const spec = withSpec ? wireAnnotation(doc, cx.w) : null;
+      return Math.max(cx.w.label ? mk(cx.w.label, num).w : 0, spec ? mk(spec, info).w + 6 : 0) + 8;
+    };
+    for (const horizontal of [true, false]) {
+      const cand = ctxs
+        .filter((cx) => cx.w.labelPos === undefined && cx.segs[cx.anchor.seg].horizontal === horizontal && cx.segs[cx.anchor.seg].len > 0)
+        .map((cx) => ({ cx, ...axisOf(cx.segs[cx.anchor.seg]), need: need(cx) }))
+        .sort((a, b) => a.perp - b.perp || a.lo - b.lo);
+      const used = new Set<Ctx>();
+      for (let i = 0; i < cand.length; i++) {
+        if (used.has(cand[i].cx)) continue;
+        const g = [cand[i]];
+        let lo = cand[i].lo, hi = cand[i].hi, need = cand[i].need, last = cand[i].perp;
+        for (let j = i + 1; j < cand.length; j++) {
+          const c = cand[j];
+          if (used.has(c.cx) || c.perp === last) continue;
+          if (c.perp - last > 50) break;
+          const nlo = Math.max(lo, c.lo), nhi = Math.min(hi, c.hi), nneed = Math.max(need, c.need);
+          if (nhi - nlo < nneed) continue;
+          g.push(c);
+          (lo = nlo), (hi = nhi), (need = nneed), (last = c.perp);
+        }
+        if (g.length < 2) continue;
+        for (const m of g) used.add(m.cx);
+        groups.push({ members: g.map((m) => m.cx), at: (lo + hi) / 2 });
+      }
+    }
+  }
+  /** one position for the whole group (same shift along the run, same side); all or nothing */
+  const placeGroup = (g: Group, make: (cx: Ctx) => { text: string; style: TextStyle; w: number; h: number; spec?: boolean } | null, sides: (0 | 1)[]): Set<Ctx> => {
+    const items = g.members.map((cx) => ({ cx, t: make(cx) })).filter((x) => x.t) as { cx: Ctx; t: NonNullable<ReturnType<typeof make>> }[];
+    if (items.length < 2) return new Set();
+    const shifts = [0];
+    for (let k = 4; k < 96; k += 4) shifts.push(k, -k);
+    for (const d of shifts)
+      for (const side of sides) {
+        const trial: { cx: Ctx; it: Item; r: Rect }[] = [];
+        let ok = true;
+        for (const { cx, t } of items) {
+          const sg = cx.segs[cx.anchor.seg];
+          const it: Item = { ...t, seg: cx.anchor.seg, c: cAt(sg, g.at + d), side };
+          if (it.c - it.w / 2 < -0.5 || it.c + it.w / 2 > sg.len + 0.5) {
+            ok = false;
+            break;
+          }
+          const r = rectOf(sg, it);
+          if (overlaps(r) || trial.some((q) => r.x < q.r.x + q.r.w + 0.5 && r.x + r.w + 0.5 > q.r.x && r.y < q.r.y + q.r.h + 0.5 && r.y + r.h + 0.5 > q.r.y)) {
+            ok = false;
+            break;
+          }
+          trial.push({ cx, it, r });
+        }
+        if (!ok) continue;
+        for (const { cx, it, r } of trial) {
+          it.rect = r;
+          taken.push(r);
+          cx.placed.push(it);
+        }
+        return new Set(trial.map((q) => q.cx));
+      }
+    return new Set();
+  };
+
   // pass 1: wire numbers in the middle (the most important text of a wire)
+  const numbered = new Set<Ctx>();
+  if (num.visible && numberAt !== "ends")
+    for (const g of groups) for (const cx of placeGroup(g, (cx) => (cx.w.label ? mk(cx.w.label, num) : null), numberAt === "both" ? [0] : [0, 1])) numbered.add(cx);
   if (num.visible && numberAt !== "ends")
     for (const cx of ctxs) {
-      if (!cx.w.label) continue;
+      if (!cx.w.label || numbered.has(cx)) continue;
       const t = mk(cx.w.label, num);
       const len = cx.segs[cx.anchor.seg].len;
       place(cx, { ...t, seg: cx.anchor.seg }, slides(len, cx.anchor.d, numberAt === "both" ? [0] : [0, 1]));
@@ -986,10 +1065,18 @@ function layoutWireTexts(doc: Doc, page: Page, wires: Wire[], styles: Styles, me
         place(cx, { ...t, seg }, cands);
       }
   // pass 3: conductor color / cross-section: the other side of the wire at the same spot, else the nearest free place
+  const specced = new Set<Ctx>();
+  if (withSpec && (ws.showColor || ws.showSection) && info.visible)
+    for (const g of groups)
+      for (const cx of placeGroup(g, (cx) => {
+        const spec = wireAnnotation(doc, cx.w);
+        return spec ? { ...mk(spec, info), spec: true } : null;
+      }, [1, 0]))
+        specced.add(cx);
   if (withSpec && (ws.showColor || ws.showSection) && info.visible)
     for (const cx of ctxs) {
       const spec = wireAnnotation(doc, cx.w);
-      if (!spec) continue;
+      if (!spec || specced.has(cx)) continue;
       const t = mk(spec, info);
       const order = [cx.anchor.seg, ...cx.segs.map((_, i) => i).filter((i) => i !== cx.anchor.seg).sort((x, y) => cx.segs[y].len - cx.segs[x].len)];
       for (const seg of order) {

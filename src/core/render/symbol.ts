@@ -18,6 +18,8 @@ export type CompiledText = {
   align: "left" | "center" | "right";
   dyn?: { from: string; info?: string; width: number; frame: boolean; valign: "top" | "center" | "bottom" };
   bold?: boolean;
+  /** the text only repeats a pin number next to that pin (hidden while Volt draws pin numbers) */
+  pinDup?: boolean;
 };
 
 export type CompiledSymbol = {
@@ -97,6 +99,7 @@ export function compileSymbol(def: ElementDef): CompiledSymbol {
   };
 
   for (const p of def.prims) compilePrim(p, S, F, texts);
+  markPinNumberTexts(texts, def.pins);
 
   // placeholder box if definition missing
   if (def.placeholder || (!def.prims.length && def.pins.length)) {
@@ -184,6 +187,27 @@ function compilePrim(
         dyn: { from: p.from, info: p.info, width: p.width, frame: p.frame, valign: p.valign },
       });
       return;
+  }
+}
+
+/**
+ * Many library symbols write their terminal numbers as plain text ("1", "2") beside the pins. Volt
+ * draws pin numbers itself (upright, in the project's pin number style), so those texts would show
+ * every number twice; they are flagged here and skipped while pin numbers are shown.
+ */
+function markPinNumberTexts(texts: CompiledText[], pins: PinDef[]) {
+  const nums = pins.filter((p) => p.number.trim());
+  if (!nums.length) return;
+  for (const t of texts) {
+    if (t.dyn && t.dyn.from !== "UserText") continue;
+    const s = t.text.trim();
+    if (!s || s.length > 4) continue;
+    // approximate middle of the glyph box (rotation about the anchor)
+    const w = s.length * t.size * 0.55, h = t.size * 0.7;
+    const r = (t.rotation * Math.PI) / 180;
+    const dx = w / 2, dy = t.baseline === "top" ? h / 2 : -h / 2;
+    const cx = t.x + dx * Math.cos(r) - dy * Math.sin(r), cy = t.y + dx * Math.sin(r) + dy * Math.cos(r);
+    if (nums.some((p) => p.number.trim() === s && Math.hypot(p.x - cx, p.y - cy) <= 16 + t.size)) t.pinDup = true;
   }
 }
 
