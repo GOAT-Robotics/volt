@@ -11,6 +11,7 @@ import { Badge, Switch, Tip } from "@/components/ui/misc";
 import { getPage, emptySel } from "@/core/ops";
 import type { Doc, ElemInst, LineStyle, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
 import { TEXT_ROLES } from "@/core/model";
+import { ConductorSection } from "./Conductor";
 import { ROLE_LABELS } from "@/core/styles";
 import { docStyles } from "@/core/render/scene";
 import { symbolThumb } from "../thumb";
@@ -46,7 +47,7 @@ export function Row({ label, children, hint }: { label: React.ReactNode; childre
 }
 
 /** Input that commits on blur/enter (one undo step per edit). */
-export function Commit({ value, onCommit, type = "text", disabled, placeholder, className, ...rest }: { value: string | number; onCommit: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; className?: string; step?: number; min?: number; max?: number; "aria-label"?: string }) {
+export function Commit({ value, onCommit, type = "text", disabled, placeholder, className, ...rest }: { value: string | number; onCommit: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; className?: string; step?: number; min?: number; max?: number; list?: string; "aria-label"?: string }) {
   const [v, setV] = useState(String(value ?? ""));
   useEffect(() => setV(String(value ?? "")), [value]);
   return (
@@ -225,6 +226,9 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
           </Button>
           <Button size="xs" onClick={() => runCommand("numbering", ui)}>
             Numbering…
+          </Button>
+          <Button size="xs" onClick={() => runCommand("wiring", ui)}>
+            Wiring & cables…
           </Button>
           <Button size="xs" onClick={() => runCommand("projectProps", ui)}>
             Properties…
@@ -528,9 +532,6 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
         <Row label="Label / No.">
           <Commit value={w.label ?? ""} disabled={!editable} onCommit={(v) => upd("Wire label", (x) => (x.label = v || undefined))} />
         </Row>
-        <Row label="Cable">
-          <Commit value={w.cable ?? ""} disabled={!editable} onCommit={(v) => upd("Cable", (x) => (x.cable = v || undefined))} />
-        </Row>
         <Row label="Label position">
           <input type="range" min={0.05} max={0.95} step={0.05} value={w.labelPos ?? 0.5} disabled={!editable} onChange={(ev) => upd("Label position", (x) => (x.labelPos = Number(ev.target.value)))} className="w-full accent-[var(--accent)]" aria-label="Label position" />
         </Row>
@@ -541,6 +542,7 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
           <span className="text-xs tabular">{Math.round(polylineLength(w.pts))} units · {w.pts.length - 1} segments</span>
         </Row>
       </Section>
+      <ConductorSection wires={[w]} page={page} doc={doc} editable={editable} />
       <XrefSection id={w.id} />
       <Section title="Connections">
         {[
@@ -700,6 +702,8 @@ function FreeTextInspector({ id, page, doc, editable }: { id: string; page: Page
 function MultiInspector() {
   const sel = useEditor((s) => s.sel);
   const page = useEditor((s) => s.page());
+  const doc = useEditor((s) => s.doc);
+  const selWires = useMemo(() => page.wires.filter((w) => sel.wires.includes(w.id)), [page.wires, sel.wires]);
   const editable = useEditor((s) => !!s.version?.editable);
   const ui = useEditorUI();
   const [loc, setLoc] = useState("");
@@ -739,6 +743,7 @@ function MultiInspector() {
           </div>
         )}
       </Section>
+      {selWires.length > 0 && <ConductorSection wires={selWires} page={page} doc={doc} editable={editable} />}
       {editable && sel.elements.length > 1 && (
         <Section title="Arrange">
           <div className="grid grid-cols-3 gap-1">

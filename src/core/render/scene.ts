@@ -5,6 +5,7 @@ import { titleBlockColumnWidths, titleBlockHeight } from "../qet/titleblock";
 import { defaultTitleBlock } from "../doc";
 import { DASHES, PathBuilder, type Painter, type PathData, type StrokeStyle } from "./painter";
 import { PT, symbolFor, type CompiledSymbol } from "./symbol";
+import { cableMarks, sectionWeight, wireAnnotation, wireInfo, wiringOf } from "../wiring";
 
 /* ------------------------------------------------------------------ */
 /* Style cache                                                          */
@@ -234,26 +235,40 @@ export function wirePath(w: Wire): PathData {
   return p;
 }
 type WireGroup = { style: StrokeStyle; paths: PathData[]; dim: boolean };
-const groupCache = new WeakMap<Wire[], { styles: Styles; groups: WireGroup[] }>();
-function wireGroups(styles: Styles, wires: Wire[], tint?: Map<string, string>, dim?: Set<string>): WireGroup[] {
+type WireLookDoc = Pick<Doc, "wiring" | "cables">;
+const groupCache = new WeakMap<Wire[], { styles: Styles; wiring: unknown; cables: unknown; groups: WireGroup[] }>();
+function wireGroups(styles: Styles, wires: Wire[], doc: WireLookDoc, tint?: Map<string, string>, dim?: Set<string>): WireGroup[] {
   const cacheable = !tint && !dim;
   if (cacheable) {
     const c = groupCache.get(wires);
-    if (c && c.styles === styles) return c.groups;
+    if (c && c.styles === styles && c.wiring === doc.wiring && c.cables === doc.cables) return c.groups;
   }
   const m = new Map<string, WireGroup>();
-  for (const w of wires) {
-    if (w.pts.length < 2) continue;
-    const st = wireStroke(styles, w, tint?.get(w.id));
-    const d = !!dim?.has(w.id);
+  const add = (st: StrokeStyle, d: boolean, path: PathData) => {
     const k = `${st.color}|${st.width}|${st.dash?.join(",") ?? ""}|${d}`;
     let g = m.get(k);
     if (!g) m.set(k, (g = { style: st, paths: [], dim: d }));
-    g.paths.push(wirePath(w));
+    g.paths.push(path);
+  };
+  const stripes: [StrokeStyle, boolean, PathData][] = [];
+  for (const w of wires) {
+    if (w.pts.length < 2) continue;
+    const t = tint?.get(w.id);
+    const st = wireStroke(styles, w, t, doc);
+    const d = !!dim?.has(w.id);
+    add(st, d, wirePath(w));
+    // two-colour insulation (green-yellow …): second colour as stripes on top
+    const second = !t && wireSecondColor(doc, w);
+    if (second) stripes.push([{ ...st, color: second, dash: [st.width * 3, st.width * 3], cap: "butt" }, d, wirePath(w)]);
   }
+  for (const [st, d, p] of stripes) add(st, d, p);
   const groups = [...m.values()];
-  if (cacheable) groupCache.set(wires, { styles, groups });
+  if (cacheable) groupCache.set(wires, { styles, wiring: doc.wiring, cables: doc.cables, groups });
   return groups;
+}
+function wireSecondColor(doc: WireLookDoc, w: Wire): string | null {
+  if (!doc.wiring?.colorize || w.override?.color) return null;
+  return wireInfo(doc, w).look?.hex2 ?? null;
 }
 const degCache = new WeakMap<Wire[], Degrees>();
 export function cachedDegrees(page: Page): Degrees {
@@ -299,12 +314,16 @@ export type DrawOpts = {
   extraFields?: Record<string, string>;
 };
 
-export function wireStroke(styles: Styles, w: Wire, tint?: string): StrokeStyle {
+export function wireStroke(styles: Styles, w: Wire, tint?: string, doc?: WireLookDoc): StrokeStyle {
   const base = w.bus ? styles.graphics.bus : styles.graphics.wire;
   const o = w.override ?? {};
+  const ws = doc?.wiring;
+  const look = ws && (ws.colorize || ws.weightBySection) ? wireInfo(doc, w) : null;
+  const insul = ws?.colorize && !o.color ? look?.look?.hex : undefined;
+  const weight = ws?.weightBySection && o.width === undefined ? sectionWeight(look?.section) : 1;
   return {
-    color: tint ?? o.color ?? base.color,
-    width: o.width ?? base.width,
+    color: tint ?? o.color ?? insul ?? base.color,
+    width: (o.width ?? base.width) * weight,
     dash: DASHES[o.dash ?? base.dash] ?? null,
     cap: "round",
     join: "round",
@@ -339,7 +358,7 @@ export function drawPage(pt: Painter, o: DrawOpts) {
   // wires — cached paths, batched per stroke style (one native stroke per style on canvas)
   const wires = o.wires ?? page.wires;
   pt.begin?.("wires");
-  const groups = wireGroups(styles, wires, o.tint, o.dim);
+  const groups = wireGroups(styles, wires, doc, o.tint, o.dim);
   for (const g of groups) {
     const st = { ...g.style, alpha: g.dim ? 0.25 : o.alpha };
     if (pt.strokeMany) pt.strokeMany(g.paths, st);
@@ -348,9 +367,9 @@ export function drawPage(pt: Painter, o: DrawOpts) {
   // wire labels
   if (lod > 0.35) {
     for (const w of wires) {
-      const text = w.label || w.cable;
+      const text = w.label;
       if (!text || w.pts.length < 2) continue;
-      const role = w.label ? "wireLabel" : "cableLabel";
+      const role = "wireLabel";
       const st = styles.text[role];
       if (!st.visible) continue;
       const size = st.size * PT;
@@ -362,6 +381,57 @@ export function drawPage(pt: Painter, o: DrawOpts) {
     }
   }
   pt.end?.();
+
+  // conductor colour / cross-section, with a small tick through the wire
+  const ws = wiringOf(doc);
+  if (lod > 0.5 && (ws.showColor || ws.showSection)) {
+    const st = styles.text.wireInfo ?? styles.text.wireLabel;
+    if (st.visible) {
+      const size = st.size * PT;
+      const ticks = new PathBuilder();
+      let nTicks = 0;
+      for (const w of wires) {
+        if (w.pts.length < 2) continue;
+        const text = wireAnnotation(doc, w);
+        if (!text) continue;
+        const tw = measure(text, size, st.font, st.weight);
+        // on the longest straight run that fits the text; away from the wire number and the cable mark
+        const { p, horizontal } = annotationAnchor(w, tw, w.cable ? 0.2 : w.label ? 0.28 : 0.5);
+        const h = size * st.lineHeight;
+        const color = o.tint?.get(w.id);
+        if (ws.tick) {
+          if (horizontal) ticks.M(p.x - 2, p.y + 3).L(p.x + 2, p.y - 3);
+          else ticks.M(p.x - 3, p.y + 2).L(p.x + 3, p.y - 2);
+          nTicks++;
+        }
+        if (horizontal) drawLaidText(pt, { text, x: p.x - tw / 2 + st.dx, y: p.y + 2 + st.dy, rotation: 0, style: st, w: tw, h }, o.alpha, color);
+        else drawLaidText(pt, { text, x: p.x + 2 + st.dx, y: p.y + tw / 2 + st.dy, rotation: 270, style: st, w: tw, h }, o.alpha, color);
+      }
+      if (nTicks) pt.stroke(ticks.build(), { color: styles.graphics.wire.color, width: 0.8, cap: "round", minPx: 1, alpha: o.alpha });
+    }
+  }
+  // cables: a line crossing the bundle, labelled with tag and type; dashed ellipse when shielded
+  if (lod > 0.25) {
+    const cst = styles.text.cableLabel;
+    const size = cst.size * PT;
+    for (const m of cableMarks(doc, page)) {
+      if (o.wires && !m.wires.some((id) => o.wires!.some((w) => w.id === id))) continue;
+      const tint = o.tint?.get(m.wires[0]);
+      pt.stroke(new PathBuilder().M(m.a.x, m.a.y).L(m.b.x, m.b.y).build(), { color: tint ?? cst.color, width: 1, cap: "round", minPx: 1, alpha: o.alpha });
+      if (m.shield) {
+        const cx = (m.a.x + m.b.x) / 2, cy = (m.a.y + m.b.y) / 2;
+        const len = Math.hypot(m.b.x - m.a.x, m.b.y - m.a.y) / 2;
+        const rx = m.horizontal ? 5 : len - 2, ry = m.horizontal ? len - 2 : 5;
+        pt.stroke(new PathBuilder().E(cx, cy, rx, ry).build(), { color: tint ?? cst.color, width: 0.8, dash: [2, 1.5], minPx: 1, alpha: o.alpha });
+      }
+      if (cst.visible) {
+        const tw = measure(m.label, size, cst.font, cst.weight);
+        const h = size * cst.lineHeight;
+        if (m.horizontal) drawLaidText(pt, { text: m.label, x: m.a.x - tw / 2, y: m.a.y - h - 1, rotation: 0, style: cst, w: tw, h }, o.alpha, tint);
+        else drawLaidText(pt, { text: m.label, x: m.a.x - tw - 2, y: m.a.y - h / 2 - 3, rotation: 0, style: cst, w: tw, h }, o.alpha, tint);
+      }
+    }
+  }
 
   // junction dots
   const deg = cachedDegrees(page);
@@ -617,4 +687,21 @@ export function contentBounds(doc: Doc, page: Page, includeFrame = true): Rect {
 
 export function pinScene(e: ElemInst, pin: PinDef): Pt {
   return toScene(e, pin);
+}
+
+/** Point on a wire for its conductor annotation: the longest segment the text fits on, at fraction f. */
+function annotationAnchor(w: Wire, textW: number, f: number): { p: Pt; horizontal: boolean } {
+  let best: { i: number; len: number } | null = null, longest: { i: number; len: number } | null = null;
+  for (let i = 0; i < w.pts.length - 1; i++) {
+    const a = w.pts[i], b = w.pts[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!longest || len > longest.len) longest = { i, len };
+    if (len >= textW + 8 && (!best || len > best.len)) best = { i, len };
+  }
+  const s = best ?? longest!;
+  const a = w.pts[s.i], b = w.pts[s.i + 1];
+  // keep the text clear of the segment ends (pins, corners)
+  const margin = Math.min(0.45, (textW / 2 + 4) / Math.max(1, s.len));
+  const t = Math.min(1 - margin, Math.max(margin, f));
+  return { p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, horizontal: Math.abs(b.y - a.y) <= Math.abs(b.x - a.x) };
 }

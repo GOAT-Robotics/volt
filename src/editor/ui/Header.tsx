@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { ArrowLeft, Check, ChevronDown, CloudOff, Download, GitCompare, History, Loader2, Lock, Redo2, Search, Send, Undo2, AlertTriangle, Palette, Hash, Settings2, FileWarning, Plus, Command } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, CloudOff, Download, GitCompare, History, Loader2, Lock, Redo2, Search, Send, Undo2, AlertTriangle, Palette, Hash, Settings2, FileWarning, Plus, Command, Cable} from "lucide-react";
 import { useEditor } from "../store";
 import { LogoMark } from "@/components/brand/Logo";
 import { useEditorUI } from "./context";
@@ -81,6 +81,9 @@ export function Header() {
             </MenuItem>
             <MenuItem onSelect={() => run("numbering")}>
               <Hash /> Automatic numbering…
+            </MenuItem>
+            <MenuItem onSelect={() => run("wiring")}>
+              <Cable /> Wiring & cables…
             </MenuItem>
             <MenuItem onSelect={() => run("compat")}>
               <FileWarning /> Compatibility report

@@ -43,6 +43,7 @@ import type {
   WireEnd,
 } from "../model";
 import { DEFAULT_TB, newDoc, newPage } from "../doc";
+import { FUNCTIONS, functionOf } from "../wiring";
 import { rotOrient, toScene } from "../geometry";
 import { uid } from "../ids";
 import { stableStringify } from "../stable-json";
@@ -831,6 +832,11 @@ function importDiagram(ctx: ImportCtx, diag: XElement, di: number): Page {
     };
     if (attrs.num) w.label = attrs.num;
     if (attrs.cable) w.cable = attrs.cable;
+    if (attrs.core) w.core = attrs.core;
+    if (attrs.conductor_color?.trim()) w.insulation = attrs.conductor_color;
+    if (attrs.conductor_section?.trim()) w.section = attrs.conductor_section;
+    const fn = functionOf(attrs.function);
+    if (fn) w.fn = fn;
     page.wires.push(w);
     tallyChildren(ctx, "conductor", c, CONDUCTOR_MODELED);
   });
@@ -1577,6 +1583,15 @@ function writeDiagram(ctx: ExportCtx, diag: XElement, page: Page, order: number)
     if (w.override?.color && attr(c, "color") !== w.override.color) c.setAttribute("color", w.override.color);
     if (attr(c, "num") !== (w.label ?? "")) c.setAttribute("num", w.label ?? "");
     if (w.cable !== undefined && attr(c, "cable") !== w.cable) c.setAttribute("cable", w.cable);
+    // conductor information (QET: free-text conductor_color / conductor_section / function)
+    const setText = (k: string, v: string | undefined) => {
+      if (attr(c!, k) !== (v ?? "") && (v || c!.hasAttribute(k))) c!.setAttribute(k, v ?? "");
+    };
+    setText("conductor_color", w.insulation);
+    setText("conductor_section", w.section);
+    if (functionOf(attr(c, "function")) !== w.fn) setText("function", w.fn ? FUNCTIONS.find((f) => f.id === w.fn)?.id : "");
+    if (w.core) setText("core", w.core);
+    else if (c.hasAttribute("core")) c.removeAttribute("core");
     if (fresh && isUuid(w.id)) c.setAttribute("uuid", bracedUuid(w.id));
     writeConductorRefs(ctx, c, 1, A.out, A.pin);
     writeConductorRefs(ctx, c, 2, B.out, B.pin);

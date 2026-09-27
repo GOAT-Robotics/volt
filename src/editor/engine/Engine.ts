@@ -26,6 +26,8 @@ import {
 import { moveSegment, orthoRoute } from "@/core/wires";
 import { computeNets } from "@/core/topology";
 import { shapeBounds, shapeDistance, shapeOutline } from "@/core/shapes";
+import { cableMarks } from "@/core/wiring";
+import { nearestSegment } from "@/core/wires";
 import { cachedXref, describe, occurrenceAt, targetsOf, type Occurrence } from "@/core/xref";
 import { uid } from "@/core/ids";
 import type { EditorStore } from "../store";
@@ -64,6 +66,7 @@ type Hit =
   | { k: "text"; id: string }
   | { k: "etext"; el: string; text: string }
   | { k: "shape"; id: string }
+  | { k: "cable"; tag: string; wires: string[] }
   | { k: "shapePt"; id: string; i: number; p: Pt }
   | { k: "comment"; id: string };
 
@@ -452,6 +455,11 @@ export class Engine {
       const d = shapeDistance(shape, p);
       if (d <= tol && (!sh || d < sh.d)) sh = { id: h.id, d };
     }
+    // cable marks (the short line crossing a cable's wires) select the whole cable
+    for (const m of cableMarks(this.doc, page)) {
+      const n = nearestSegment([m.a, m.b], p);
+      if (n && n.d <= tol && (!wh || n.d < wh.d)) return { k: "cable", tag: m.tag, wires: page.wires.filter((w) => w.cable === m.tag).map((w) => w.id) };
+    }
     if (wh && (!el || wh.d < tol * 0.6)) return { k: "wire", id: wh.w.id, seg: wh.seg, p: wh.p };
     if (sh && !wh && (!el || sh.d < tol * 0.6)) return { k: "shape", id: sh.id };
     if (el) return { k: "el", id: el.id };
@@ -796,7 +804,7 @@ export class Engine {
     }
     // ensure hit is selected, then move the selection
     let sel = s.sel;
-    const id = hit.k === "el" || hit.k === "junc" || hit.k === "text" || hit.k === "wire" || hit.k === "shape" ? hit.id : hit.k === "etext" ? hit.el : null;
+    const id = hit.k === "el" || hit.k === "junc" || hit.k === "text" || hit.k === "wire" || hit.k === "shape" ? hit.id : hit.k === "etext" ? hit.el : hit.k === "cable" ? hit.tag : null;
     if (id && !this.inSel(sel, hit)) {
       sel = this.selFor(hit, m.shift ? sel : emptySel());
       s.setSel(sel);
@@ -819,6 +827,7 @@ export class Engine {
     if (h.k === "junc") return sel.junctions.includes(h.id);
     if (h.k === "text") return sel.texts.includes(h.id);
     if (h.k === "shape" || h.k === "shapePt") return (sel.shapes ?? []).includes(h.id);
+    if (h.k === "cable") return h.wires.length > 0 && h.wires.every((id) => sel.wires.includes(id));
     return false;
   }
   private selFor(h: Hit, base: Sel): Sel {
@@ -831,6 +840,9 @@ export class Engine {
     else if (h.k === "text") toggle(s.texts, h.id);
     else if (h.k === "pin") toggle(s.elements, h.el);
     else if (h.k === "shape") toggle(s.shapes, h.id);
+    else if (h.k === "cable") {
+      for (const id of h.wires) if (!s.wires.includes(id)) s.wires.push(id);
+    }
     else if (h.k === "shapePt" && !s.shapes.includes(h.id)) s.shapes.push(h.id);
     return s;
   }

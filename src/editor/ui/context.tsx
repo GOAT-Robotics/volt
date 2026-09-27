@@ -24,7 +24,8 @@ export type DialogName =
   | "submit"
   | "compare"
   | "projectProps"
-  | "createElement";
+  | "createElement"
+  | "wiring";
 
 export const EditorCtx = createContext<EditorUI | null>(null);
 export function useEditorUI() {

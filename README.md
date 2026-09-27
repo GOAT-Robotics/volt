@@ -86,6 +86,13 @@ The standard library, blocks and title blocks install automatically when the con
 - **Export.** PDF (vector, multi-page, optional comment summary), SVG, PNG, DXF, and `.qet`.
 - **Accessibility.** Keyboard alternatives for the canvas (Connect pins dialog, nudging, commands) and a screen-reader live region.
 
+**Wiring and cables**
+- **Conductor data.** Every wire can carry a function (power, L1–L3, N, PE, AC/DC control, interlock), an insulation colour (IEC 60757 codes such as BK, BU, GN/YE, or any text) and a cross-section (mm², AWG or sq). Set them in the Conductor panel for one wire or many at once, or apply them to a whole net.
+- **Standards.** Project → Wiring & cables picks IEC 60204-1 (EU), NFPA 79 / UL 508A (US) or JIS B 9960-1 (Japan). A wire without its own colour gets the standard colour for its function (e.g. red AC control, blue DC control, green-yellow PE), shown in that standard's notation and size unit.
+- **On the drawing.** Colour code and cross-section next to each wire with a small tick; optionally wires drawn in their insulation colour (GN/YE striped) and heavier lines for larger cross-sections.
+- **Cables.** Multi-core cables with tag, type, cores (HD 308 colours, numbered, DIN 47100), cross-section, shield and length. Selecting wires and choosing Cable → New cable creates one and assigns cores in drawing order (green-yellow goes to the PE wire). The drawing shows a cable mark across the bundle with the tag and type (dashed ellipse when shielded); clicking it selects the cable's wires. Wire and cable lists export as CSV.
+- **Checks.** Green-yellow on a non-PE wire, PE in another colour, a core used twice, more conductors than cores.
+
 **Library** (`/library`)
 - **Standard library.** About 8,800 symbols (electric, logic, hydraulic, pneumatic, energy), starter circuit blocks (DOL starter, start/stop with self-holding, pilot lamp, relay, 24 V supply, terminal strip) and standard title blocks. They are installed into every workspace when the server starts, or with `npm run db:seed`, and updated in place when a newer collection ships.
 - **Sharing.** Elements and blocks can be private, shared with named people (view or edit), or published to the whole organization. Org publishing can require approval.

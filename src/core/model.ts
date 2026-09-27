@@ -93,6 +93,7 @@ export const TEXT_ROLES = [
   "pinNumber",
   "pinName",
   "wireLabel",
+  "wireInfo",
   "cableLabel",
   "terminalLabel",
   "annotation",
@@ -200,11 +201,52 @@ export type Wire = {
   pts: Pt[];
   label?: string; // conductor number / wire label
   labelPos?: number; // 0..1 along wire, default 0.5
+  /** cable tag (e.g. "W1") this conductor is a core of */
   cable?: string;
+  /** core designation inside the cable ("1", "BN", …) */
+  core?: string;
+  /** circuit function — drives the standard insulation colour */
+  fn?: WireFunction;
+  /** insulation colour code as entered (IEC 60757 "BK", "GNYE", or e.g. "BLK", "black") */
+  insulation?: string;
+  /** conductor cross-section as entered ("1.5 mm²", "16 AWG", "1.25 sq") */
+  section?: string;
   bus?: boolean;
   override?: Partial<LineStyle>;
   group?: GroupRef;
   qet?: { idx?: number; attrs?: Record<string, string> };
+};
+
+export type WireFunction = "power" | "L1" | "L2" | "L3" | "N" | "PE" | "acControl" | "dcControl" | "dc0V" | "interlock" | "signal";
+export type WiringStandard = "iec" | "nfpa" | "jis";
+
+/** How conductor information is shown on the drawing. */
+export type WiringSettings = {
+  standard: WiringStandard;
+  /** show the insulation colour code (or the cable core) next to the wire */
+  showColor: boolean;
+  showSection: boolean;
+  /** small oblique tick through the wire at the annotation */
+  tick: boolean;
+  /** draw each wire in its insulation colour (GN/YE striped) */
+  colorize: boolean;
+  /** heavier lines for larger cross-sections */
+  weightBySection: boolean;
+};
+
+export type CableCore = { name: string; color?: string };
+/** A multi-core cable. Wires reference it by `tag` (Wire.cable) and pick a core (Wire.core). */
+export type Cable = {
+  id: string;
+  tag: string;
+  /** manufacturer type / part, e.g. "ÖLFLEX CLASSIC 110 4G1,5" */
+  type?: string;
+  cores: CableCore[];
+  /** nominal cross-section of the cores */
+  section?: string;
+  shield?: boolean;
+  length?: string;
+  note?: string;
 };
 
 export type Junction = { id: string; x: number; y: number; qetElemId?: string; group?: GroupRef };
@@ -293,6 +335,8 @@ export type Doc = {
   defs: Record<string, ElementDef>;
   titleBlocks: Record<string, TitleBlockTemplate>;
   grid: { size: number; show: boolean };
+  wiring?: WiringSettings;
+  cables?: Cable[];
   qet?: {
     version: string;
     /** original .qet XML, used to preserve unknown nodes on export */

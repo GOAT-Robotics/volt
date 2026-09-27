@@ -24,6 +24,7 @@ export const ROLE_LABELS: Record<TextRole, string> = {
   pinNumber: "Pin number",
   pinName: "Pin name",
   wireLabel: "Wire label",
+  wireInfo: "Wire colour / cross-section",
   cableLabel: "Cable label",
   terminalLabel: "Terminal label",
   annotation: "General annotation",
@@ -41,6 +42,7 @@ export function defaultStyles(): Styles {
       pinNumber: T({ size: 6, color: "#6b7280" }),
       pinName: T({ size: 6, color: "#374151", visible: false }),
       wireLabel: T({ size: 7, color: "#1d4ed8", background: "#ffffff" }),
+      wireInfo: T({ size: 6, color: "#374151" }),
       cableLabel: T({ size: 7, color: "#7c3aed", italic: true }),
       terminalLabel: T({ size: 8, color: "#111827" }),
       annotation: T({ size: 9, color: "#111827" }),
@@ -78,7 +80,8 @@ export function deepMerge<T>(base: T, over: DeepPartial<T> | undefined | null): 
 
 /** org base ⊕ project partial */
 export function projectStyles(base: Styles, partial: PartialStyles | undefined): Styles {
-  return deepMerge(base, partial as DeepPartial<Styles>);
+  // defaults first: style snapshots saved before a style key existed still get a value for it
+  return deepMerge(deepMerge(defaultStyles(), base as DeepPartial<Styles>), partial as DeepPartial<Styles>);
 }
 
 /** effective text style: project ⊕ element-def default ⊕ object override */

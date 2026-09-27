@@ -17,6 +17,7 @@ const ExportDialog = dynamic(() => import("./ExportDialog").then((m) => m.Export
 import { CompatDialog, PageDialog, ProjectPropsDialog, ConnectDialog } from "./MiscDialogs";
 import { NewVersionDialog, SubmitDialog, CompareDialog, DiffDrawer } from "./WorkflowDialogs";
 import { BlockDialog, CreateElementDialog } from "./LibraryDialogs";
+import { WiringDialog } from "./WiringDialog";
 
 export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?: unknown } | null; onClose: () => void }) {
   const open = (n: DialogName) => dialog?.name === n;
@@ -26,6 +27,7 @@ export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?:
       <Palette {...props("palette")} onClose={onClose} />
       {open("styles") && <StylesDialog onClose={onClose} />}
       {open("numbering") && <NumberingDialog onClose={onClose} />}
+      {open("wiring") && <WiringDialog onClose={onClose} />}
       {open("export") && <ExportDialog onClose={onClose} />}
       {open("compat") && <CompatDialog onClose={onClose} />}
       {open("page") && <PageDialog onClose={onClose} />}

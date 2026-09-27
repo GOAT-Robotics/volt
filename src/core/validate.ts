@@ -4,6 +4,8 @@ import { docStyles, layoutElementTexts, textBounds } from "./render/scene";
 import { symbolFor } from "./render/symbol";
 import { approxMeasure } from "./render/svg";
 import { rectsIntersect } from "./geometry";
+import { computeNets } from "./topology";
+import { cableByTag, colorLabel, colorOf, wireInfo, wiringOf } from "./wiring";
 
 export type IssueLevel = "error" | "warning" | "info";
 export type Issue = { level: IssueLevel; code: string; message: string; pageId?: string; ids: string[] };
@@ -45,6 +47,7 @@ export function validateDoc(doc: Doc, ctx: ValidateContext = {}): Issue[] {
   }
 
   for (const page of pages) validatePage(doc, page, issues, styles, measure);
+  validateWiring(doc, pages, issues);
   const order: Record<IssueLevel, number> = { error: 0, warning: 1, info: 2 };
   return issues.sort((a, b) => order[a.level] - order[b.level]);
 }
@@ -106,4 +109,44 @@ function validatePage(doc: Doc, page: Page, issues: Issue[], styles: ReturnType<
         const shrink = (r: Rect) => ({ x: r.x + 1, y: r.y + 1, w: Math.max(0, r.w - 2), h: Math.max(0, r.h - 2) });
         if (rectsIntersect(shrink(a.r), shrink(b.r))) issues.push({ level: "warning", code: "label.overlap", message: `${P}: labels "${a.text}" and "${b.text}" overlap`, pageId: page.id, ids: [a.id, b.id] });
       }
+}
+
+/** Conductor colours and cables. */
+function validateWiring(doc: Doc, pages: Page[], issues: Issue[]) {
+  const std = wiringOf(doc).standard;
+  const coreUse = new Map<string, { net: string; ids: string[]; pageId: string }[]>();
+  for (const page of pages) {
+    const P = page.title;
+    const netOf = new Map<string, string>();
+    for (const n of computeNets(page)) for (const w of n.wires) netOf.set(w, `${page.id}:${n.id}`);
+    for (const w of page.wires) {
+      const i = wireInfo(doc, w);
+      const code = i.look?.code;
+      const name = w.label ? ` ${w.label}` : "";
+      // green-yellow is reserved for protective conductors (IEC 60204-1 13.2.2, NFPA 79 13.2.2)
+      if (code === "GNYE" && w.fn && w.fn !== "PE") issues.push({ level: "error", code: "wire.gnyeMisuse", message: `${P}: wire${name} is green-yellow but not a protective earth conductor`, pageId: page.id, ids: [w.id] });
+      if (w.fn === "PE" && code && code !== "GNYE" && !(std === "nfpa" && code === "GN")) issues.push({ level: "warning", code: "wire.peColor", message: `${P}: protective earth wire${name} is ${colorLabel(i.color!, std)}, expected green-yellow`, pageId: page.id, ids: [w.id] });
+      if (w.insulation && !colorOf(w.insulation)) issues.push({ level: "info", code: "wire.colorUnknown", message: `${P}: wire${name} colour "${w.insulation}" is not a standard colour code`, pageId: page.id, ids: [w.id] });
+      if (w.cable && w.core) {
+        const c = cableByTag(doc, w.cable);
+        if (c && !c.cores.some((k) => k.name === w.core)) issues.push({ level: "error", code: "cable.coreMissing", message: `${P}: wire${name} uses core ${w.core}, which cable ${w.cable} does not have`, pageId: page.id, ids: [w.id] });
+        const k = `${w.cable}\u0000${w.core}`;
+        const net = netOf.get(w.id) ?? w.id;
+        const list = coreUse.get(k) ?? [];
+        const same = list.find((x) => x.net === net);
+        if (same) same.ids.push(w.id);
+        else list.push({ net, ids: [w.id], pageId: page.id });
+        coreUse.set(k, list);
+      }
+    }
+  }
+  for (const [k, list] of coreUse) {
+    if (list.length < 2) continue;
+    const [cable, core] = k.split("\u0000");
+    issues.push({ level: "warning", code: "cable.coreTwice", message: `Cable ${cable}: core ${core} is assigned in ${list.length} separate circuits — one core can carry only one`, pageId: list[0].pageId, ids: list.flatMap((x) => x.ids) });
+  }
+  for (const c of doc.cables ?? []) {
+    const n = new Set(pages.flatMap((p) => p.wires.filter((w) => w.cable === c.tag).map((w) => w.core ?? w.id))).size;
+    if (n > c.cores.length) issues.push({ level: "error", code: "cable.overfull", message: `Cable ${c.tag} has ${c.cores.length} cores but ${n} conductors are assigned to it`, ids: [] });
+  }
 }
