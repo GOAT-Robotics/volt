@@ -203,7 +203,8 @@ function LibraryPanel() {
     setScope("mine");
     // show what arrived: a single element is searched by name
     if (list.length === 1 && /\.elmt$/i.test(list[0].name) && !j.errors?.length) {
-      const name = /<name lang="en">([^<]+)<\/name>/.exec(await list[0].text())?.[1];
+      const xml = await list[0].text();
+      const name = (/<name lang="en">([^<]+)<\/name>/.exec(xml) ?? /<name lang="[^"]*">([^<]+)<\/name>/.exec(xml))?.[1];
       if (name) setQ(name);
     }
     setReload((x) => x + 1);
