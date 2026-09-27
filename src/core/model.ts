@@ -128,8 +128,9 @@ export const COMPONENT_INFO = [
   { key: "manufacturer", name: "Manufacturer", role: "componentManufacturer" },
 ] as const;
 /** Where the component info block sits: under the reference (moving beside the symbol if needed), or fixed. */
-export type InfoPlacement = "auto" | "right" | "left" | "below";
-export type InfoLayout = { at?: InfoPlacement; align?: "left" | "center" | "right" };
+export type InfoPlacement = "auto" | "right" | "left" | "below" | "free";
+/** `pos` (with at = "free"): top-left of the block in element coordinates, so it follows the component. */
+export type InfoLayout = { at?: InfoPlacement; align?: "left" | "center" | "right"; pos?: Pt };
 export type ComponentInfoKey = (typeof COMPONENT_INFO)[number]["key"];
 export type ComponentInfoFlags = Partial<Record<ComponentInfoKey, boolean>>;
 

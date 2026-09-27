@@ -54,6 +54,8 @@ export type LaidText = {
   style: TextStyle;
   w: number;
   h: number;
+  /** part of the component info block: the block's top-left (scene), used to drag it */
+  block?: Pt;
 };
 
 const px = (s: TextStyle) => s.size * PT;
@@ -143,37 +145,58 @@ export function layoutElementTexts(e: ElemInst, sym: CompiledSymbol, styles: Sty
 function layoutComponentInfo(e: ElemInst, def: ElementDef, styles: Styles, measure: Painter["measure"], out: LaidText[], ref: LaidText | null, shown: Set<string>, bb: Rect, autoRow: number) {
   const flags = { ...(styles.graphics.componentInfo ?? {}), ...(e.showInfo ?? {}) };
   const layout = { ...(styles.graphics.componentInfoLayout ?? {}), ...(e.infoLayout ?? {}) };
-  const lines: { text: string; style: TextStyle; w: number; h: number; size: number }[] = [];
-  for (const c of COMPONENT_INFO) {
-    if (shown.has(c.key) || !flags[c.key]) continue;
-    const text = (e.info[c.key] ?? def.info[c.key] ?? "").trim();
-    const style = styles.text[c.role];
-    if (!text || !style?.visible) continue;
+  type Seg = { text: string; style: TextStyle; size: number; w: number; h: number };
+  const seg = (text: string, style: TextStyle): Seg => {
     const size = px(style);
-    lines.push({ text, style, size, w: measure(text, size, style.font, style.weight), h: size * style.lineHeight });
+    return { text, style, size, w: measure(text, size, style.font, style.weight), h: size * style.lineHeight };
+  };
+  const value = (k: (typeof COMPONENT_INFO)[number]) => {
+    if (shown.has(k.key) || !flags[k.key]) return null;
+    const text = (e.info[k.key] ?? def.info[k.key] ?? "").trim();
+    const style = styles.text[k.role];
+    return text && style?.visible ? seg(text, style) : null;
+  };
+  const [nameK, ratingK, partK, mfrK] = COMPONENT_INFO;
+  // rows: name, rating, then "manufacturer · part number" on one line (each part in its own style)
+  const rows: Seg[][] = [];
+  for (const k of [nameK, ratingK]) {
+    const v = value(k);
+    if (v) rows.push([v]);
   }
-  if (!lines.length) return;
-  const W = Math.max(...lines.map((l) => l.w));
-  const alignOf = (l: (typeof lines)[number]) => layout.align ?? l.style.align ?? "left";
-  // lines stacked baseline to baseline: each line's own spacing (size × line spacing) above its baseline
+  const mfr = value(mfrK), part = value(partK);
+  if (mfr && part) rows.push([mfr, seg(" · ", part.style), part]);
+  else if (mfr || part) rows.push([(mfr ?? part)!]);
+  if (!rows.length) return;
+  const rowW = (r: Seg[]) => r.reduce((t, x) => t + x.w, 0);
+  const rowSize = (r: Seg[]) => Math.max(...r.map((x) => x.size));
+  const W = Math.max(...rows.map(rowW));
+  const alignOf = (r: Seg[]) => layout.align ?? r[0].style.align ?? "left";
+  // rows stacked baseline to baseline: each row's own spacing (size × line spacing) above its baseline
   const ASC = 0.8;
-  const tops: number[] = [];
-  let baseline = 0;
-  lines.forEach((l, i) => {
-    baseline = i === 0 ? l.size * ASC : baseline + l.size * l.style.lineHeight;
-    tops.push(baseline - l.size * ASC);
-  });
-  const H = baseline + lines[lines.length - 1].size * (1 - ASC);
-  const emit = (ox: number, oy: number, rot: number, nx: number, ny: number, dx: number, dy: number) =>
-    lines.forEach((l, i) => {
-      const a = alignOf(l);
-      const shift = a === "center" ? (W - l.w) / 2 : a === "right" ? W - l.w : 0;
-      const along = shift + l.style.dx, down = tops[i] + l.style.dy;
-      out.push({ text: l.text, x: ox + dx * along + nx * down, y: oy + dy * along + ny * down, rotation: rot, style: l.style, w: l.w, h: l.h });
+  const baselines: number[] = [];
+  rows.forEach((r, i) => baselines.push(i === 0 ? rowSize(r) * ASC : baselines[i - 1] + rowSize(r) * Math.max(...r.map((x) => x.style.lineHeight))));
+  const H = baselines[baselines.length - 1] + rowSize(rows[rows.length - 1]) * (1 - ASC);
+  const emit = (ox: number, oy: number, rot: number, nx: number, ny: number, dx: number, dy: number) => {
+    const block = { x: ox, y: oy };
+    rows.forEach((r, i) => {
+      const a = alignOf(r);
+      let along = a === "center" ? (W - rowW(r)) / 2 : a === "right" ? W - rowW(r) : 0;
+      for (const sgm of r) {
+        const down = baselines[i] - sgm.size * ASC + sgm.style.dy;
+        const at = along + sgm.style.dx;
+        out.push({ text: sgm.text, x: ox + dx * at + nx * down, y: oy + dy * at + ny * down, rotation: rot, style: sgm.style, w: sgm.w, h: sgm.h, block });
+        along += sgm.w;
+      }
     });
+  };
 
   const body = transformRect(e, symbolFor(def).bbox);
   const at = layout.at ?? "auto";
+  if (at === "free" && layout.pos) {
+    const p = toScene(e, layout.pos);
+    emit(p.x, p.y, 0, 0, 1, 1, 0);
+    return;
+  }
   if (at !== "auto" || !ref || ref.rotation === 0) {
     const gap = 3;
     let x0: number, y0: number;

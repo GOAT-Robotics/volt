@@ -11,8 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox, Switch, Badge } from "@/components/ui/misc";
 import { NativeSelect } from "@/components/ui/input";
 import { Row, Commit, ColorInput } from "../Inspector";
+import { StylePicker } from "../StylePicker";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/fetcher";
 
 type Sel = { kind: "text"; role: TextRole } | { kind: "graphics"; key: keyof GraphicStyles };
 
@@ -98,18 +98,7 @@ export function StylesDialog({ onClose }: { onClose: () => void }) {
     setDraft({});
   };
 
-  const pullTemplate = async () => {
-    try {
-      const t = await api<{ id: string; name: string; version: number; styles: Styles }>("/api/style-templates/default");
-      useEditor.getState().apply("Update base from organization template", (d) => {
-        d.baseStyles = t.styles;
-        d.baseStylesRef = { templateId: t.id, version: t.version, name: t.name };
-      });
-      ui.toast(`Base styles updated to “${t.name}” v${t.version}`, { undo: true });
-    } catch (e) {
-      ui.toast((e as Error).message, { tone: "error" });
-    }
-  };
+
 
   const projOverride = (role: TextRole, k: keyof TextStyle) => doc.styles.text?.[role]?.[k] !== undefined || draft.text?.[role]?.[k] !== undefined;
   const t = sel.kind === "text" ? eff.text[sel.role] : null;
@@ -134,13 +123,9 @@ export function StylesDialog({ onClose }: { onClose: () => void }) {
           </div>
           <div className="flex items-center gap-2 border-b border-border bg-panel-2 px-4 py-2 text-2xs text-muted">
             <Building2 className="size-3" />
-            Base: {doc.baseStylesRef ? `${doc.baseStylesRef.name} v${doc.baseStylesRef.version}` : "Built-in defaults"}
-            <span className="text-subtle">→ Project → Element → Object override</span>
-            {editable && (
-              <Button size="xs" variant="ghost" className="ml-auto" onClick={pullTemplate}>
-                Update from organization template
-              </Button>
-            )}
+            <span className="shrink-0">Style template</span>
+            <StylePicker className="w-56" />
+            <span className="text-subtle">→ project → element → object</span>
           </div>
           <div className="flex min-h-0 flex-1">
             <nav className="w-44 shrink-0 overflow-y-auto border-r border-border p-1.5">

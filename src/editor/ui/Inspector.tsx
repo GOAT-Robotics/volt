@@ -12,6 +12,7 @@ import { getPage, emptySel } from "@/core/ops";
 import type { Doc, ElemInst, LineStyle, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
 import { TEXT_ROLES, COMPONENT_INFO, type ComponentInfoFlags, type ComponentInfoKey, type InfoLayout, type InfoPlacement } from "@/core/model";
 import { ConductorSection, Swatch } from "./Conductor";
+import { StylePicker } from "./StylePicker";
 import { endAddress, wireEndLabel, wireInfo, wiringOf } from "@/core/wiring";
 import { ROLE_LABELS } from "@/core/styles";
 import { docStyles, wireTextAnchor } from "@/core/render/scene";
@@ -217,9 +218,12 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
         ))}
         <p className="text-2xs text-subtle">Fields support variables like %title, %folio, %id/%total and project properties.</p>
       </Section>
-      <Section title="Project" defaultOpen={false}>
+      <Section title="Project">
         <Row label="Title">
           <Commit value={doc.meta.title} disabled={!editable} onCommit={(v) => s().apply("Project title", (d) => (d.meta.title = v))} />
+        </Row>
+        <Row label="Drawing style">
+          <StylePicker />
         </Row>
         <div className="flex flex-wrap gap-1.5">
           <Button size="xs" onClick={() => runCommand("styles", ui)}>
@@ -448,7 +452,7 @@ function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc
   const makeDefault = () =>
     s().apply("Component info display", (d) => {
       const flags = Object.fromEntries(COMPONENT_INFO.map((c) => [c.key, shown(c.key)])) as ComponentInfoFlags;
-      const lay: InfoLayout = { at, ...(align ? { align } : {}) };
+      const lay: InfoLayout = { at: at === "free" ? "auto" : at, ...(align ? { align } : {}) };
       d.styles = { ...d.styles, graphics: { ...(d.styles.graphics ?? {}), componentInfo: flags, componentInfoLayout: lay } };
       for (const p of d.pages)
         for (const x of p.elements) {
@@ -459,7 +463,7 @@ function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc
   const custom =
     (!!e.showInfo && COMPONENT_INFO.some((c) => e.showInfo![c.key] !== undefined && e.showInfo![c.key] !== (defaults[c.key] ?? false))) ||
     (!!e.infoLayout && ((e.infoLayout.at !== undefined && e.infoLayout.at !== (layoutDefault.at ?? "auto")) || (e.infoLayout.align !== undefined && e.infoLayout.align !== layoutDefault.align)));
-  const setLayout = (label: string, p: InfoLayout) => upd(label, (x) => (x.infoLayout = { ...(x.infoLayout ?? {}), ...p }));
+  const setLayout = (label: string, p: InfoLayout) => upd(label, (x) => (x.infoLayout = { ...(x.infoLayout ?? {}), ...p, ...(p.at && p.at !== "free" ? { pos: undefined } : {}) }));
   return (
     <Section
       title="Component info"
@@ -499,6 +503,7 @@ function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc
             <option value="right">Right of symbol</option>
             <option value="left">Left of symbol</option>
             <option value="below">Below symbol</option>
+            {at === "free" && <option value="free">Where I dragged it</option>}
           </NativeSelect>
           <div className="flex shrink-0 rounded-md border border-border p-0.5" role="group" aria-label="Alignment">
             {(
@@ -517,7 +522,7 @@ function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc
           </div>
         </div>
       </Row>
-      <p className="text-2xs text-subtle">Font, size and color of each line are set in Global styles.</p>
+      <p className="text-2xs text-subtle">Drag the info on the canvas to place it anywhere (it follows the component). Font, size and color of each line are set in Global styles.</p>
     </Section>
   );
 }

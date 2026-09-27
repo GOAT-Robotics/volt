@@ -156,7 +156,11 @@ describe("drawing priorities and wire ends", () => {
     const texts = () => layoutElementTexts(e, symbolFor(def), docStyles(doc), approxMeasure).map((t) => t.text);
     expect(texts()).toEqual(["Q1", "2-pole MCB", "16 A"]);
     e.showInfo = { manufacturer: true, manufacturer_reference: true, rating: false };
-    expect(texts()).toEqual(["Q1", "2-pole MCB", "A9F74216", "Schneider"]);
+    // manufacturer · part number share one line, each in its own style
+    expect(texts()).toEqual(["Q1", "2-pole MCB", "Schneider", " · ", "A9F74216"]);
+    const l = layoutElementTexts(e, symbolFor(def), docStyles(doc), approxMeasure);
+    expect(l[3].x).toBeCloseTo(l[2].x + l[2].w, 3);
+    expect(l[4].y).toBeCloseTo(l[2].y, 3);
     const laid = layoutElementTexts(e, symbolFor(def), docStyles(doc), approxMeasure);
     expect(laid[1].y).toBeGreaterThan(laid[0].y);
     expect(laid[1].x).toBeCloseTo(laid[0].x);
@@ -173,6 +177,14 @@ describe("component info layout", () => {
     const lay = () => layoutElementTexts(e, symbolFor(def), docStyles(doc), approxMeasure).slice(1);
     return { doc, e, lay };
   };
+  it("a dragged block keeps its place relative to the component", () => {
+    const { e, lay } = setup();
+    e.infoLayout = { at: "free", pos: { x: -60, y: 10 } };
+    const a = lay()[0];
+    expect(a.x).toBeCloseTo(e.x - 60, 3);
+    e.x += 100;
+    expect(lay()[0].x).toBeCloseTo(a.x + 100, 3);
+  });
   it("even spacing: equal baseline pitch for equal styles", () => {
     const { e, lay } = setup();
     e.info.manufacturer_reference = "A9F";

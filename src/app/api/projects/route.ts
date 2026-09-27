@@ -33,6 +33,7 @@ const Body = z.object({
   versionScheme: Scheme.default("INTEGER"),
   customScheme: z.string().trim().max(40).nullish(),
   templateId: z.string().nullish(),
+  styleTemplateId: z.string().nullish(),
   props: z.record(z.string(), z.string().max(500)).optional(),
 });
 
@@ -52,7 +53,7 @@ export const POST = route(async (req) => {
   const props = Object.fromEntries(Object.entries(b.props ?? {}).map(([k, v]) => [k.trim(), v.trim()]).filter(([k]) => k));
   const missing = (tmpl?.requiredFields ?? []).filter((f) => !props[f]);
   if (missing.length) throw new HttpError(400, `Required fields missing: ${missing.join(", ")}`);
-  const base = await baseStylesFor(ctx.workspace.id, tmpl?.styleTemplateId);
+  const base = await baseStylesFor(ctx.workspace.id, b.styleTemplateId || tmpl?.styleTemplateId);
   const doc = docFromTemplate(b.name, tmpl, base.styles, props);
   if (base.ref) doc.baseStylesRef = base.ref;
   const { project, version } = await createProjectRecord({

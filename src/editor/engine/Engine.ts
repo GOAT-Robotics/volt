@@ -2,7 +2,7 @@
 import RBush from "rbush";
 import { produce } from "immer";
 import type { Doc, ElemInst, ElementDef, Page, Pt, Rect, Styles, TextRole } from "@/core/model";
-import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, eqPt, dist } from "@/core/geometry";
+import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, toLocal, eqPt, dist } from "@/core/geometry";
 import { CanvasPainter, measureText } from "@/core/render/canvas";
 import { PathBuilder } from "@/core/render/painter";
 import { contentBounds, docStyles, drawPage, elementBounds, layoutElementTexts, pageGeometry, textBounds, wireStroke, drawElement } from "@/core/render/scene";
@@ -71,6 +71,8 @@ type Hit =
   | { k: "comment"; id: string };
 
 const HIT_PX = 6;
+/** index "sub" id of the texts of a component's info block (dragged as one) */
+const INFO_BLOCK = "\u0000info";
 const SNAP_PX = 12;
 
 export class Engine {
@@ -314,8 +316,8 @@ export class Engine {
         const items: IndexItem[] = [{ minX: r.x - 2, minY: r.y - 2, maxX: r.x + r.w + 2, maxY: r.y + r.h + 2, kind: "el", id: e.id }];
         for (const lt of layoutElementTexts(e, symbolFor(def), styles, measureText)) {
           const tb = textBounds(lt);
-          const t = e.texts.find((x) => x.info !== null ? (e.info[x.info] ?? def.info[x.info]) === lt.text : x.text === lt.text);
-          items.push({ minX: tb.x, minY: tb.y, maxX: tb.x + tb.w, maxY: tb.y + tb.h, kind: "etext", id: e.id, sub: t?.id });
+          const t = lt.block ? undefined : e.texts.find((x) => x.info !== null ? (e.info[x.info] ?? def.info[x.info]) === lt.text : x.text === lt.text);
+          items.push({ minX: tb.x, minY: tb.y, maxX: tb.x + tb.w, maxY: tb.y + tb.h, kind: "etext", id: e.id, sub: lt.block ? INFO_BLOCK : t?.id });
         }
         return items;
       });
@@ -993,6 +995,14 @@ export class Engine {
     const page = getPage(d, pid);
     const e = page.elements.find((x) => x.id === elId);
     const def = e && d.defs[e.defId];
+    if (e && def && textId === INFO_BLOCK) {
+      // component info block: remember its top-left in element coordinates (it follows the component)
+      const cur = layoutElementTexts(e, symbolFor(def), docStyles(d), measureText).find((t) => t.block)?.block;
+      if (!cur) return;
+      const p = toLocal(e, { x: cur.x + delta.x, y: cur.y + delta.y });
+      e.infoLayout = { ...(e.infoLayout ?? {}), at: "free", pos: { x: Math.round(p.x * 2) / 2, y: Math.round(p.y * 2) / 2 } };
+      return;
+    }
     const t = e?.texts.find((x) => x.id === textId);
     if (!e || !t || !def) return;
     // convert the scene delta into element-local delta (inverse rotation, mirror)

@@ -30,6 +30,13 @@ export function NewProjectDialog({ onClose, folders, templates, currentFolder, d
   const [props, setProps] = React.useState<Record<string, string>>({});
   const [busy, setBusy] = React.useState(false);
   const tmpl = templates.find((t) => t.id === f.templateId);
+  // style templates: "" = the project template's style (or the workspace default)
+  const [styles, setStyles] = React.useState<{ id: string; name: string; isDefault: boolean }[]>([]);
+  const [styleId, setStyleId] = React.useState("");
+  React.useEffect(() => {
+    api<{ templates: { id: string; name: string; isDefault: boolean }[] }>("/api/style-templates").then((j) => setStyles(j.templates)).catch(() => {});
+  }, []);
+  const inherited = styles.find((x) => x.id === tmpl?.styleTemplateId) ?? styles.find((x) => x.isDefault);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   const missing = (tmpl?.requiredFields ?? []).filter((r) => !props[r]?.trim());
   const submit = async (e: React.FormEvent) => {
@@ -48,6 +55,7 @@ export function NewProjectDialog({ onClose, folders, templates, currentFolder, d
           versionScheme: f.versionScheme,
           customScheme: f.versionScheme === "CUSTOM" ? f.customScheme : null,
           templateId: f.templateId || null,
+          styleTemplateId: styleId || null,
           props,
         },
       });
@@ -111,6 +119,20 @@ export function NewProjectDialog({ onClose, folders, templates, currentFolder, d
               ))}
             </NativeSelect>
           </Field>
+          {styles.length > 0 && (
+            <Field label="Drawing style" className="col-span-2" hint="Fonts, text sizes, colors and line weights. Can be changed later in the editor (Properties → Project → Drawing style).">
+              <NativeSelect value={styleId} onChange={(e) => setStyleId(e.target.value)} aria-label="Drawing style">
+                <option value="">{inherited ? `${inherited.name} (${tmpl?.styleTemplateId ? "from project template" : "default"})` : "Built-in defaults"}</option>
+                {styles
+                  .filter((x) => x.id !== inherited?.id)
+                  .map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+              </NativeSelect>
+            </Field>
+          )}
           {tmpl && tmpl.requiredFields.length > 0 && (
             <fieldset className="col-span-2 grid grid-cols-2 gap-3 rounded-md border border-border bg-panel-2 p-3">
               <legend className="px-1 text-2xs font-medium text-muted">Required by template</legend>
