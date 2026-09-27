@@ -340,3 +340,77 @@ export function clonePrimShifted<T extends Prim>(p: T, dx: number, dy: number): 
   if (c.t === "dyntext" && c.uuid) (c as Extract<Prim, { t: "dyntext" }>).uuid = crypto.randomUUID?.() ?? undefined;
   return c;
 }
+
+/* ------------------------------------------------------------------ */
+/* Object snapping                                                     */
+/* ------------------------------------------------------------------ */
+
+export type OSnapKind = "pin" | "end" | "mid" | "center" | "quadrant" | "on" | "grid" | "free";
+export type OSnap = { p: Pt; kind: OSnapKind };
+
+/** Characteristic points of the drawing: line / polygon ends and vertices, midpoints, centres, pins. */
+export function snapPoints(prims: EdPrim[], pins: { id: string; x: number; y: number }[], exclude?: string): OSnap[] {
+  const out: OSnap[] = [];
+  const add = (x: number, y: number, kind: OSnapKind) => out.push({ p: { x, y }, kind });
+  for (const pin of pins) if (pin.id !== exclude) add(pin.x, pin.y, "pin");
+  for (const p of prims) {
+    if (p.id === exclude) continue;
+    switch (p.t) {
+      case "line":
+        add(p.x1, p.y1, "end");
+        add(p.x2, p.y2, "end");
+        add((p.x1 + p.x2) / 2, (p.y1 + p.y2) / 2, "mid");
+        break;
+      case "polygon":
+        p.pts.forEach((q, i) => {
+          add(q.x, q.y, "end");
+          const n = p.pts[i + 1] ?? (p.closed ? p.pts[0] : null);
+          if (n) add((q.x + n.x) / 2, (q.y + n.y) / 2, "mid");
+        });
+        break;
+      case "rect": {
+        const x0 = p.x, y0 = p.y, x1 = p.x + p.w, y1 = p.y + p.h;
+        for (const [x, y] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) add(x, y, "end");
+        for (const [x, y] of [[(x0 + x1) / 2, y0], [x1, (y0 + y1) / 2], [(x0 + x1) / 2, y1], [x0, (y0 + y1) / 2]]) add(x, y, "mid");
+        add((x0 + x1) / 2, (y0 + y1) / 2, "center");
+        break;
+      }
+      case "ellipse":
+      case "arc": {
+        const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+        add(cx, cy, "center");
+        if (p.t === "ellipse") for (const [x, y] of [[cx, p.y], [p.x + p.w, cy], [cx, p.y + p.h], [p.x, cy]]) add(x, y, "quadrant");
+        else {
+          add(ellipsePoint(p, p.start).x, ellipsePoint(p, p.start).y, "end");
+          const e = ellipsePoint(p, p.start + p.angle);
+          add(e.x, e.y, "end");
+        }
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Nearest point lying on a line / polygon / rectangle edge (for "on line" snapping). */
+export function nearestOnPrims(prims: EdPrim[], pt: Pt, exclude?: string): { p: Pt; d: number } | null {
+  let best: { p: Pt; d: number } | null = null;
+  const seg = (a: Pt, b: Pt) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const L = dx * dx + dy * dy;
+    const t = L ? Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / L)) : 0;
+    const q = { x: a.x + dx * t, y: a.y + dy * t };
+    const d = Math.hypot(pt.x - q.x, pt.y - q.y);
+    if (!best || d < best.d) best = { p: q, d };
+  };
+  for (const p of prims) {
+    if (p.id === exclude) continue;
+    if (p.t === "line") seg({ x: p.x1, y: p.y1 }, { x: p.x2, y: p.y2 });
+    else if (p.t === "polygon") p.pts.forEach((q, i) => (p.pts[i + 1] ? seg(q, p.pts[i + 1]) : p.closed && p.pts.length > 2 ? seg(q, p.pts[0]) : null));
+    else if (p.t === "rect") {
+      const c = [{ x: p.x, y: p.y }, { x: p.x + p.w, y: p.y }, { x: p.x + p.w, y: p.y + p.h }, { x: p.x, y: p.y + p.h }];
+      c.forEach((q, i) => seg(q, c[(i + 1) % 4]));
+    }
+  }
+  return best;
+}

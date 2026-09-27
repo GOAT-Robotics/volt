@@ -186,7 +186,7 @@ function SelectionBar() {
     <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border border-border bg-panel/95 p-1 shadow-pop backdrop-blur animate-in" role="toolbar" aria-label="Selection actions">
       <span className="px-2 text-2xs font-medium text-muted tabular">{n} selected</span>
       <div className="mx-0.5 h-4 w-px bg-border" />
-      {sel.elements.length > 0 && (
+      {(sel.elements.length > 0 || sel.shapes.length > 0) && (
         <>
           <B id="rotate" icon={<RotateCw />} label="Rotate (R)" />
           <B id="mirror" icon={<FlipHorizontal2 />} label="Mirror (X)" />
@@ -198,7 +198,7 @@ function SelectionBar() {
           <B id="align-middle" icon={<AlignVerticalJustifyCenter />} label="Align centers vertically" />
         </>
       )}
-      <B id="selectNet" icon={<Network />} label="Select connected net (N)" />
+      {sel.elements.length + sel.wires.length + sel.junctions.length > 0 && <B id="selectNet" icon={<Network />} label="Select connected net (N)" />}
       <B id="duplicate" icon={<Copy />} label="Duplicate (⌘D)" />
       {sel.elements.length > 0 && <B id="lock" icon={<Lock />} label="Lock / unlock (⌘L)" />}
       {sel.elements.length > 0 && <B id="block" icon={<Boxes />} label="Create reusable block" />}
@@ -442,6 +442,17 @@ function CanvasContextMenu() {
           <I id="copy" icon={<Copy />} label="Copy" keys="⌘C" />
           {editable && <I id="duplicate" icon={<Copy />} label="Duplicate" keys="⌘D" />}
           <ContextMenuSeparator />
+          {sel.shapes.length > 0 && editable && (
+            <>
+              {sel.elements.length === 0 && (
+                <>
+                  <I id="rotate" icon={<RotateCw />} label="Rotate clockwise" keys="R" />
+                  <I id="mirror" icon={<FlipHorizontal2 />} label="Mirror" keys="X" />
+                </>
+              )}
+              <ContextMenuSeparator />
+            </>
+          )}
           {sel.elements.length > 0 && editable && (
             <>
               <I id="rotate" icon={<RotateCw />} label="Rotate clockwise" keys="R" />

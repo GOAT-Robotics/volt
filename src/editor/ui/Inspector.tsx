@@ -9,7 +9,7 @@ import { Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge, Switch, Tip } from "@/components/ui/misc";
 import { getPage, emptySel } from "@/core/ops";
-import type { Doc, ElemInst, LineStyle, Page, PlacedText, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
+import type { Doc, ElemInst, LineStyle, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
 import { TEXT_ROLES } from "@/core/model";
 import { ROLE_LABELS } from "@/core/styles";
 import { docStyles } from "@/core/render/scene";
@@ -94,8 +94,10 @@ export function Inspector() {
   const page = useEditor((s) => s.page());
   const doc = useEditor((s) => s.doc);
   const editable = useEditor((s) => !!s.version?.editable);
-  const n = sel.elements.length + sel.wires.length + sel.junctions.length + sel.texts.length;
+  const shapes = sel.shapes ?? [];
+  const n = sel.elements.length + sel.wires.length + sel.junctions.length + sel.texts.length + shapes.length;
   if (n === 0) return <PageInspector page={page} doc={doc} editable={editable} />;
+  if (shapes.length === n) return <ShapeInspector ids={shapes} page={page} editable={editable} />;
   if (sel.elements.length === 1 && n === 1) {
     const e = page.elements.find((x) => x.id === sel.elements[0]);
     if (e) return <ElementInspector e={e} page={page} doc={doc} editable={editable} />;
@@ -573,6 +575,74 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
   );
 }
 
+const SHAPE_NAMES: Record<Shape["kind"], string> = { line: "Line", rect: "Rectangle", ellipse: "Ellipse", polygon: "Polyline" };
+
+function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; editable: boolean }) {
+  const list = page.shapes.filter((x) => ids.includes(x.id));
+  if (!list.length) return null;
+  const first = list[0];
+  const same = <K extends keyof Shape>(k: K) => (list.every((x) => JSON.stringify(x[k]) === JSON.stringify(first[k])) ? first[k] : undefined);
+  const s = useEditor.getState;
+  const upd = (label: string, fn: (x: Shape) => void) =>
+    s().apply(label, (d) => {
+      const set = new Set(ids);
+      for (const x of getPage(d, page.id).shapes) if (set.has(x.id)) fn(x);
+    });
+  const closable = list.filter((x) => x.kind === "polygon");
+  const fillable = list.some((x) => x.kind !== "line" && !(x.kind === "polygon" && x.closed === false));
+  const kinds = [...new Set(list.map((x) => SHAPE_NAMES[x.kind]))];
+  const title = list.length === 1 ? SHAPE_NAMES[first.kind] : `${list.length} drawing shapes`;
+  return (
+    <div>
+      <Section title={title}>
+        {list.length > 1 && (
+          <Row label="Kinds">
+            <span className="text-xs">{kinds.join(", ")}</span>
+          </Row>
+        )}
+        {list.length === 1 && (first.kind === "line" || first.kind === "polygon") && (
+          <Row label="Length">
+            <span className="text-xs tabular">
+              {Math.round(polylineLength(first.kind === "polygon" && first.closed !== false ? [...first.pts, first.pts[0]] : first.pts))} units
+            </span>
+          </Row>
+        )}
+        {closable.length > 0 && (
+          <Row label="Closed">
+            <Switch checked={closable.every((x) => x.closed !== false)} disabled={!editable} onCheckedChange={(v) => upd(v ? "Close shape" : "Open shape", (x) => void (x.kind === "polygon" && (x.closed = v)))} />
+          </Row>
+        )}
+        <p className="text-2xs text-subtle">Drag to move, drag the square handles to reshape, Delete to remove.</p>
+      </Section>
+      <Section title="Appearance">
+        <Row label="Color">
+          <ColorInput value={same("color") ?? first.color} disabled={!editable} onChange={(v) => upd("Shape color", (x) => (x.color = v))} />
+        </Row>
+        <Row label="Thickness">
+          <Commit type="number" step={0.25} value={same("width") ?? ""} disabled={!editable} onCommit={(v) => Number(v) > 0 && upd("Shape thickness", (x) => (x.width = Number(v)))} />
+        </Row>
+        <Row label="Line">
+          <NativeSelect value={same("dash") ?? ""} disabled={!editable} onChange={(ev) => upd("Shape line style", (x) => (x.dash = ev.target.value as Shape["dash"]))}>
+            {same("dash") === undefined && <option value="">Mixed</option>}
+            <option value="solid">Solid</option>
+            <option value="dashed">Dashed</option>
+            <option value="dotted">Dotted</option>
+            <option value="dashdot">Dash-dot</option>
+          </NativeSelect>
+        </Row>
+        {fillable && (
+          <Row label="Fill">
+            <div className="flex items-center gap-2">
+              <Switch checked={list.some((x) => !!x.fill)} disabled={!editable} onCheckedChange={(v) => upd(v ? "Fill shape" : "Remove fill", (x) => void (x.kind !== "line" && (x.fill = v ? x.fill ?? "#e5e7eb" : null)))} />
+              {list.some((x) => !!x.fill) && <ColorInput value={list.find((x) => x.fill)?.fill ?? "#e5e7eb"} disabled={!editable} onChange={(v) => upd("Fill color", (x) => void (x.fill && (x.fill = v)))} />}
+            </div>
+          </Row>
+        )}
+      </Section>
+    </div>
+  );
+}
+
 function FreeTextInspector({ id, page, doc, editable }: { id: string; page: Page; doc: Doc; editable: boolean }) {
   const t = page.texts.find((x) => x.id === id)!;
   const styles = docStyles(doc);
@@ -638,7 +708,16 @@ function MultiInspector() {
     <div>
       <Section title="Selection">
         <p className="text-xs text-muted">
-          {sel.elements.length} components · {sel.wires.length} wires · {sel.junctions.length} junctions · {sel.texts.length} texts
+          {[
+            [sel.elements.length, "component"],
+            [sel.wires.length, "wire"],
+            [sel.junctions.length, "junction"],
+            [sel.texts.length, "text"],
+            [sel.shapes?.length ?? 0, "drawing shape"],
+          ]
+            .filter(([n]) => n)
+            .map(([n, l]) => `${n} ${l}${n === 1 ? "" : "s"}`)
+            .join(" · ")}
         </p>
         {editable && sel.elements.length > 0 && (
           <div className="flex flex-wrap gap-1">

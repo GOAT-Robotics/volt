@@ -15,6 +15,7 @@ import {
   findAutoConnections,
   getPage,
   hitWire,
+  cloneSel,
   moveSelection,
   newElement,
   reattachEnd,
@@ -24,6 +25,7 @@ import {
 } from "@/core/ops";
 import { moveSegment, orthoRoute } from "@/core/wires";
 import { computeNets } from "@/core/topology";
+import { shapeBounds, shapeDistance, shapeOutline } from "@/core/shapes";
 import { cachedXref, describe, occurrenceAt, targetsOf, type Occurrence } from "@/core/xref";
 import { uid } from "@/core/ids";
 import type { EditorStore } from "../store";
@@ -50,7 +52,8 @@ type Mode =
   | { m: "seg"; wire: string; seg: number; start: Pt; delta: Pt }
   | { m: "end"; wire: string; end: "a" | "b"; snap: Snap | null }
   | { m: "wire"; from: EndTarget; fromOrient: string | null; corners: Pt[]; cur: Pt; snap: Snap | null; hFirst: boolean | undefined }
-  | { m: "etext"; el: string; text: string; start: Pt; delta: Pt };
+  | { m: "etext"; el: string; text: string; start: Pt; delta: Pt }
+  | { m: "spt"; shape: string; i: number; snap: Snap | null };
 
 type Hit =
   | { k: "el"; id: string }
@@ -60,6 +63,8 @@ type Hit =
   | { k: "junc"; id: string }
   | { k: "text"; id: string }
   | { k: "etext"; el: string; text: string }
+  | { k: "shape"; id: string }
+  | { k: "shapePt"; id: string; i: number; p: Pt }
   | { k: "comment"; id: string };
 
 const HIT_PX = 6;
@@ -324,6 +329,13 @@ export class Engine {
       });
     }
     for (const j of page.junctions) upsert("j:" + j.id, j, () => [{ minX: j.x - 3, minY: j.y - 3, maxX: j.x + 3, maxY: j.y + 3, kind: "junc", id: j.id }]);
+    for (const sh of page.shapes)
+      upsert("s:" + sh.id, sh, () => {
+        if (!sh.pts.length) return [];
+        const b = shapeBounds(sh);
+        const pad = Math.max(1, sh.width / 2);
+        return [{ minX: b.x - pad, minY: b.y - pad, maxX: b.x + b.w + pad, maxY: b.y + b.h + pad, kind: "shape", id: sh.id }];
+      });
     for (const t of page.texts)
       upsert("t:" + t.id, t, () => {
         const st = styles.text[t.role] ?? styles.text.annotation;
@@ -362,6 +374,10 @@ export class Engine {
       const t = page.texts.find((x) => x.id === id);
       if (t) add({ x: t.x, y: t.y, w: 40, h: 12 });
     }
+    for (const id of sel.shapes ?? []) {
+      const sh = page.shapes.find((x) => x.id === id);
+      if (sh?.pts.length) add(shapeBounds(sh));
+    }
     return r;
   }
 
@@ -379,6 +395,12 @@ export class Engine {
       const sp = this.toScreen(c.anchor);
       const pp = this.toScreen(p);
       if (Math.abs(sp.x + 9 - pp.x) < 10 && Math.abs(sp.y - 9 - pp.y) < 10) return { k: "comment", id: c.id };
+    }
+    // vertex handles of a single selected shape
+    const selShapes = this.s.sel.shapes ?? [];
+    if (selShapes.length === 1 && selSize(this.s.sel) === 1 && this.editable) {
+      const sh = page.shapes.find((x) => x.id === selShapes[0]);
+      if (sh) for (let i = 0; i < sh.pts.length; i++) if (dist(sh.pts[i], p) <= Math.max(tol, 4 / this.view.s)) return { k: "shapePt", id: sh.id, i, p: sh.pts[i] };
     }
     const hits = this.index.search({ minX: p.x - tol, minY: p.y - tol, maxX: p.x + tol, maxY: p.y + tol });
     if (opts.pins !== false) {
@@ -407,7 +429,9 @@ export class Engine {
       if (dist(w.pts[w.pts.length - 1], p) <= tol) return { k: "wireEnd", id: w.id, end: "b", p: w.pts[w.pts.length - 1] };
     }
     // texts first (small targets on top)
-    for (const h of hits) if (h.kind === "text") return { k: "text", id: h.id };
+    // a line running under a label stays clickable: its stroke wins when the click is right on it
+    const onStroke = page.shapes.length ? hits.some((h) => { if (h.kind !== "shape") return false; const sh = page.shapes.find((x) => x.id === h.id); return !!sh && shapeDistance(sh, p) <= tol * 0.35; }) : false;
+    if (!onStroke) for (const h of hits) if (h.kind === "text" && p.x >= h.minX && p.x <= h.maxX && p.y >= h.minY && p.y <= h.maxY) return { k: "text", id: h.id };
     for (const h of hits) if (h.kind === "etext" && h.sub && p.x >= h.minX && p.x <= h.maxX && p.y >= h.minY && p.y <= h.maxY) return { k: "etext", el: h.id, text: h.sub };
     // wires (nearest)
     const wh = hitWire({ ...page, wires: page.wires.filter((w) => hits.some((h) => h.kind === "wire" && h.id === w.id)) }, p, tol);
@@ -419,9 +443,20 @@ export class Engine {
       const a = (h.maxX - h.minX) * (h.maxY - h.minY);
       if (!el || a < el.a) el = { id: h.id, a };
     }
+    // drawing shapes (lines, rectangles, …): nearest outline, or inside a filled shape
+    let sh: { id: string; d: number } | null = null;
+    for (const h of hits) {
+      if (h.kind !== "shape") continue;
+      const shape = page.shapes.find((x) => x.id === h.id);
+      if (!shape) continue;
+      const d = shapeDistance(shape, p);
+      if (d <= tol && (!sh || d < sh.d)) sh = { id: h.id, d };
+    }
     if (wh && (!el || wh.d < tol * 0.6)) return { k: "wire", id: wh.w.id, seg: wh.seg, p: wh.p };
+    if (sh && !wh && (!el || sh.d < tol * 0.6)) return { k: "shape", id: sh.id };
     if (el) return { k: "el", id: el.id };
     if (wh) return { k: "wire", id: wh.w.id, seg: wh.seg, p: wh.p };
+    if (sh) return { k: "shape", id: sh.id };
     return null;
   }
 
@@ -669,6 +704,18 @@ export class Engine {
         this.dirtyOverlay = true;
         return;
       }
+      case "spt": {
+        const sn = this.snapAt(wp, {});
+        m.snap = sn;
+        this.snapInd = sn;
+        const pid = s.pageId;
+        this.preview = produce(s.doc, (dr) => {
+          const sh = getPage(dr, pid).shapes.find((x) => x.id === m.shape);
+          if (sh) sh.pts[m.i] = { ...sn.p };
+        });
+        this.dirtyScene = this.dirtyOverlay = true;
+        return;
+      }
       case "etext": {
         m.delta = { x: wp.x - m.start.x, y: wp.y - m.start.y };
         const pid = s.pageId;
@@ -703,7 +750,7 @@ export class Engine {
     if (JSON.stringify(h) !== JSON.stringify(this.hover)) {
       this.hover = h;
       this.dirtyOverlay = true;
-      this.overlay.style.cursor = h?.k === "pin" && this.editable ? "crosshair" : h?.k === "wire" && this.editable && this.s.sel.wires.includes(h.id) ? (this.segHorizontal(h.id, h.seg) ? "ns-resize" : "ew-resize") : h?.k === "wireEnd" && this.editable ? "move" : h ? "pointer" : "default";
+      this.overlay.style.cursor = h?.k === "pin" && this.editable ? "crosshair" : h?.k === "wire" && this.editable && this.s.sel.wires.includes(h.id) ? (this.segHorizontal(h.id, h.seg) ? "ns-resize" : "ew-resize") : (h?.k === "wireEnd" || h?.k === "shapePt") && this.editable ? "move" : h ? "pointer" : "default";
     }
   }
 
@@ -735,6 +782,10 @@ export class Engine {
       this.mode = { m: "end", wire: hit.id, end: hit.end, snap: null };
       return;
     }
+    if (hit.k === "shapePt") {
+      this.mode = { m: "spt", shape: hit.id, i: hit.i, snap: null };
+      return;
+    }
     if (hit.k === "wire" && s.sel.wires.includes(hit.id) && s.sel.wires.length === 1 && selSize(s.sel) === 1) {
       this.mode = { m: "seg", wire: hit.id, seg: hit.seg, start: m.at, delta: { x: 0, y: 0 } };
       return;
@@ -745,7 +796,7 @@ export class Engine {
     }
     // ensure hit is selected, then move the selection
     let sel = s.sel;
-    const id = hit.k === "el" || hit.k === "junc" || hit.k === "text" || hit.k === "wire" ? hit.id : hit.k === "etext" ? hit.el : null;
+    const id = hit.k === "el" || hit.k === "junc" || hit.k === "text" || hit.k === "wire" || hit.k === "shape" ? hit.id : hit.k === "etext" ? hit.el : null;
     if (id && !this.inSel(sel, hit)) {
       sel = this.selFor(hit, m.shift ? sel : emptySel());
       s.setSel(sel);
@@ -767,10 +818,11 @@ export class Engine {
     if (h.k === "wire") return sel.wires.includes(h.id);
     if (h.k === "junc") return sel.junctions.includes(h.id);
     if (h.k === "text") return sel.texts.includes(h.id);
+    if (h.k === "shape" || h.k === "shapePt") return (sel.shapes ?? []).includes(h.id);
     return false;
   }
   private selFor(h: Hit, base: Sel): Sel {
-    const s = { elements: [...base.elements], wires: [...base.wires], junctions: [...base.junctions], texts: [...base.texts] };
+    const s = cloneSel(base);
     const toggle = (arr: string[], id: string) => (arr.includes(id) ? arr.splice(arr.indexOf(id), 1) : arr.push(id));
     if (h.k === "el") toggle(s.elements, h.id);
     else if (h.k === "etext") toggle(s.elements, h.el);
@@ -778,6 +830,8 @@ export class Engine {
     else if (h.k === "junc") toggle(s.junctions, h.id);
     else if (h.k === "text") toggle(s.texts, h.id);
     else if (h.k === "pin") toggle(s.elements, h.el);
+    else if (h.k === "shape") toggle(s.shapes, h.id);
+    else if (h.k === "shapePt" && !s.shapes.includes(h.id)) s.shapes.push(h.id);
     return s;
   }
 
@@ -812,7 +866,7 @@ export class Engine {
         const crossing = m.b.x < m.a.x; // right-to-left = crossing selection
         this.ensureIndex();
         const items = this.index.search({ minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h });
-        const sel = m.additive ? { ...s.sel, elements: [...s.sel.elements], wires: [...s.sel.wires], junctions: [...s.sel.junctions], texts: [...s.sel.texts] } : emptySel();
+        const sel = m.additive ? cloneSel(s.sel) : emptySel();
         const add = (arr: string[], id: string) => !arr.includes(id) && arr.push(id);
         const wireIn = new Map<string, boolean>();
         for (const it of items) {
@@ -821,6 +875,7 @@ export class Engine {
           if (it.kind === "el" && ok) add(sel.elements, it.id);
           else if (it.kind === "junc" && ok) add(sel.junctions, it.id);
           else if (it.kind === "text" && ok) add(sel.texts, it.id);
+          else if (it.kind === "shape" && ok) add(sel.shapes, it.id);
           else if (it.kind === "wire") wireIn.set(it.id, crossing ? (wireIn.get(it.id) || ok) : (wireIn.get(it.id) ?? true) && ok);
         }
         for (const [id, ok] of wireIn) {
@@ -879,6 +934,21 @@ export class Engine {
           const before = this.page.wires.find((x) => x.id === m.wire)?.[m.end];
           s.apply("Reconnect wire end", (dr) => reattachEnd(dr, getPage(dr, pid), m.wire, m.end, sn.target));
           if (before && before.k !== "free" && sn.target.k === "free") this.hooks.onToast?.("Wire end disconnected — it is now dangling", true);
+        }
+        this.dirtyScene = true;
+        return;
+      }
+      case "spt": {
+        this.preview = null;
+        this.mode = { m: "idle" };
+        this.snapInd = null;
+        const sn = m.snap;
+        if (sn) {
+          const pid = s.pageId;
+          s.apply("Move point", (dr) => {
+            const sh = getPage(dr, pid).shapes.find((x) => x.id === m.shape);
+            if (sh) sh.pts[m.i] = { ...sn.p };
+          });
         }
         this.dirtyScene = true;
         return;
@@ -1623,6 +1693,18 @@ export class Engine {
         const j = page.junctions.find((x) => x.id === id);
         if (j) painter.stroke(new PathBuilder().E(j.x, j.y, px(6), px(6)).build(), { color: accent, width: px(1.5) });
       }
+      const selShapes = sel.shapes ?? [];
+      for (const id of selShapes) {
+        const sh = page.shapes.find((x) => x.id === id);
+        if (!sh) continue;
+        painter.stroke(new PathBuilder().poly(shapeOutline(sh)).build(), { color: accent, width: Math.max(sh.width + px(3), px(3)), cap: "round", join: "round", alpha: 0.35 });
+        if (selShapes.length === 1 && this.editable) {
+          const hb = new PathBuilder();
+          for (const q of sh.pts) hb.R(q.x - px(3.5), q.y - px(3.5), px(7), px(7));
+          painter.fill(hb.build(), "#ffffff");
+          painter.stroke(hb.build(), { color: accent, width: px(1.25) });
+        }
+      }
       for (const id of sel.texts) {
         const it = this.indexed.get("t:" + id)?.items[0];
         if (it) painter.stroke(new PathBuilder().R(it.minX - px(2), it.minY - px(2), it.maxX - it.minX + px(4), it.maxY - it.minY + px(4)).build(), { color: accent, width: px(1), dash: [px(3), px(2)] });
@@ -1641,6 +1723,9 @@ export class Engine {
       } else if (h.k === "wire" && !sel.wires.includes(h.id)) {
         const w = page.wires.find((x) => x.id === h.id);
         if (w) painter.stroke(new PathBuilder().poly(w.pts).build(), { color: accent, width: px(3), cap: "round", join: "round", alpha: 0.25 });
+      } else if (h.k === "shape" && !(sel.shapes ?? []).includes(h.id)) {
+        const sh = page.shapes.find((x) => x.id === h.id);
+        if (sh) painter.stroke(new PathBuilder().poly(shapeOutline(sh)).build(), { color: accent, width: px(3), cap: "round", join: "round", alpha: 0.25 });
       } else if (h.k === "pin" && this.editable) {
         painter.stroke(new PathBuilder().E(h.p.x, h.p.y, px(5), px(5)).build(), { color: "#16a34a", width: px(1.5) });
       } else if (h.k === "etext") {
@@ -1687,7 +1772,7 @@ export class Engine {
     }
     // snap indicator
     const sn = this.snapInd;
-    if (sn && (m.m === "wire" || m.m === "end" || s.tool === "wire") && sn.kind !== "grid" && sn.kind !== "none") {
+    if (sn && (m.m === "wire" || m.m === "end" || m.m === "spt" || s.tool === "wire") && sn.kind !== "grid" && sn.kind !== "none") {
       const col = sn.kind === "pin" ? "#16a34a" : sn.kind === "junction" || sn.kind === "wireEnd" ? "#0891b2" : sn.kind === "wire" ? "#d97706" : "#ec4899";
       const b = new PathBuilder();
       if (sn.kind === "pin") b.E(sn.p.x, sn.p.y, px(6), px(6));

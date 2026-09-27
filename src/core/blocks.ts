@@ -34,7 +34,7 @@ export function buildBlock(doc: Doc, page: Page, sel: Sel): { content: BlockCont
       const external = net ? net.pins.some((p) => !inSel.has(p.el)) : true;
       if (!external) continue;
       const sp = toScene(e, pin);
-      ports.push({ name: `${e.info.label || def.name}:${pin.number || pin.name || pin.id}`, ...shift(sp), el: e.id, pin: pin.id });
+      ports.push({ name: `${e.info.label || def.name}:${pin.number || pin.name || String(def.pins.indexOf(pin) + 1)}`, ...shift(sp), el: e.id, pin: pin.id });
     }
   }
   const content: BlockContent = {

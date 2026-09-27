@@ -183,7 +183,7 @@ export function drawLaidText(pt: Painter, t: LaidText, alpha?: number, colorOver
 
 export function elementBounds(e: ElemInst, def: ElementDef): Rect {
   const sym = symbolFor(def);
-  return transformRect(e, sym.bbox);
+  return transformRect(e, sym.hitBox);
 }
 
 export function textBounds(t: LaidText): Rect {
@@ -329,7 +329,7 @@ export function drawPage(pt: Painter, o: DrawOpts) {
     } else if (s.kind === "rect" && s.pts.length >= 2) {
       const [a, c] = s.pts;
       b.R(Math.min(a.x, c.x), Math.min(a.y, c.y), Math.abs(c.x - a.x), Math.abs(c.y - a.y));
-    } else b.poly(s.pts, s.kind === "polygon");
+    } else b.poly(s.pts, s.kind === "polygon" && s.closed !== false);
     const path = b.build();
     if (s.fill) pt.fill(path, s.fill);
     pt.stroke(path, { color: s.color, width: s.width, dash: DASHES[s.dash], minPx: 1 });
@@ -611,6 +611,7 @@ export function contentBounds(doc: Doc, page: Page, includeFrame = true): Rect {
   }
   for (const w of page.wires) for (const p of w.pts) r = unionRect(r, { x: p.x, y: p.y, w: 0, h: 0 });
   for (const t of page.texts) r = unionRect(r, { x: t.x, y: t.y, w: 40, h: 12 });
+  for (const s of page.shapes) for (const p of s.pts) r = unionRect(r, { x: p.x, y: p.y, w: 0, h: 0 });
   return r ?? { x: 0, y: 0, w: 800, h: 600 };
 }
 

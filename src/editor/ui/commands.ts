@@ -14,6 +14,7 @@ import {
   type Clip,
 } from "@/core/ops";
 import { newPage } from "@/core/doc";
+import { convertShapesToWires, isOpenPath } from "@/core/shapes";
 import { uid } from "@/core/ids";
 
 export type Command = {
@@ -29,6 +30,18 @@ let clipboard: Clip | null = null;
 const editable = (s: EditorStore) => !s.version || s.version.editable;
 const hasSel = (s: EditorStore) => selSize(s.sel) > 0;
 const hasEls = (s: EditorStore) => s.sel.elements.length > 0;
+const hasShapes = (s: EditorStore) => (s.sel.shapes?.length ?? 0) > 0;
+const selLines = (s: EditorStore) => s.page().shapes.filter((x) => s.sel.shapes?.includes(x.id) && isOpenPath(x));
+
+function convertLines(ui: EditorUI, s: EditorStore, ids: string[]) {
+  if (!ids.length) return ui.toast("No drawn lines to convert");
+  let r: ReturnType<typeof convertShapesToWires> | null = null;
+  s.apply("Convert lines to wires", (d) => void (r = convertShapesToWires(d, getPage(d, s.pageId), ids)));
+  const res = r as ReturnType<typeof convertShapesToWires> | null;
+  if (!res) return;
+  s.setSel({ ...emptySel(), wires: res.wires });
+  ui.toast(`Converted ${res.converted} line${res.converted === 1 ? "" : "s"} into ${res.wires.length} wire${res.wires.length === 1 ? "" : "s"}${res.pinEnds ? ` · ${res.pinEnds} end${res.pinEnds === 1 ? "" : "s"} connected to pins` : ""}`);
+}
 
 export const COMMANDS: Command[] = [
   { id: "undo", label: "Undo", section: "Edit", keys: "⌘Z", enabled: (s) => editable(s) && s.past.length > 0, run: (_, s) => s.undo() },
@@ -121,7 +134,7 @@ export const COMMANDS: Command[] = [
     keys: "⌘A",
     run: (_, s) => {
       const p = s.page();
-      s.setSel({ elements: p.elements.map((e) => e.id), wires: p.wires.map((w) => w.id), junctions: p.junctions.map((j) => j.id), texts: p.texts.map((t) => t.id) });
+      s.setSel({ elements: p.elements.map((e) => e.id), wires: p.wires.map((w) => w.id), junctions: p.junctions.map((j) => j.id), texts: p.texts.map((t) => t.id), shapes: p.shapes.map((x) => x.id) });
     },
   },
   { id: "selectNet", label: "Select connected net", section: "Edit", keys: "N", enabled: hasSel, run: (ui) => ui.engine.current?.selectNet() },
@@ -165,9 +178,9 @@ export const COMMANDS: Command[] = [
     enabled: (s) => editable(s) && s.page().elements.some((e) => e.hidden),
     run: (_, s) => void s.apply("Show all", (d) => getPage(d, s.pageId).elements.forEach((e) => (e.hidden = false))),
   },
-  { id: "rotate", label: "Rotate 90° clockwise", section: "Arrange", keys: "R", enabled: (s) => editable(s) && (hasEls(s) || s.tool === "place"), run: (ui, s) => void (ui.engine.current?.rotatePlacement() || s.apply("Rotate", (d) => rotateSelection(d, getPage(d, s.pageId), s.sel, true))) },
-  { id: "rotateCcw", label: "Rotate 90° counter-clockwise", section: "Arrange", keys: "⇧R", enabled: (s) => editable(s) && hasEls(s), run: (_, s) => void s.apply("Rotate", (d) => rotateSelection(d, getPage(d, s.pageId), s.sel, false)) },
-  { id: "mirror", label: "Mirror", section: "Arrange", keys: "X", enabled: (s) => editable(s) && (hasEls(s) || s.tool === "place"), run: (ui, s) => void (ui.engine.current?.mirrorPlacement() || s.apply("Mirror", (d) => mirrorSelection(d, getPage(d, s.pageId), s.sel))) },
+  { id: "rotate", label: "Rotate 90° clockwise", section: "Arrange", keys: "R", enabled: (s) => editable(s) && (hasEls(s) || hasShapes(s) || s.tool === "place"), run: (ui, s) => void (ui.engine.current?.rotatePlacement() || s.apply("Rotate", (d) => rotateSelection(d, getPage(d, s.pageId), s.sel, true))) },
+  { id: "rotateCcw", label: "Rotate 90° counter-clockwise", section: "Arrange", keys: "⇧R", enabled: (s) => editable(s) && (hasEls(s) || hasShapes(s)), run: (_, s) => void s.apply("Rotate", (d) => rotateSelection(d, getPage(d, s.pageId), s.sel, false)) },
+  { id: "mirror", label: "Mirror", section: "Arrange", keys: "X", enabled: (s) => editable(s) && (hasEls(s) || hasShapes(s) || s.tool === "place"), run: (ui, s) => void (ui.engine.current?.mirrorPlacement() || s.apply("Mirror", (d) => mirrorSelection(d, getPage(d, s.pageId), s.sel))) },
   ...(["left", "center", "right", "top", "middle", "bottom"] as const).map(
     (a): Command => ({
       id: "align-" + a,
@@ -225,6 +238,14 @@ export const COMMANDS: Command[] = [
   { id: "tool-text", label: "Text tool", section: "Tools", keys: "T", enabled: editable, run: (_, s) => s.setTool("text") },
   { id: "tool-pan", label: "Pan tool", section: "Tools", keys: "H", run: (_, s) => s.setTool("pan") },
   { id: "tool-comment", label: "Comment tool", section: "Tools", keys: "C", enabled: (s) => !!s.version?.canComment, run: (_, s) => s.setTool("comment") },
+  { id: "convertLines", label: "Convert selected lines to wires", section: "Tools", enabled: (s) => editable(s) && selLines(s).length > 0, run: (ui, s) => convertLines(ui, s, selLines(s).map((x) => x.id)) },
+  {
+    id: "convertPageLines",
+    label: "Convert all drawn lines on this page to wires",
+    section: "Page",
+    enabled: (s) => editable(s) && s.page().shapes.some(isOpenPath),
+    run: (ui, s) => convertLines(ui, s, s.page().shapes.filter(isOpenPath).map((x) => x.id)),
+  },
   { id: "connect", label: "Connect pins…", section: "Tools", keys: "⇧W", enabled: editable, run: (ui) => ui.openDialog("connect") },
   { id: "block", label: "Create reusable block from selection…", section: "Tools", enabled: (s) => editable(s) && hasEls(s), run: (ui) => ui.openDialog("block") },
   { id: "createElement", label: "Create element from selection…", section: "Tools", enabled: (s) => hasEls(s), run: (ui) => ui.openDialog("createElement") },

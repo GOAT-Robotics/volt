@@ -8,7 +8,7 @@ import type { Mat } from "@/core/geometry";
 import type { PathData, StrokeStyle, TextDraw } from "@/core/render/painter";
 import { INFO_KEYS, newUuid, pinBounds, symbolBounds, unionR, visualBounds } from "@/lib/library/elmt-tools";
 import { useEd, defOf, withId, type EdPrim } from "./store";
-import { applyHandle, autoOrient, boundsOfPrim, ellipsePoint, handlesOf, hitPin, hitPrim, nextPinNumber, outVec, qetAngle, r1, selectionBounds, stubVec, translatePrim, type Handle } from "./geom";
+import { applyHandle, autoOrient, boundsOfPrim, ellipsePoint, handlesOf, hitPin, hitPrim, nearestOnPrims, nextPinNumber, outVec, qetAngle, r1, selectionBounds, snapPoints, stubVec, translatePrim, type Handle, type OSnap, type OSnapKind } from "./geom";
 
 /* ------------------------------------------------------------------ */
 /* Theme                                                               */
@@ -83,6 +83,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
   const space = useRef(false);
   const mouse = useRef<Pt | null>(null);
   const shiftKey = useRef(false);
+  const altKey = useRef(false);
   const perf = useRef<number[]>([]);
 
   const toScene = (sx: number, sy: number): Pt => {
@@ -95,6 +96,39 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
     const gs = st.grid;
     return { x: r1(Math.round(p.x / gs) * gs), y: r1(Math.round(p.y / gs) * gs) };
   }, []);
+  /** last object-snap result under the cursor (drawn as an indicator) */
+  const hint = useRef<OSnap | null>(null);
+  /**
+   * Smart snapping: pins, line ends and corners, centres and midpoints of the drawing win over the
+   * grid anywhere on the canvas; `on` also snaps onto the nearest point of a line (pin placement).
+   */
+  const smart = useCallback(
+    (p: Pt, o: { alt?: boolean; exclude?: string; on?: boolean; forceGrid?: boolean } = {}): OSnap => {
+      if (o.alt) return { p: { x: r1(p.x), y: r1(p.y) }, kind: "free" };
+      const st = useEd.getState();
+      const radius = 9 / view.current.s;
+      const weight: Record<OSnapKind, number> = { pin: 0.6, end: 0.75, center: 0.95, quadrant: 1, mid: 1.05, on: 1.4, grid: 9, free: 9 };
+      let best: { s: OSnap; score: number } | null = null;
+      for (const c of snapPoints(st.doc.prims, st.doc.pins, o.exclude)) {
+        const d = Math.hypot(c.p.x - p.x, c.p.y - p.y);
+        if (d > radius) continue;
+        const score = d * weight[c.kind] + weight[c.kind] * 0.01;
+        if (!best || score < best.score) best = { s: { p: { x: r1(c.p.x), y: r1(c.p.y) }, kind: c.kind }, score };
+      }
+      if (best) return best.s;
+      if (o.on) {
+        const n = nearestOnPrims(st.doc.prims, p, o.exclude);
+        if (n && n.d <= radius * 0.7) {
+          // keep the grid coordinate along the line when it lies on the grid line
+          const g = snap(p, true);
+          const q = Math.abs(n.p.x - g.x) < 1e-6 ? { x: g.x, y: g.y } : Math.abs(n.p.y - g.y) < 1e-6 ? { x: g.x, y: g.y } : n.p;
+          return { p: { x: r1(q.x), y: r1(q.y) }, kind: "on" };
+        }
+      }
+      return { p: snap(p, !!o.forceGrid), kind: st.snap || o.forceGrid ? "grid" : "free" };
+    },
+    [snap],
+  );
 
   /* ---------------------------- drawing ---------------------------- */
   const draw = useCallback(() => {
@@ -370,7 +404,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
     }
     // pin ghost
     if (st.tool === "pin" && mouse.current && ge.k === "none" && !readOnly) {
-      const p = snap(mouse.current, true);
+      const p = smart(mouse.current, { on: true, forceGrid: true, alt: altKey.current }).p;
       const orient = st.toolOpts.pinOrient ?? autoOrient(p, bodyBox(doc.prims));
       const a = S(p), vv = stubVec(orient);
       const b = S({ x: p.x + vv.x * 4, y: p.y + vv.y * 4 });
@@ -395,8 +429,41 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
       sizeLabel(ctx, { x: a.x + 8, y: a.y + 16 }, `${nextPinNumber(doc.pins)} · ${orient.toUpperCase()}${st.toolOpts.pinOrient ? "" : " (auto)"}`, th);
     }
     // crosshair cursor for drawing tools
+    // object-snap indicator
+    const hs = hint.current;
+    if (hs && hs.kind !== "grid" && hs.kind !== "free" && !readOnly && (st.tool !== "select" || ge.k === "handle")) {
+      const q = S(hs.p);
+      ctx.save();
+      ctx.strokeStyle = "#16a34a";
+      ctx.fillStyle = "#16a34a";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (hs.kind === "end" || hs.kind === "pin") ctx.rect(q.x - 5, q.y - 5, 10, 10);
+      else if (hs.kind === "mid") {
+        ctx.moveTo(q.x, q.y - 6);
+        ctx.lineTo(q.x + 6, q.y + 4);
+        ctx.lineTo(q.x - 6, q.y + 4);
+        ctx.closePath();
+      } else if (hs.kind === "on") {
+        ctx.moveTo(q.x - 5, q.y - 5);
+        ctx.lineTo(q.x + 5, q.y + 5);
+        ctx.moveTo(q.x + 5, q.y - 5);
+        ctx.lineTo(q.x - 5, q.y + 5);
+      } else ctx.arc(q.x, q.y, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = "500 10px ui-sans-serif, system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      const label = { pin: "Pin", end: "Endpoint", mid: "Midpoint", center: "Center", quadrant: "Quadrant", on: "On line", grid: "", free: "" }[hs.kind];
+      const w = ctx.measureText(label).width + 8;
+      ctx.globalAlpha = 0.92;
+      ctx.fillRect(q.x + 9, q.y - 22, w, 15);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#fff";
+      ctx.fillText(label, q.x + 13, q.y - 14.5);
+      ctx.restore();
+    }
     if (st.tool !== "select" && mouse.current && !readOnly) {
-      const p = S(snap(mouse.current));
+      const p = S(hint.current?.p ?? snap(mouse.current));
       ctx.save();
       ctx.strokeStyle = th.accent;
       ctx.globalAlpha = 0.6;
@@ -413,7 +480,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
     const pf = perf.current;
     pf.push(dt);
     if (pf.length > 600) pf.splice(0, pf.length - 600);
-  }, [readOnly, snap]);
+  }, [readOnly, snap, smart]);
 
   const request = useCallback(() => {
     if (!raf.current) raf.current = requestAnimationFrame(draw);
@@ -593,7 +660,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
       if (useEd.getState().tool === "pin" && (e.key === "r" || e.key === "R") && !e.ctrlKey && !e.metaKey) {
         const st = useEd.getState();
         const order: Orient[] = ["n", "e", "s", "w"];
-        const cur = st.toolOpts.pinOrient ?? autoOrient(snap(mouse.current ?? { x: 0, y: 0 }, true), bodyBox(st.doc.prims));
+        const cur = st.toolOpts.pinOrient ?? autoOrient(smart(mouse.current ?? { x: 0, y: 0 }, { on: true, forceGrid: true }).p, bodyBox(st.doc.prims));
         st.setToolOpts({ pinOrient: order[(order.indexOf(cur) + 1) % 4] });
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -606,7 +673,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
       window.removeEventListener("keyup", onKey, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request, snap]);
+  }, [request, snap, smart]);
 
   /* ---------------------------- pointer ---------------------------- */
   const local = (e: React.PointerEvent | React.MouseEvent | WheelEvent): Pt => {
@@ -627,7 +694,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
     }
     if (e.button !== 0 || readOnly) return;
     cvs.current!.setPointerCapture(e.pointerId);
-    const sn = e.altKey ? { x: r1(p.x), y: r1(p.y) } : snap(p);
+    const sn = smart(p, { alt: e.altKey }).p;
     const ge = g.current;
     switch (st.tool) {
       case "select": {
@@ -709,7 +776,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
         return;
       }
       case "pin": {
-        const q = snap(p, !e.altKey);
+        const q = smart(p, { alt: e.altKey, on: true, forceGrid: true }).p;
         const orient = st.toolOpts.pinOrient ?? autoOrient(q, bodyBox(st.doc.prims));
         if (st.doc.pins.some((x) => x.x === q.x && x.y === q.y)) return;
         const number = nextPinNumber(st.doc.pins);
@@ -729,7 +796,12 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
     mouse.current = p;
     const st = useEd.getState();
     const ge = g.current;
-    const sn = e.altKey ? { x: r1(p.x), y: r1(p.y) } : snap(p);
+    altKey.current = e.altKey;
+    const hs = smart(p, { alt: e.altKey, exclude: ge.k === "handle" ? ge.id : undefined, on: st.tool === "pin", forceGrid: st.tool === "pin" });
+    const prevHint = hint.current;
+    hint.current = st.tool !== "select" || ge.k === "handle" ? hs : null;
+    if (prevHint?.kind !== hint.current?.kind || prevHint?.p.x !== hint.current?.p.x || prevHint?.p.y !== hint.current?.p.y) request();
+    const sn = hs.p;
     curThrottle(sn);
     switch (ge.k) {
       case "pan": {
@@ -917,6 +989,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
       style={{ outline: "none" }}
       onPointerLeave={() => {
         mouse.current = null;
+        hint.current = null;
         useEd.getState().setHover(null);
         request();
       }}

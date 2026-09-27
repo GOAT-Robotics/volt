@@ -2,16 +2,19 @@
  * Document mutations. All functions mutate the given (immer draft) objects in place and are
  * deterministic, so they are safe to use inside produceWithPatches for undo/redo.
  */
-import type { Doc, ElemInst, ElementDef, FreeText, Junction, Page, Pt, Wire, WireEnd } from "./model";
+import type { Doc, ElemInst, ElementDef, FreeText, Junction, Page, Pt, Shape, Wire, WireEnd } from "./model";
 import { eqPt, GRID_ORIGIN, rotOrient, toScene } from "./geometry";
 import { uid } from "./ids";
 import { endPoint, wiresOfElement } from "./topology";
 import { moveEndpoint, nearestSegment, simplify, splitAt, translatePts } from "./wires";
 import { nextRef } from "./numbering";
 
-export type Sel = { elements: string[]; wires: string[]; junctions: string[]; texts: string[] };
-export const emptySel = (): Sel => ({ elements: [], wires: [], junctions: [], texts: [] });
-export const selSize = (s: Sel) => s.elements.length + s.wires.length + s.junctions.length + s.texts.length;
+export type Sel = { elements: string[]; wires: string[]; junctions: string[]; texts: string[]; shapes: string[] };
+export const emptySel = (): Sel => ({ elements: [], wires: [], junctions: [], texts: [], shapes: [] });
+export const selSize = (s: Sel) => s.elements.length + s.wires.length + s.junctions.length + s.texts.length + (s.shapes?.length ?? 0);
+/** Selection from partial lists (missing lists are empty). */
+export const mkSel = (p: Partial<Sel>): Sel => ({ ...emptySel(), ...p });
+export const cloneSel = (s: Sel): Sel => ({ elements: [...s.elements], wires: [...s.wires], junctions: [...s.junctions], texts: [...s.texts], shapes: [...(s.shapes ?? [])] });
 
 export function getPage(doc: Doc, id: string): Page {
   const p = doc.pages.find((x) => x.id === id);
@@ -79,6 +82,10 @@ export function moveSelection(doc: Doc, page: Page, sel: Sel, d: Pt) {
   for (const e of page.elements) if (els.has(e.id) && !e.locked) (e.x += d.x), (e.y += d.y);
   for (const j of page.junctions) if (js.has(j.id)) (j.x += d.x), (j.y += d.y);
   for (const t of page.texts) if (ts.has(t.id)) (t.x += d.x), (t.y += d.y);
+  if (sel.shapes?.length) {
+    const ss = new Set(sel.shapes);
+    for (const sh of page.shapes) if (ss.has(sh.id)) sh.pts = translatePts(sh.pts, d);
+  }
   const movedEnd = (we: WireEnd) => (we.k === "pin" && els.has(we.el)) || (we.k === "junction" && js.has(we.j));
   for (const w of page.wires) {
     const ma = movedEnd(w.a), mb = movedEnd(w.b);
@@ -101,8 +108,9 @@ export function moveSelection(doc: Doc, page: Page, sel: Sel, d: Pt) {
 
 export function rotateSelection(doc: Doc, page: Page, sel: Sel, cw = true, pivot?: Pt) {
   const els = page.elements.filter((e) => sel.elements.includes(e.id) && !e.locked);
-  if (!els.length && !sel.texts.length) return;
-  const c = pivot ?? (els.length === 1 ? { x: els[0].x, y: els[0].y } : rotationPivot(doc, els));
+  const shapes = page.shapes.filter((s) => sel.shapes?.includes(s.id));
+  if (!els.length && !sel.texts.length && !shapes.length) return;
+  const c = pivot ?? (els.length === 1 ? { x: els[0].x, y: els[0].y } : els.length ? rotationPivot(doc, els) : centroid(shapes.flatMap((s) => s.pts)));
   const rot = (p: Pt): Pt => {
     const dx = p.x - c.x, dy = p.y - c.y;
     return cw ? { x: c.x - dy, y: c.y + dx } : { x: c.x + dy, y: c.y - dx };
@@ -120,11 +128,27 @@ export function rotateSelection(doc: Doc, page: Page, sel: Sel, cw = true, pivot
     j.y = Math.round(p.y);
   }
   for (const w of page.wires) if (sel.wires.includes(w.id) && w.a.k === "free" && w.b.k === "free") w.pts = w.pts.map(rot);
+  for (const s of shapes) s.pts = rotateShapePts(s, rot);
   refreshAttached(doc, page, new Set(els.map((e) => e.id)), new Set(js.map((j) => j.id)));
+}
+
+/** Rectangles / ellipses are stored as two opposite corners: rotating them keeps them axis-aligned. */
+function rotateShapePts(s: Shape, rot: (p: Pt) => Pt): Pt[] {
+  const r = (p: Pt) => {
+    const q = rot(p);
+    return { x: Math.round(q.x * 1000) / 1000, y: Math.round(q.y * 1000) / 1000 };
+  };
+  return s.pts.map(r);
 }
 
 export function mirrorSelection(doc: Doc, page: Page, sel: Sel) {
   const els = page.elements.filter((e) => sel.elements.includes(e.id) && !e.locked);
+  const shapes = page.shapes.filter((s) => sel.shapes?.includes(s.id));
+  if (shapes.length) {
+    const xs = [...shapes.flatMap((s) => s.pts.map((p) => p.x)), ...els.map((e) => e.x)];
+    const axis = Math.min(...xs) + Math.max(...xs);
+    for (const s of shapes) s.pts = s.pts.map((p) => ({ x: Math.round((axis - p.x) * 1000) / 1000, y: p.y }));
+  }
   // mirror about the centre of the hotspots' bbox: it is invariant under the flip, so X twice is an exact identity
   const minX = Math.min(...els.map((e) => e.x)), maxX = Math.max(...els.map((e) => e.x));
   for (const e of els) {
@@ -177,6 +201,10 @@ export function deleteSelection(doc: Doc, page: Page, sel: Sel) {
   page.wires = page.wires.filter((w) => !ws.has(w.id));
   page.junctions = page.junctions.filter((j) => !js.has(j.id));
   page.texts = page.texts.filter((t) => !sel.texts.includes(t.id));
+  if (sel.shapes?.length) {
+    const ss = new Set(sel.shapes);
+    page.shapes = page.shapes.filter((s) => !ss.has(s.id));
+  }
   cleanupJunctions(page);
 }
 
@@ -358,7 +386,7 @@ export function applyAutoConnections(page: Page, list: AutoConnect[]) {
 /* Clipboard                                                            */
 /* ------------------------------------------------------------------ */
 
-export type Clip = { defs: Record<string, ElementDef>; elements: ElemInst[]; wires: Wire[]; junctions: Junction[]; texts: FreeText[] };
+export type Clip = { defs: Record<string, ElementDef>; elements: ElemInst[]; wires: Wire[]; junctions: Junction[]; texts: FreeText[]; shapes?: Shape[] };
 
 export function copySelection(doc: Doc, page: Page, sel: Sel): Clip {
   const els = page.elements.filter((e) => sel.elements.includes(e.id));
@@ -368,7 +396,8 @@ export function copySelection(doc: Doc, page: Page, sel: Sel): Clip {
   const wires = page.wires.filter((w) => sel.wires.includes(w.id) || (inside(w.a) && inside(w.b) && (w.a.k !== "free" || w.b.k !== "free")));
   const defs: Record<string, ElementDef> = {};
   for (const e of els) defs[e.defId] = doc.defs[e.defId];
-  return JSON.parse(JSON.stringify({ defs, elements: els, wires, junctions: js, texts: page.texts.filter((t) => sel.texts.includes(t.id)) }));
+  const shapes = page.shapes.filter((s) => sel.shapes?.includes(s.id));
+  return JSON.parse(JSON.stringify({ defs, elements: els, wires, junctions: js, texts: page.texts.filter((t) => sel.texts.includes(t.id)), shapes }));
 }
 
 /** Paste with fresh ids; wires attached to things outside the clip become free. Returns new selection. */
@@ -419,6 +448,11 @@ export function pasteClip(doc: Doc, page: Page, clip: Clip, offset: Pt, renumber
     const n = { ...t, id: uid(), x: t.x + offset.x, y: t.y + offset.y, qet: undefined };
     page.texts.push(n);
     sel.texts.push(n.id);
+  }
+  for (const sh of clip.shapes ?? []) {
+    const n: Shape = { ...JSON.parse(JSON.stringify(sh)), id: uid(), pts: translatePts(sh.pts, offset), qet: undefined };
+    page.shapes.push(n);
+    sel.shapes.push(n.id);
   }
   cleanupJunctions(page);
   return sel;

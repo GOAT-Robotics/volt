@@ -623,12 +623,14 @@ function readShapes(diag: XElement, page: Page, ctx: ImportCtx): void {
     const p2 = { x: num(s, "x2") - QET_MARGIN, y: num(s, "y2") - QET_MARGIN };
     let kind: Shape["kind"];
     let pts: Pt[];
+    let closed: boolean | undefined;
     if (type === "Line") [kind, pts] = ["line", [p1, p2]];
     else if (type === "Rectangle") [kind, pts] = ["rect", [p1, p2]];
     else if (type === "Ellipse") [kind, pts] = ["ellipse", [p1, p2]];
     else if (type === "Polygon") {
       kind = "polygon";
       pts = subChildren(s, "points", "point").map((p) => ({ x: num(p, "x") - QET_MARGIN, y: num(p, "y") - QET_MARGIN }));
+      closed = attr(s, "closed", "1") !== "0";
     } else {
       kind = "polygon";
       pts = subChildren(s, "nodes", "node").map((p) => ({ x: num(p, "x") - QET_MARGIN, y: num(p, "y") - QET_MARGIN }));
@@ -643,10 +645,11 @@ function readShapes(diag: XElement, page: Page, ctx: ImportCtx): void {
       width: pen ? num(pen, "widthF", 1) : 1,
       dash: dash(pen ? attr(pen, "style", "DashLine") : "DashLine"),
       fill: bstyle !== "NoBrush" && brush ? attr(brush, "color", "#000000") : null,
+      ...(closed !== undefined ? { closed } : {}),
       qet: { idx },
     });
   });
-  if (page.shapes.length) ctx.rep.add("preserved", "shapes", "drawing shapes (read-only, kept as-is on export)", page.shapes.length, page.title);
+  if (page.shapes.length) ctx.rep.add("supported", "shapes", "drawing shapes", page.shapes.length, page.title);
 }
 
 function importDiagram(ctx: ImportCtx, diag: XElement, di: number): Page {
@@ -1636,6 +1639,67 @@ function writeDiagram(ctx: ExportCtx, diag: XElement, page: Page, order: number)
     textOut.push(n);
   }
   if (inputsFound || textOut.length) rebuildList(ctx, inputsFound ?? ensureChild(ctx.x, diag, "inputs", ["images", "shapes", "tables"]), "input", textOut);
+
+  writeShapes(ctx, diag, page);
+}
+
+const QT_PEN: Record<Shape["dash"], string> = { solid: "SolidLine", dashed: "DashLine", dotted: "DotLine", dashdot: "DashDotLine" };
+const penDash = (s: string): Shape["dash"] => (s === "DashLine" ? "dashed" : s === "DotLine" ? "dotted" : s === "DashDotLine" || s === "DashDotDotLine" ? "dashdot" : "solid");
+
+/** Drawing shapes: untouched ones stay byte-identical; edited ones are patched; new ones are created. */
+function writeShapes(ctx: ExportCtx, diag: XElement, page: Page): void {
+  const found = child(diag, "shapes");
+  const orig = children(found, "shape");
+  const out: XElement[] = [];
+  const used = new Set<XElement>();
+  const M = (p: Pt) => ({ x: p.x + QET_MARGIN, y: p.y + QET_MARGIN });
+  for (const sh of page.shapes) {
+    let n = sh.qet?.idx !== undefined ? orig[sh.qet.idx] : undefined;
+    if (n && used.has(n)) n = undefined;
+    const type = sh.kind === "line" ? "Line" : sh.kind === "rect" ? "Rectangle" : sh.kind === "ellipse" ? "Ellipse" : "Polygon";
+    if (n && attr(n, "type") !== type && !(sh.kind === "polygon" && attr(n, "type") !== "Line" && attr(n, "type") !== "Rectangle" && attr(n, "type") !== "Ellipse")) n = undefined;
+    if (!n) {
+      n = createEl(ctx.x, "shape", { type, z: 0, is_movable: 1, closed: sh.kind === "polygon" && sh.closed !== false ? 1 : 0, ...(sh.kind === "rect" ? { rx: 0, ry: 0 } : {}) });
+      n.appendChild(createEl(ctx.x, "pen", { style: QT_PEN[sh.dash], color: sh.color, widthF: sh.width }));
+      n.appendChild(createEl(ctx.x, "brush", { style: sh.fill ? "SolidPattern" : "NoBrush", color: sh.fill ?? "#000000" }));
+    }
+    used.add(n);
+    // geometry
+    if (attr(n, "type") === "Polygon" || sh.kind === "polygon") {
+      const pts = sh.pts.map(M);
+      const cur = subChildren(n, "points", "point");
+      const same = cur.length === pts.length && cur.every((q, i) => Math.abs(num(q, "x") - pts[i].x) < 1e-9 && Math.abs(num(q, "y") - pts[i].y) < 1e-9);
+      if (!same) {
+        let box = child(n, "points");
+        if (box) for (const q of cur) removeIndented(q);
+        else box = ensureChild(ctx.x, n, "points");
+        for (const p of pts) insertIndented(ctx.x, box, createEl(ctx.x, "point", { x: fmt(p.x), y: fmt(p.y) }));
+      }
+      const closed = sh.closed !== false ? "1" : "0";
+      if (attr(n, "closed", "1") !== closed) n.setAttribute("closed", closed);
+    } else if (sh.pts.length >= 2) {
+      const a = M(sh.pts[0]), b = M(sh.pts[1]);
+      setNumAttr(n, "x1", a.x);
+      setNumAttr(n, "y1", a.y);
+      setNumAttr(n, "x2", b.x);
+      setNumAttr(n, "y2", b.y);
+    }
+    // pen / brush only when they differ in meaning (keeps e.g. DashDotDotLine as written)
+    const pen = child(n, "pen") ?? insertIndented(ctx.x, n, createEl(ctx.x, "pen", { style: QT_PEN[sh.dash], color: sh.color, widthF: sh.width }), children(n)[0] ?? null);
+    if (penDash(attr(pen, "style", "DashLine")) !== sh.dash) pen.setAttribute("style", QT_PEN[sh.dash]);
+    if (attr(pen, "color", "#000000").toLowerCase() !== sh.color.toLowerCase()) pen.setAttribute("color", sh.color);
+    setNumAttr(pen, "widthF", sh.width);
+    const brush = child(n, "brush");
+    const bstyle = brush ? attr(brush, "style", "NoBrush") : "NoBrush";
+    const curFill = bstyle !== "NoBrush" && brush ? attr(brush, "color", "#000000") : null;
+    if ((curFill ?? "").toLowerCase() !== (sh.fill ?? "").toLowerCase()) {
+      const br = brush ?? insertIndented(ctx.x, n, createEl(ctx.x, "brush", {}), null);
+      br.setAttribute("style", sh.fill ? (bstyle !== "NoBrush" ? bstyle : "SolidPattern") : "NoBrush");
+      br.setAttribute("color", sh.fill ?? attr(br, "color", "#000000"));
+    }
+    out.push(n);
+  }
+  if (found || out.length) rebuildList(ctx, found ?? ensureChild(ctx.x, diag, "shapes", ["tables"]), "shape", out);
 }
 
 /**

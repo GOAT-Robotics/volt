@@ -219,11 +219,13 @@ export type FreeText = {
   qet?: { idx?: number };
 };
 
-/** Preserved QET shape (read-only render, preserved on export) */
+/** Free drawing shape (lines, rectangles, ellipses, polylines). Selectable and editable; written back on export. */
 export type Shape = {
   id: string;
   kind: "line" | "rect" | "ellipse" | "polygon";
   pts: Pt[];
+  /** polygons only: false = open polyline (default true) */
+  closed?: boolean;
   color: string;
   width: number;
   dash: LineStyle["dash"];

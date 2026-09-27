@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast, Toaster } from "sonner";
 import type { Doc } from "@/core/model";
+import { mkSel } from "@/core/ops";
 import { useEditor, type VersionInfo } from "../store";
 import type { Engine } from "../engine/Engine";
 import { isTyping } from "../engine/Engine";
@@ -203,10 +204,10 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
     s.setPage(page.id);
     const t = setTimeout(() => {
       if (el && page.elements.some((e) => e.id === el)) {
-        useEditor.getState().setSel({ elements: [el], wires: [], junctions: [], texts: [] });
+        useEditor.getState().setSel(mkSel({ elements: [el] }));
         engine.current?.zoomToSelection();
       } else if (el && page.wires.some((w) => w.id === el)) {
-        useEditor.getState().setSel({ elements: [], wires: [el], junctions: [], texts: [] });
+        useEditor.getState().setSel(mkSel({ wires: [el] }));
         engine.current?.zoomToSelection();
       }
     }, 300);

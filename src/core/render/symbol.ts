@@ -27,7 +27,9 @@ export type CompiledSymbol = {
   texts: CompiledText[];
   pinStubs: PathData;
   pins: PinDef[];
-  bbox: Rect; // local
+  bbox: Rect; // local frame (width/height/hotspot as saved)
+  /** local frame ∪ drawn geometry (pins, strokes) — for hit testing and selection */
+  hitBox: Rect;
   /** Coarse LOD outline */
   outline: PathData;
 };
@@ -108,7 +110,11 @@ export function compileSymbol(def: ElementDef): CompiledSymbol {
     stubs.M(pin.x, pin.y).L(pin.x + v[0] * TERMINAL_STUB, pin.y + v[1] * TERMINAL_STUB);
   }
 
+  // The saved frame (width/height/hotspot) can be smaller than what is actually drawn — e.g. hand-made
+  // elements or files from other editors. Hit testing, snapping and selection use the union of both,
+  // so every pin and stroke of the symbol is reachable.
   const bbox = { x: -def.hotspotX, y: -def.hotspotY, w: def.width || 10, h: def.height || 10 };
+  const hitBox = geometryBounds(def, bbox);
   return {
     def,
     fills: [...fillGroups.values()].map((g) => ({ path: g.b.build(), color: g.color, alpha: g.alpha })),
@@ -117,6 +123,7 @@ export function compileSymbol(def: ElementDef): CompiledSymbol {
     pinStubs: stubs.build(),
     pins: def.pins,
     bbox,
+    hitBox,
     outline: new PathBuilder().R(bbox.x, bbox.y, bbox.w, bbox.h).build(),
   };
 }
@@ -186,4 +193,40 @@ export function symbolFor(def: ElementDef): CompiledSymbol {
   let c = cache.get(def);
   if (!c) cache.set(def, (c = compileSymbol(def)));
   return c;
+}
+
+/** Union of the frame and the drawn geometry (primitives + pin stubs). Texts are left out. */
+function geometryBounds(def: ElementDef, frame: Rect): Rect {
+  let x0 = frame.x, y0 = frame.y, x1 = frame.x + frame.w, y1 = frame.y + frame.h;
+  const add = (x: number, y: number) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (x < x0) x0 = x;
+    if (y < y0) y0 = y;
+    if (x > x1) x1 = x;
+    if (y > y1) y1 = y;
+  };
+  if (def.placeholder) return frame;
+  for (const p of def.prims) {
+    switch (p.t) {
+      case "line":
+        add(p.x1, p.y1);
+        add(p.x2, p.y2);
+        break;
+      case "rect":
+      case "ellipse":
+      case "arc":
+        add(p.x, p.y);
+        add(p.x + p.w, p.y + p.h);
+        break;
+      case "polygon":
+        for (const q of p.pts) add(q.x, q.y);
+        break;
+    }
+  }
+  for (const pin of def.pins) {
+    add(pin.x, pin.y);
+    const v = pin.orient === "n" ? [0, 1] : pin.orient === "s" ? [0, -1] : pin.orient === "e" ? [-1, 0] : [1, 0];
+    add(pin.x + v[0] * TERMINAL_STUB, pin.y + v[1] * TERMINAL_STUB);
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }

@@ -103,7 +103,7 @@ The standard library, blocks and title blocks install automatically when the con
 - **Import.** `src/core/qet` reads QET 0.3 to 0.100 projects. Anything it doesn't model is kept and written back unchanged, so an untouched project exports byte-identical. Tested on the bundled examples.
 - **Compatibility report.** Shown on import and before export: what is supported, degraded, preserved-but-not-editable, or unsupported.
 - **Junctions.** Volt junctions and dangling wire ends are exported as a tiny embedded `volt_junction` element, because QET has no free junctions. Volt recognizes them on re-import.
-- **Limitations.** QET has no mirroring, so mirrored elements are exported unmirrored. Composite texts show their last computed value. Shapes, cross-references and terminal strips are kept and drawn, but can't be edited.
+- **Limitations.** QET has no mirroring, so mirrored elements are exported unmirrored. Composite texts show their last computed value. Drawn lines, rectangles, ellipses and polylines can be selected, moved, reshaped, restyled and deleted, and are written back on export. Cross-references and terminal strips are kept and drawn, but can't be edited.
 
 ## Development
 
