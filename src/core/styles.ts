@@ -19,6 +19,9 @@ const T = (o: Partial<TextStyle>): TextStyle => ({
 
 export const ROLE_LABELS: Record<TextRole, string> = {
   componentName: "Component name",
+  componentRating: "Component rating",
+  componentPartNumber: "Component part number",
+  componentManufacturer: "Component manufacturer",
   componentRef: "Component reference",
   connectorName: "Connector name",
   pinNumber: "Pin number",
@@ -37,6 +40,9 @@ export function defaultStyles(): Styles {
   return {
     text: {
       componentName: T({ size: 8, color: "#374151", dx: 0, dy: 0 }),
+      componentRating: T({ size: 8, color: "#374151" }),
+      componentPartNumber: T({ size: 7, color: "#6b7280" }),
+      componentManufacturer: T({ size: 7, color: "#6b7280" }),
       componentRef: T({ size: 10, weight: 600, color: "#111827" }),
       connectorName: T({ size: 9, weight: 600 }),
       pinNumber: T({ size: 6, color: "#6b7280" }),
@@ -56,6 +62,7 @@ export function defaultStyles(): Styles {
       pin: { color: "#dc2626", size: 2, showPoint: true },
       outline: { color: null, widthScale: 1 },
       componentInfo: { description: true, rating: true, manufacturer_reference: false, manufacturer: false },
+      componentInfoLayout: { at: "auto" },
       border: { color: "#6b7280", width: 1, dash: "solid", headerColor: "#f3f4f6", font: "Inter, Helvetica, Arial, sans-serif", size: 8 },
       titleBlock: { color: "#374151", width: 1, dash: "solid", font: "Inter, Helvetica, Arial, sans-serif" },
       selection: "#2563eb",

@@ -15,6 +15,9 @@ import type { AdminData } from "./AdminView";
 
 const ROLE_NAMES: Record<TextRole, string> = {
   componentName: "Component name",
+  componentRating: "Component rating",
+  componentPartNumber: "Component part number",
+  componentManufacturer: "Component manufacturer",
   componentRef: "Component reference",
   connectorName: "Connector name",
   pinNumber: "Pin number",

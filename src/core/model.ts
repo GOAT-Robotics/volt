@@ -88,6 +88,9 @@ export type ElementDef = {
 
 export const TEXT_ROLES = [
   "componentName",
+  "componentRating",
+  "componentPartNumber",
+  "componentManufacturer",
   "componentRef",
   "connectorName",
   "pinNumber",
@@ -119,11 +122,14 @@ export type TextStyle = {
 };
 
 export const COMPONENT_INFO = [
-  { key: "description", name: "Name" },
-  { key: "rating", name: "Rating" },
-  { key: "manufacturer_reference", name: "Part number" },
-  { key: "manufacturer", name: "Manufacturer" },
+  { key: "description", name: "Name", role: "componentName" },
+  { key: "rating", name: "Rating", role: "componentRating" },
+  { key: "manufacturer_reference", name: "Part number", role: "componentPartNumber" },
+  { key: "manufacturer", name: "Manufacturer", role: "componentManufacturer" },
 ] as const;
+/** Where the component info block sits: under the reference (moving beside the symbol if needed), or fixed. */
+export type InfoPlacement = "auto" | "right" | "left" | "below";
+export type InfoLayout = { at?: InfoPlacement; align?: "left" | "center" | "right" };
 export type ComponentInfoKey = (typeof COMPONENT_INFO)[number]["key"];
 export type ComponentInfoFlags = Partial<Record<ComponentInfoKey, boolean>>;
 
@@ -136,6 +142,8 @@ export type GraphicStyles = {
   outline: { color: string | null; widthScale: number };
   /** which component information lines are shown under the reference by default */
   componentInfo?: ComponentInfoFlags;
+  /** default placement of the component info block */
+  componentInfoLayout?: InfoLayout;
   border: LineStyle & { headerColor: string; font: string; size: number };
   titleBlock: LineStyle & { font: string };
   selection: string;
@@ -184,6 +192,8 @@ export type ElemInst = {
   showPinNames?: boolean;
   /** show / hide the component information lines (name, rating, part number, manufacturer); unset = project default */
   showInfo?: ComponentInfoFlags;
+  /** placement / alignment of the info block for this component; unset = project default */
+  infoLayout?: InfoLayout;
   outlineOverride?: Partial<LineStyle>;
   group?: GroupRef;
   /** QElectroTech cross-reference links (folio report pairs, master ↔ slaves): ids of linked elements */

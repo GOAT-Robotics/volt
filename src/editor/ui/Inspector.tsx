@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { RotateCw, RotateCcw, FlipHorizontal2, Lock, Unlock, RotateCcw as Reset, Plus, X, Link2, Unlink, ExternalLink, Pencil, Eye, EyeOff } from "lucide-react";
+import { RotateCw, RotateCcw, FlipHorizontal2, Lock, Unlock, RotateCcw as Reset, Plus, X, Link2, Unlink, ExternalLink, Pencil, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight} from "lucide-react";
 import { toast } from "sonner";
 import { useEditor } from "../store";
 import { useEditorUI } from "./context";
@@ -10,11 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Badge, Switch, Tip } from "@/components/ui/misc";
 import { getPage, emptySel } from "@/core/ops";
 import type { Doc, ElemInst, LineStyle, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
-import { TEXT_ROLES, COMPONENT_INFO, type ComponentInfoFlags, type ComponentInfoKey } from "@/core/model";
+import { TEXT_ROLES, COMPONENT_INFO, type ComponentInfoFlags, type ComponentInfoKey, type InfoLayout, type InfoPlacement } from "@/core/model";
 import { ConductorSection, Swatch } from "./Conductor";
 import { endAddress, wireEndLabel, wireInfo, wiringOf } from "@/core/wiring";
 import { ROLE_LABELS } from "@/core/styles";
-import { docStyles } from "@/core/render/scene";
+import { docStyles, wireTextAnchor } from "@/core/render/scene";
 import { symbolThumb } from "../thumb";
 import { pinDegree } from "../engine/snap";
 import { polylineLength } from "@/core/geometry";
@@ -442,13 +442,24 @@ function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc
   const defaults = styles.graphics.componentInfo ?? {};
   const shown = (k: ComponentInfoKey) => e.showInfo?.[k] ?? defaults[k] ?? false;
   const s = useEditor.getState;
+  const layoutDefault = styles.graphics.componentInfoLayout ?? {};
+  const at = e.infoLayout?.at ?? layoutDefault.at ?? "auto";
+  const align = e.infoLayout?.align ?? layoutDefault.align;
   const makeDefault = () =>
     s().apply("Component info display", (d) => {
       const flags = Object.fromEntries(COMPONENT_INFO.map((c) => [c.key, shown(c.key)])) as ComponentInfoFlags;
-      d.styles = { ...d.styles, graphics: { ...(d.styles.graphics ?? {}), componentInfo: flags } };
-      for (const p of d.pages) for (const x of p.elements) delete x.showInfo;
+      const lay: InfoLayout = { at, ...(align ? { align } : {}) };
+      d.styles = { ...d.styles, graphics: { ...(d.styles.graphics ?? {}), componentInfo: flags, componentInfoLayout: lay } };
+      for (const p of d.pages)
+        for (const x of p.elements) {
+          delete x.showInfo;
+          delete x.infoLayout;
+        }
     });
-  const custom = !!e.showInfo && COMPONENT_INFO.some((c) => e.showInfo![c.key] !== undefined && e.showInfo![c.key] !== (defaults[c.key] ?? false));
+  const custom =
+    (!!e.showInfo && COMPONENT_INFO.some((c) => e.showInfo![c.key] !== undefined && e.showInfo![c.key] !== (defaults[c.key] ?? false))) ||
+    (!!e.infoLayout && ((e.infoLayout.at !== undefined && e.infoLayout.at !== (layoutDefault.at ?? "auto")) || (e.infoLayout.align !== undefined && e.infoLayout.align !== layoutDefault.align)));
+  const setLayout = (label: string, p: InfoLayout) => upd(label, (x) => (x.infoLayout = { ...(x.infoLayout ?? {}), ...p }));
   return (
     <Section
       title="Component info"
@@ -481,6 +492,32 @@ function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc
           </Row>
         );
       })}
+      <Row label="Placement">
+        <div className="flex items-center gap-1">
+          <NativeSelect value={at} disabled={!editable} onChange={(ev) => setLayout("Info placement", { at: ev.target.value as InfoPlacement })} aria-label="Info placement">
+            <option value="auto">Under reference</option>
+            <option value="right">Right of symbol</option>
+            <option value="left">Left of symbol</option>
+            <option value="below">Below symbol</option>
+          </NativeSelect>
+          <div className="flex shrink-0 rounded-md border border-border p-0.5" role="group" aria-label="Alignment">
+            {(
+              [
+                ["left", <AlignLeft key="l" />, "Align left"],
+                ["center", <AlignCenter key="c" />, "Center"],
+                ["right", <AlignRight key="r" />, "Align right"],
+              ] as const
+            ).map(([v, icon, label]) => (
+              <Tip key={v} content={label}>
+                <Button variant="tool" size="icon-sm" className="!size-6" active={(align ?? "left") === v} disabled={!editable} aria-label={label} aria-pressed={(align ?? "left") === v} onClick={() => setLayout(label, { align: v })}>
+                  {icon}
+                </Button>
+              </Tip>
+            ))}
+          </div>
+        </div>
+      </Row>
+      <p className="text-2xs text-subtle">Font, size and color of each line are set in Global styles.</p>
     </Section>
   );
 }
@@ -579,6 +616,21 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
     });
   const a = endLabel(doc, page, w.a), b = endLabel(doc, page, w.b);
   const wi = wireInfo(doc, w);
+  const autoPos = useMemo(() => {
+    // where the automatic placement puts the texts, as a fraction of the wire length (for the slider)
+    const { p } = wireTextAnchor(doc, w, docStyles(doc), measureText);
+    let acc = 0, best = { d: Infinity, at: 0.5 };
+    const total = polylineLength(w.pts) || 1;
+    for (let i = 0; i < w.pts.length - 1; i++) {
+      const a = w.pts[i], b = w.pts[i + 1];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const t = len ? Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / (len * len))) : 0;
+      const d = Math.hypot(a.x + (b.x - a.x) * t - p.x, a.y + (b.y - a.y) * t - p.y);
+      if (d < best.d) best = { d, at: (acc + t * len) / total };
+      acc += len;
+    }
+    return Math.min(0.95, Math.max(0.05, best.at));
+  }, [doc, w]);
   const conductorLook = wi.look && (wi.colorSource !== "standard" || wiringOf(doc).colorize) ? wi.look : null;
   return (
     <div>
@@ -606,8 +658,13 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
             </Row>
           );
         })}
-        <Row label="Label position">
-          <input type="range" min={0.05} max={0.95} step={0.05} value={w.labelPos ?? 0.5} disabled={!editable} onChange={(ev) => upd("Label position", (x) => (x.labelPos = Number(ev.target.value)))} className="w-full accent-[var(--accent)]" aria-label="Label position" />
+        <Row label="Text position" hint={w.labelPos === undefined ? "Automatic: middle of the longest straight run. Drag to place the number and color/size along the wire." : undefined}>
+          <div className="flex items-center gap-2">
+            <input type="range" min={0.05} max={0.95} step={0.01} value={w.labelPos ?? autoPos} disabled={!editable} onChange={(ev) => upd("Text position", (x) => (x.labelPos = Number(ev.target.value)))} className={cn("w-full accent-[var(--accent)]", w.labelPos === undefined && "opacity-60")} aria-label="Text position" />
+            <Button variant="tool" size="xs" active={w.labelPos === undefined} disabled={!editable} onClick={() => upd("Automatic text position", (x) => (x.labelPos = undefined))}>
+              Auto
+            </Button>
+          </div>
         </Row>
         <Row label="Bus">
           <Switch checked={!!w.bus} disabled={!editable} onCheckedChange={(v) => upd("Bus", (x) => (x.bus = v))} />

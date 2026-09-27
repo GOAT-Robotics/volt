@@ -95,7 +95,8 @@ The standard library, blocks and title blocks install automatically when the con
 - **Checks.** Green-yellow on a non-PE wire, PE in another color, a core used twice, more conductors than cores.
 
 **Components**
-- **Component info.** Name, rating, part number and manufacturer are stacked under the reference (beside the symbol when there is no room below). Each line can be shown or hidden per component; the project default comes from the global styles and "Use for all" applies one component's choice everywhere.
+- **Component info.** Name, rating, part number and manufacturer are stacked under the reference with even spacing, or placed right / left / below the symbol, aligned left, center or right. Each line has its own text role in Global styles (font, size, weight, color, visibility, line spacing, alignment); lines are shown or hidden per component, and the project default is set in Global styles → Component info or with "Use for all".
+- **Style templates.** A fresh workspace gets three approved style templates: "IEC 61082 · ISO 3098 (monochrome)" (default; ISO 3098 lettering heights 1.8 / 2.5 / 3.5 / 5 mm, black), "NFPA 79 · ANSI (North America)" (Arial, sizes legible after reduction, part numbers shown) and "Screen review (color)", plus a "Standard control panel" project template. They are installed once at server start; later edits or deletions are kept.
 
 **Library** (`/library`)
 - **Standard library.** About 8,800 symbols (electric, logic, hydraulic, pneumatic, energy), starter circuit blocks (DOL starter, start/stop with self-holding, pilot lamp, relay, 24 V supply, terminal strip) and standard title blocks. They are installed into every workspace when the server starts, or with `npm run db:seed`, and updated in place when a newer collection ships.

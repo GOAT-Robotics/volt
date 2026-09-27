@@ -5,7 +5,7 @@ import { X, RotateCcw, Building2, Type, Spline, Square } from "lucide-react";
 import { useEditor } from "../../store";
 import { useEditorUI } from "../context";
 import type { GraphicStyles, PartialStyles, Styles, TextRole, TextStyle, DeepPartial } from "@/core/model";
-import { TEXT_ROLES } from "@/core/model";
+import { TEXT_ROLES, COMPONENT_INFO, type InfoPlacement } from "@/core/model";
 import { ROLE_LABELS, deepMerge, projectStyles } from "@/core/styles";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Switch, Badge } from "@/components/ui/misc";
@@ -16,7 +16,9 @@ import { api } from "@/lib/fetcher";
 
 type Sel = { kind: "text"; role: TextRole } | { kind: "graphics"; key: keyof GraphicStyles };
 
-const GRAPHIC_LABELS: Partial<Record<keyof GraphicStyles, string>> = { wire: "Wires & junctions", bus: "Buses", pin: "Pins", outline: "Component outline", border: "Page border", titleBlock: "Title block", review: "Review markup" };
+const SAMPLE: Partial<Record<TextRole, string>> = { pinNumber: "13", componentRef: "K12", wireLabel: "L1-24", componentName: "2-pole MCB", componentRating: "16 A, 400 V", componentPartNumber: "A9F74216", componentManufacturer: "Schneider Electric", wireInfo: "BK 1.5 mm²" };
+
+const GRAPHIC_LABELS: Partial<Record<keyof GraphicStyles, string>> = { componentInfo: "Component info", wire: "Wires & junctions", bus: "Buses", pin: "Pins", outline: "Component outline", border: "Page border", titleBlock: "Title block", review: "Review markup" };
 
 export function StylesDialog({ onClose }: { onClose: () => void }) {
   const doc = useEditor((s) => s.doc);
@@ -164,7 +166,7 @@ export function StylesDialog({ onClose }: { onClose: () => void }) {
                 <>
                   <div className="mb-3 flex h-14 items-center justify-center rounded-lg border border-border bg-white">
                     <span style={{ fontFamily: t.font, fontSize: t.size * (4 / 3) * 1.6, fontWeight: t.weight, fontStyle: t.italic ? "italic" : "normal", color: t.color, background: t.background ?? undefined }} className="px-1">
-                      {sel.role === "pinNumber" ? "13" : sel.role === "componentRef" ? "K12" : sel.role === "wireLabel" ? "L1-24" : ROLE_LABELS[sel.role]}
+                      {SAMPLE[sel.role] ?? ROLE_LABELS[sel.role]}
                     </span>
                   </div>
                   <Row label="Visible">
@@ -281,6 +283,36 @@ function GraphicsEditor({ k, g, setG, editable }: { k: keyof GraphicStyles; g: G
     );
   };
   switch (k) {
+    case "componentInfo": {
+      const f = g.componentInfo ?? {};
+      const lay = g.componentInfoLayout ?? {};
+      return (
+        <>
+          <p className="text-2xs text-muted">Lines shown under each component by default (each component can override this in its Properties panel). Their font, size and color are the “Component …” text roles.</p>
+          {COMPONENT_INFO.map((c) => (
+            <Row key={c.key} label={c.name}>
+              <Switch checked={!!f[c.key]} disabled={!editable} onCheckedChange={(v) => setG("componentInfo", { [c.key]: v })} />
+            </Row>
+          ))}
+          <Row label="Placement">
+            <NativeSelect value={lay.at ?? "auto"} disabled={!editable} onChange={(e) => setG("componentInfoLayout", { at: e.target.value as InfoPlacement })}>
+              <option value="auto">Under reference</option>
+              <option value="right">Right of symbol</option>
+              <option value="left">Left of symbol</option>
+              <option value="below">Below symbol</option>
+            </NativeSelect>
+          </Row>
+          <Row label="Alignment">
+            <NativeSelect value={lay.align ?? ""} disabled={!editable} onChange={(e) => setG("componentInfoLayout", { align: (e.target.value || undefined) as "left" })}>
+              <option value="">Each line's own alignment</option>
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </NativeSelect>
+          </Row>
+        </>
+      );
+    }
     case "wire":
       return (
         <>

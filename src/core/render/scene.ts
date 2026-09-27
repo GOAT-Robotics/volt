@@ -1,3 +1,4 @@
+import { COMPONENT_INFO } from "../model";
 import type { Doc, ElemInst, ElementDef, FreeText, Junction, Page, PinDef, PlacedText, Pt, Rect, Styles, TextStyle, TitleBlockTemplate, Wire } from "../model";
 import { effectiveText, projectStyles } from "../styles";
 import { elemMatrix, pointAlong, rotOrient, toScene, transformRect, unionRect } from "../geometry";
@@ -134,58 +135,69 @@ export function layoutElementTexts(e: ElemInst, sym: CompiledSymbol, styles: Sty
 }
 
 /**
- * Component information block (name, rating, part number, manufacturer), stacked under the
- * reference like the description / rating / catalog attributes of CAE tools. Each line can be
- * shown or hidden per component; the project default comes from the global styles.
+ * Component information block (name, rating, part number, manufacturer) like the description /
+ * rating / catalog attributes of CAE tools. Each line has its own global text style (font, size,
+ * color, weight, visibility, line spacing, alignment) and can be shown or hidden per component.
+ * The block sits under the reference, or right / left / below the symbol, aligned left, centre or right.
  */
 function layoutComponentInfo(e: ElemInst, def: ElementDef, styles: Styles, measure: Painter["measure"], out: LaidText[], ref: LaidText | null, shown: Set<string>, bb: Rect, autoRow: number) {
   const flags = { ...(styles.graphics.componentInfo ?? {}), ...(e.showInfo ?? {}) };
-  const val = (k: string) => (shown.has(k) || !flags[k as keyof typeof flags] ? "" : (e.info[k] ?? def.info[k] ?? "").trim());
-  const base = styles.text.componentName;
-  if (!base.visible) return;
-  const small: TextStyle = { ...base, size: Math.max(5, base.size - 1), color: "#6b7280" };
-  const lines: { text: string; style: TextStyle }[] = [];
-  const name = val("description");
-  const rating = val("rating");
-  const part = val("manufacturer_reference");
-  const mfr = val("manufacturer");
-  if (name) lines.push({ text: name, style: base });
-  if (rating) lines.push({ text: rating, style: base });
-  if (part || mfr) lines.push({ text: [mfr, part].filter(Boolean).join(" · "), style: small });
+  const layout = { ...(styles.graphics.componentInfoLayout ?? {}), ...(e.infoLayout ?? {}) };
+  const lines: { text: string; style: TextStyle; w: number; h: number; size: number }[] = [];
+  for (const c of COMPONENT_INFO) {
+    if (shown.has(c.key) || !flags[c.key]) continue;
+    const text = (e.info[c.key] ?? def.info[c.key] ?? "").trim();
+    const style = styles.text[c.role];
+    if (!text || !style?.visible) continue;
+    const size = px(style);
+    lines.push({ text, style, size, w: measure(text, size, style.font, style.weight), h: size * style.lineHeight });
+  }
   if (!lines.length) return;
-  if (ref) {
-    // continue the reference's own line direction, one row further "down" in text space
-    const a = (ref.rotation * Math.PI) / 180;
-    const nx = -Math.sin(a), ny = Math.cos(a);
-    const laid = lines.map((l) => {
-      const size = px(l.style);
-      return { ...l, w: measure(l.text, size, l.style.font, l.style.weight), h: size * l.style.lineHeight };
+  const W = Math.max(...lines.map((l) => l.w));
+  const alignOf = (l: (typeof lines)[number]) => layout.align ?? l.style.align ?? "left";
+  // lines stacked baseline to baseline: each line's own spacing (size × line spacing) above its baseline
+  const ASC = 0.8;
+  const tops: number[] = [];
+  let baseline = 0;
+  lines.forEach((l, i) => {
+    baseline = i === 0 ? l.size * ASC : baseline + l.size * l.style.lineHeight;
+    tops.push(baseline - l.size * ASC);
+  });
+  const H = baseline + lines[lines.length - 1].size * (1 - ASC);
+  const emit = (ox: number, oy: number, rot: number, nx: number, ny: number, dx: number, dy: number) =>
+    lines.forEach((l, i) => {
+      const a = alignOf(l);
+      const shift = a === "center" ? (W - l.w) / 2 : a === "right" ? W - l.w : 0;
+      const along = shift + l.style.dx, down = tops[i] + l.style.dy;
+      out.push({ text: l.text, x: ox + dx * along + nx * down, y: oy + dy * along + ny * down, rotation: rot, style: l.style, w: l.w, h: l.h });
     });
-    let ox = ref.x, oy = ref.y, off = ref.h + 0.5;
-    if (ref.rotation === 0) {
-      // the stack must not run across the symbol: if it would, start it right of the symbol
-      const body = transformRect(e, symbolFor(def).bbox);
-      const total = laid.reduce((t, l) => t + l.h, 0);
-      const bw = Math.max(...laid.map((l) => l.w));
-      const blk = { x: ref.x, y: ref.y + off, w: bw, h: total };
-      const hit = blk.x < body.x + body.w && blk.x + blk.w > body.x && blk.y < body.y + body.h && blk.y + blk.h > body.y;
-      if (hit) (ox = Math.max(ref.x, body.x + body.w + 3)), (oy = ref.y), (off = ref.h + 0.5);
+
+  const body = transformRect(e, symbolFor(def).bbox);
+  const at = layout.at ?? "auto";
+  if (at !== "auto" || !ref || ref.rotation === 0) {
+    const gap = 3;
+    let x0: number, y0: number;
+    const refBox = ref ? textBounds(ref) : null;
+    if (at === "right") (x0 = body.x + body.w + gap), (y0 = body.y);
+    else if (at === "left") (x0 = body.x - gap - W), (y0 = body.y);
+    else if (at === "below") (x0 = body.x + body.w / 2 - W / 2), (y0 = body.y + body.h + gap);
+    else if (ref) {
+      // auto: under the reference; beside the symbol if that would run across it
+      (x0 = ref.x), (y0 = ref.y + ref.h + 0.5);
+      const hit = x0 < body.x + body.w && x0 + W > body.x && y0 < body.y + body.h && y0 + H > body.y;
+      if (hit) (x0 = Math.max(ref.x, body.x + body.w + gap)), (y0 = ref.y + ref.h + 0.5);
+    } else {
+      const p = toScene(e, { x: bb.x + bb.w + 4, y: bb.y + autoRow * 10 });
+      (x0 = p.x), (y0 = p.y);
     }
-    for (const l of laid) {
-      out.push({ text: l.text, x: ox + nx * off, y: oy + ny * off, rotation: ref.rotation, style: l.style, w: l.w, h: l.h });
-      off += l.h;
-    }
+    // never on top of the reference
+    if (refBox && x0 < refBox.x + refBox.w && x0 + W > refBox.x && y0 < refBox.y + refBox.h && y0 + H > refBox.y) y0 = refBox.y + refBox.h + 0.5;
+    emit(x0, y0, 0, 0, 1, 1, 0);
     return;
   }
-  for (const l of lines) {
-    const size = px(l.style);
-    const w = measure(l.text, size, l.style.font, l.style.weight);
-    const h = size * l.style.lineHeight;
-    const p = toScene(e, { x: bb.x + bb.w + 4, y: bb.y + autoRow * (h + 1) });
-    autoRow++;
-    const r = readable(p.x, p.y, e.rot * 90, w, h);
-    out.push({ text: l.text, x: r.x, y: r.y, rotation: r.rot, style: l.style, w, h });
-  }
+  // rotated reference: continue in its own direction, one row further "down" in text space
+  const r = (ref.rotation * Math.PI) / 180;
+  emit(ref.x - Math.sin(r) * (ref.h + 0.5), ref.y + Math.cos(r) * (ref.h + 0.5), ref.rotation, -Math.sin(r), Math.cos(r), Math.cos(r), Math.sin(r));
 }
 
 /** Pin number / name placement in scene coordinates (always readable). */

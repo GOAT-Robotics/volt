@@ -147,7 +147,7 @@ describe("drawing priorities and wire ends", () => {
     expect(wireEndLabel(doc, page, w, "b", true, true)).toBe("W7");
   });
 
-  it("stacks name, rating and manufacturer / part number under the reference", () => {
+  it("stacks name, rating, part number and manufacturer under the reference", () => {
     const doc = newDoc("t");
     doc.numbering.autoOnPlace = false;
     const def = mkDef("mcb", [{ id: "t", x: 0, y: -20, orient: "n" }]);
@@ -156,9 +156,47 @@ describe("drawing priorities and wire ends", () => {
     const texts = () => layoutElementTexts(e, symbolFor(def), docStyles(doc), approxMeasure).map((t) => t.text);
     expect(texts()).toEqual(["Q1", "2-pole MCB", "16 A"]);
     e.showInfo = { manufacturer: true, manufacturer_reference: true, rating: false };
-    expect(texts()).toEqual(["Q1", "2-pole MCB", "Schneider · A9F74216"]);
+    expect(texts()).toEqual(["Q1", "2-pole MCB", "A9F74216", "Schneider"]);
     const laid = layoutElementTexts(e, symbolFor(def), docStyles(doc), approxMeasure);
     expect(laid[1].y).toBeGreaterThan(laid[0].y);
     expect(laid[1].x).toBeCloseTo(laid[0].x);
+  });
+});
+
+describe("component info layout", () => {
+  const setup = () => {
+    const doc = newDoc("t");
+    doc.numbering.autoOnPlace = false;
+    const def = mkDef("mcb", [{ id: "t", x: 0, y: -20, orient: "n" }]);
+    const e = newElement(doc, doc.pages[0], def, { x: 105, y: 105 });
+    Object.assign(e.info, { label: "Q1", description: "2-pole MCB", rating: "16 A 400 V" });
+    const lay = () => layoutElementTexts(e, symbolFor(def), docStyles(doc), approxMeasure).slice(1);
+    return { doc, e, lay };
+  };
+  it("even spacing: equal baseline pitch for equal styles", () => {
+    const { e, lay } = setup();
+    e.info.manufacturer_reference = "A9F";
+    e.showInfo = { manufacturer_reference: true };
+    const l = lay();
+    expect(l).toHaveLength(3);
+    // name → rating uses the same pitch as the style's size × line spacing
+    expect(l[1].y - l[0].y).toBeCloseTo(l[0].h, 1);
+  });
+  it("right / center alignment and placement left of the symbol", () => {
+    const { e, lay } = setup();
+    e.infoLayout = { align: "right" };
+    const r = lay();
+    expect(r[0].x + r[0].w).toBeCloseTo(r[1].x + r[1].w, 3);
+    e.infoLayout = { align: "center", at: "left" };
+    const c = lay();
+    expect(c[0].x + c[0].w / 2).toBeCloseTo(c[1].x + c[1].w / 2, 3);
+    expect(Math.max(c[0].x + c[0].w, c[1].x + c[1].w)).toBeLessThan(e.x);
+  });
+  it("uses the global text style of each line", () => {
+    const { doc, lay } = setup();
+    doc.styles = { text: { componentRating: { size: 12, color: "#ff0000" } } };
+    const l = lay();
+    expect(l[1].style.size).toBe(12);
+    expect(l[1].style.color).toBe("#ff0000");
   });
 });
