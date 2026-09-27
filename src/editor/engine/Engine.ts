@@ -3,7 +3,7 @@ import RBush from "rbush";
 import { produce } from "immer";
 import type { Doc, ElemInst, ElementDef, Page, Pt, Rect, Styles, TextRole } from "@/core/model";
 import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, toLocal, eqPt, dist } from "@/core/geometry";
-import { CanvasPainter, measureText } from "@/core/render/canvas";
+import { CanvasPainter, imageLoadListeners, measureText } from "@/core/render/canvas";
 import { PathBuilder } from "@/core/render/painter";
 import { contentBounds, docStyles, drawPage, elementBounds, layoutElementTexts, pageGeometry, textBounds, wireStroke, drawElement } from "@/core/render/scene";
 import { symbolFor } from "@/core/render/symbol";
@@ -120,6 +120,7 @@ export class Engine {
   constructor(host: HTMLElement, private store: StoreApi, private hooks: EngineHooks = {}, opts: { secondary?: boolean } = {}) {
     this.host = host;
     this.secondary = !!opts.secondary;
+    imageLoadListeners.add(this.onImageLoad);
     this.scene = document.createElement("canvas");
     this.overlay = document.createElement("canvas");
     for (const c of [this.scene, this.overlay]) {
@@ -152,6 +153,7 @@ export class Engine {
     cancelAnimationFrame(this.raf);
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.unsub?.();
+    imageLoadListeners.delete(this.onImageLoad);
     this.ro?.disconnect();
     this.unbind();
     this.scene.remove();
@@ -1468,6 +1470,8 @@ export class Engine {
   requestRender() {
     this.dirtyScene = this.dirtyOverlay = true;
   }
+
+  private onImageLoad = () => this.requestRender();
 
   private loop(t: number) {
     if (this.destroyed) return;

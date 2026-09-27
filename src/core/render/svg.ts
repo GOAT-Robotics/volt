@@ -1,6 +1,6 @@
 import type { Mat } from "../geometry";
 import type { Doc, Page, Rect } from "../model";
-import type { Painter, PathData, StrokeStyle, TextDraw } from "./painter";
+import type { ImageDraw, Painter, PathData, StrokeStyle, TextDraw } from "./painter";
 import { pathToSvgD } from "./painter";
 import { drawPage, pageGeometry, type DrawOpts } from "./scene";
 
@@ -63,6 +63,10 @@ export class SvgPainter implements Painter {
     this.out.push(
       `<text x="${f(t.x)}" y="${f(t.y)}" font-family="${esc(t.font)}" font-size="${f(t.size)}" font-weight="${t.weight ?? 400}"${t.italic ? ' font-style="italic"' : ""} fill="${t.color}" text-anchor="${anchor}" dominant-baseline="${base}"${tr}${t.alpha !== undefined && t.alpha !== 1 ? ` opacity="${t.alpha}"` : ""} xml:space="preserve">${esc(t.text)}</text>`,
     );
+  }
+  image(d: ImageDraw) {
+    if (d.w <= 0 || d.h <= 0) return;
+    this.out.push(`<image x="${f(d.x)}" y="${f(d.y)}" width="${f(d.w)}" height="${f(d.h)}" preserveAspectRatio="none" href="data:${d.mime};base64,${d.data}"/>`);
   }
   measure(text: string, size: number, font: string, weight?: number) {
     return this.measureFn(text, size, font, weight);

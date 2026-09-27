@@ -127,6 +127,14 @@ export async function buildReleasePdf(versionId: string, verifyBase: string): Pr
     pages: canonicalPages(doc),
     paper: "A3",
     version: v.label,
+    rasterizeSvg: async (svg, w, h) => {
+      try {
+        const sharp = (await import("sharp")).default;
+        return new Uint8Array(await sharp(Buffer.from(svg)).resize(w, h, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer());
+      } catch {
+        return null;
+      }
+    },
     title: `${v.project.name} v${v.label} — release`,
     subject: `Released drawing with approval & signature record`,
     keywords: ["volt", v.project.number ?? "", `v${v.label}`, `doc-sha256:${h.docHash}`],

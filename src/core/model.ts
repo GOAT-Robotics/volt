@@ -323,8 +323,12 @@ export type TitleBlockTemplate = {
     align?: "left" | "center" | "right";
     size?: number;
   }[];
+  /** logo resources by name (QET <logos>): only the ones a cell uses; base64 file data */
+  logos?: Record<string, TitleBlockLogo>;
   xml?: string;
 };
+
+export type TitleBlockLogo = { type: "png" | "jpg" | "svg"; data: string };
 
 export type Page = {
   id: string;

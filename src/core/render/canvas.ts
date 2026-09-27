@@ -1,6 +1,21 @@
 import type { Mat } from "../geometry";
 import { mulMat } from "../geometry";
-import type { Painter, PathData, StrokeStyle, TextDraw } from "./painter";
+import type { ImageDraw, Painter, PathData, StrokeStyle, TextDraw } from "./painter";
+
+/** Decoded images by key; listeners are told when one finishes loading so views can repaint. */
+const images = new Map<string, HTMLImageElement | "error">();
+export const imageLoadListeners = new Set<() => void>();
+function imageFor(d: ImageDraw): HTMLImageElement | null {
+  const hit = images.get(d.key);
+  if (hit) return hit === "error" || !hit.complete ? null : hit;
+  if (typeof Image === "undefined") return null;
+  const img = new Image();
+  images.set(d.key, img);
+  img.onload = () => imageLoadListeners.forEach((f) => f());
+  img.onerror = () => images.set(d.key, "error");
+  img.src = `data:${d.mime};base64,${d.data}`;
+  return img.complete && img.naturalWidth ? img : null;
+}
 
 const pathCache = new WeakMap<PathData, Path2D>();
 function toPath2D(p: PathData): Path2D {
@@ -171,6 +186,11 @@ export class CanvasPainter implements Painter {
       c.restore();
       this.lastFont = "";
     }
+  }
+  image(d: ImageDraw) {
+    const img = imageFor(d);
+    if (!img || d.w <= 0 || d.h <= 0) return;
+    this.ctx.drawImage(img, d.x, d.y, d.w, d.h);
   }
   measure(text: string, size: number, font: string, weight?: number) {
     return measureText(text, size, font, weight);

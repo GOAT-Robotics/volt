@@ -42,6 +42,19 @@ export type TextDraw = {
   alpha?: number;
 };
 
+/** A raster/vector image drawn into a box (already fitted by the caller). */
+export type ImageDraw = {
+  /** cache key (see logoKey) */
+  key: string;
+  mime: string;
+  /** base64 file data */
+  data: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
 export interface Painter {
   readonly kind: "canvas" | "svg" | "pdf" | "dxf";
   save(): void;
@@ -53,6 +66,8 @@ export interface Painter {
   strokeMany?(paths: PathData[], s: StrokeStyle): void;
   fill(path: PathData, color: string, alpha?: number): void;
   text(t: TextDraw): void;
+  /** optional image support (title block logos); backends without it skip images */
+  image?(img: ImageDraw): void;
   measure(text: string, size: number, font: string, weight?: number): number;
   /** hint: the current scale in device px per scene unit (canvas only) */
   scale(): number;

@@ -13,6 +13,7 @@ import type { Doc, ElemInst, LineStyle, Page, PlacedText, Shape, TextRole, TextS
 import { TEXT_ROLES, COMPONENT_INFO, type ComponentInfoFlags, type ComponentInfoKey, type InfoLayout, type InfoPlacement } from "@/core/model";
 import { ConductorSection, Swatch } from "./Conductor";
 import { StylePicker } from "./StylePicker";
+import { TitleBlockLogos } from "./TitleBlockLogos";
 import { endAddress, wireEndLabel, wireInfo, wiringOf } from "@/core/wiring";
 import { ROLE_LABELS } from "@/core/styles";
 import { docStyles, wireTextAnchor } from "@/core/render/scene";
@@ -135,10 +136,47 @@ function useStandardTitleBlocks() {
   return names;
 }
 
+/** friendlier names for QElectroTech's title block variables */
+const TB_FIELD_LABEL: Record<string, string> = {
+  title: "Sheet title",
+  author: "Author",
+  date: "Date",
+  filename: "File name",
+  indexrev: "Revision",
+  version: "Version",
+  plant: "Plant",
+  locmach: "Location",
+  folio: "Sheet no.",
+};
+
+async function renameProject(name: string) {
+  const st = useEditor.getState();
+  const v = st.version;
+  const next = name.trim();
+  if (!next) return;
+  if (v) {
+    const r = await fetch(`/api/projects/${v.projectId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: next }) });
+    if (!r.ok) {
+      const j = (await r.json().catch(() => ({}))) as { error?: string };
+      return void toast.error(j.error ?? "Could not rename the project");
+    }
+    useEditor.setState((x) => ({ version: x.version ? { ...x.version, projectName: next } : x.version }));
+  }
+  // the drawing's project title (%projecttitle in title blocks) follows the project name
+  if (useEditor.getState().doc?.meta.title !== next) useEditor.getState().apply("Rename project", (d) => {
+      d.meta.title = next;
+    });
+  toast.success("Project renamed");
+}
+
 function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable: boolean }) {
+  const projectName = useEditor((x) => x.version?.projectName);
   const ui = useEditorUI();
   const s = useEditor.getState;
-  const upd = (label: string, fn: (p: Page) => void) => s().apply(label, (d) => fn(getPage(d, page.id)));
+  const upd = (label: string, fn: (p: Page) => void) =>
+    s().apply(label, (d) => {
+      fn(getPage(d, page.id));
+    });
   const tpl = doc.titleBlocks[page.titleBlock.template];
   const std = useStandardTitleBlocks();
   const fieldNames = useMemo(() => {
@@ -151,8 +189,8 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
   return (
     <div>
       <Section title="Page">
-        <Row label="Title">
-          <Commit value={page.title} disabled={!editable} onCommit={(v) => upd("Rename page", (p) => (p.title = v || p.title))} />
+        <Row label="Page name">
+          <Commit value={page.title} disabled={!editable} aria-label="Page name" onCommit={(v) => upd("Rename page", (p) => (p.title = v || p.title))} />
         </Row>
         <Row label="Elements">
           <span className="text-xs tabular">
@@ -183,6 +221,7 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
                 getPage(d, page.id).titleBlock.template = template.name;
               });
             }}
+            aria-label="Title block template"
           >
             <optgroup label="In this project">
               {Object.keys(doc.titleBlocks).map((k) => (
@@ -202,10 +241,25 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
             )}
           </NativeSelect>
         </Row>
+        {doc.pages.some((p) => p.titleBlock.template !== page.titleBlock.template) && editable && (
+          <button
+            className="text-2xs text-accent hover:underline"
+            onClick={() =>
+              s().apply("Title block template for all pages", (d) => {
+                for (const p of d.pages) p.titleBlock.template = page.titleBlock.template;
+              })
+            }
+          >
+            Use this template on all {doc.pages.length} pages
+          </button>
+        )}
+        <TitleBlockLogos doc={doc} templateName={page.titleBlock.template} editable={editable} />
         {fieldNames.map((f) => (
-          <Row key={f} label={f}>
+          <Row key={f} label={TB_FIELD_LABEL[f] ?? f} hint={f === "title" ? "Empty uses the page name" : undefined}>
             <Commit
               value={page.titleBlock.fields[f] ?? page.titleBlock.fields["custom:" + f] ?? ""}
+              placeholder={f === "title" ? page.title : undefined}
+              aria-label={TB_FIELD_LABEL[f] ?? f}
               disabled={!editable}
               onCommit={(v) =>
                 upd(`Title block ${f}`, (p) => {
@@ -216,11 +270,11 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
             />
           </Row>
         ))}
-        <p className="text-2xs text-subtle">Fields support variables like %title, %folio, %id/%total and project properties.</p>
+        <p className="text-2xs text-subtle">Fields support variables like %title, %folio, %id/%total, %projecttitle and project properties.</p>
       </Section>
       <Section title="Project">
-        <Row label="Title">
-          <Commit value={doc.meta.title} disabled={!editable} onCommit={(v) => s().apply("Project title", (d) => (d.meta.title = v))} />
+        <Row label="Project name" hint="Renames the project everywhere; shown in title blocks as %projecttitle">
+          <Commit value={projectName ?? doc.meta.title} disabled={!editable} aria-label="Project name" onCommit={(v) => void renameProject(v)} />
         </Row>
         <Row label="Drawing style">
           <StylePicker />

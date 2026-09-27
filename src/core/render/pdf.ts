@@ -29,13 +29,17 @@ import {
   PDFName,
   PDFNull,
   PDFHexString,
+  drawObject,
+  type PDFImage,
 } from "pdf-lib";
+import { base64ToBytes, base64ToText, logoKey, logoSize } from "../logos";
+import { templateLogos } from "../qet/titleblock";
 import { buildXref, describe, targetsOf } from "../xref";
 import type { Mat } from "../geometry";
 import type { Doc, Page, Rect } from "../model";
-import type { Painter, PathData, StrokeStyle, TextDraw } from "./painter";
+import type { ImageDraw, Painter, PathData, StrokeStyle, TextDraw } from "./painter";
 import { ellipsePt } from "./painter";
-import { drawPage, pageGeometry, type DrawOpts } from "./scene";
+import { drawPage, pageGeometry, tbTemplate, type DrawOpts } from "./scene";
 
 function rgb(color: string, alpha = 1): [number, number, number] | null {
   if (!color || color === "transparent" || color === "none") return null;
@@ -125,7 +129,23 @@ function sanitize(font: PDFFont, s: string): string {
 export class PdfPainter implements Painter {
   readonly kind = "pdf" as const;
   private fontKeys = new Map<PDFFont, PDFName>();
-  constructor(private page: PDFPage, private fonts: { regular: PDFFont; bold: PDFFont; italic: PDFFont }) {}
+  private imageKeys = new Map<string, PDFName>();
+  constructor(
+    private page: PDFPage,
+    private fonts: { regular: PDFFont; bold: PDFFont; italic: PDFFont },
+    private images: Map<string, PDFImage> = new Map(),
+  ) {}
+  image(d: ImageDraw) {
+    const img = this.images.get(d.key);
+    if (!img || d.w <= 0 || d.h <= 0) return;
+    let name = this.imageKeys.get(d.key);
+    if (!name) {
+      name = this.page.node.newXObject("Img", img.ref);
+      this.imageKeys.set(d.key, name);
+    }
+    // unit square → box; the scene is y-down, the image's top edge is v = 1
+    this.page.pushOperators(pushGraphicsState(), concatTransformationMatrix(d.w, 0, 0, -d.h, d.x, d.y + d.h), drawObject(name), popGraphicsState());
+  }
   save() {
     this.page.pushOperators(pushGraphicsState());
   }
@@ -242,7 +262,34 @@ export type PdfExportOptions = {
   deterministic?: boolean;
   /** clickable cross-reference links between labels (default true) */
   links?: boolean;
+  /** turns an SVG logo into PNG bytes (browser: canvas; server: sharp); SVG logos are skipped without it */
+  rasterizeSvg?: (svg: string, w: number, h: number) => Promise<Uint8Array | null>;
 };
+
+/** Embeds the title block logos used by the exported pages, keyed like ImageDraw.key. */
+async function embedLogos(pdf: PDFDocument, doc: Doc, pages: Page[], raster: PdfExportOptions["rasterizeSvg"]) {
+  const out = new Map<string, PDFImage>();
+  for (const page of pages) {
+    if (!page.titleBlock.show) continue;
+    for (const logo of Object.values(templateLogos(tbTemplate(doc, page)))) {
+      const key = logoKey(logo);
+      if (out.has(key)) continue;
+      try {
+        if (logo.type === "png") out.set(key, await pdf.embedPng(base64ToBytes(logo.data)));
+        else if (logo.type === "jpg") out.set(key, await pdf.embedJpg(base64ToBytes(logo.data)));
+        else if (raster) {
+          const n = logoSize(logo) ?? { w: 100, h: 100 };
+          const k = Math.min(8, 1200 / Math.max(n.w, n.h));
+          const png = await raster(base64ToText(logo.data), Math.max(1, Math.round(n.w * k)), Math.max(1, Math.round(n.h * k)));
+          if (png) out.set(key, await pdf.embedPng(png));
+        }
+      } catch {
+        /* unreadable image: the cell stays empty */
+      }
+    }
+  }
+  return out;
+}
 
 /** Vector PDF export; one PDF page per drawing page, scaled to fit the paper. */
 export async function exportPdf(doc: Doc, o: PdfExportOptions): Promise<Uint8Array> {
@@ -254,6 +301,7 @@ export async function exportPdf(doc: Doc, o: PdfExportOptions): Promise<Uint8Arr
   };
   const sorted = [...doc.pages].sort((a, b) => a.order - b.order);
   const placed = new Map<string, { pp: PDFPage; s: number; ox: number; oy: number; H: number; W: number }>();
+  const images = await embedLogos(pdf, doc, o.pages, o.rasterizeSvg);
   for (const page of o.pages) {
     const r = o.bounds?.(page) ?? pageGeometry(doc, page).total;
     const margin = o.margin ?? 18;
@@ -269,7 +317,7 @@ export async function exportPdf(doc: Doc, o: PdfExportOptions): Promise<Uint8Arr
     const pp = pdf.addPage([W, H]);
     const ox = (W - r.w * s) / 2 - r.x * s;
     const oy = H - ((H - r.h * s) / 2 - r.y * s);
-    const painter = new PdfPainter(pp, fonts);
+    const painter = new PdfPainter(pp, fonts, images);
     painter.save();
     // scene (y-down) → PDF (y-up)
     painter.transform([s, 0, 0, -s, ox, oy]);

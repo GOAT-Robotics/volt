@@ -9,9 +9,10 @@
  * *additional* rows/columns covered (TitleBlockCell::row_span, 0 = no span).
  * <field> texts are translated: <value>/<label> hold <translation lang="..">.
  */
-import type { TitleBlockTemplate } from "../model";
+import type { TitleBlockLogo, TitleBlockTemplate } from "../model";
+import { base64ToText, logoType, textToBase64 } from "../logos";
 import { stableStringify } from "../stable-json";
-import { attr, bool, child, children, createEl, formatSubtree, int, optAttr, parseXml, serializeXml, textOf, type XDocument, type XElement } from "./xml";
+import { adopt, attr, bool, child, children, createEl, formatSubtree, int, optAttr, parseXml, serializeXml, textOf, type XDocument, type XElement } from "./xml";
 
 type Cell = TitleBlockTemplate["cells"][number];
 
@@ -94,7 +95,54 @@ export function parseTitleBlockNode(el: XElement, lang = "en"): TitleBlockTempla
     }
     cells.push(cell);
   }
+  // logos stay in the xml (they can be large); templateLogos() reads them on demand
   return { name, rows, cols, cells, xml: serializeXml(el) };
+}
+
+/** <logos><logo name type storage="base64|xml"> — only the logos in `used` (all when omitted). */
+export function parseLogos(el: XElement, used?: Set<string>): Record<string, TitleBlockLogo> {
+  const out: Record<string, TitleBlockLogo> = {};
+  for (const l of children(child(el, "logos"), "logo")) {
+    const name = attr(l, "name");
+    if (!name || (used && !used.has(name))) continue;
+    const type = logoType(attr(l, "type"));
+    if (!type) continue;
+    try {
+      if (attr(l, "storage") === "xml") {
+        const svg = children(l)[0];
+        if (!svg || type !== "svg") continue;
+        out[name] = { type, data: textToBase64(serializeXml(svg)) };
+      } else {
+        const data = textOf(l).replace(/\s+/g, "");
+        if (data) out[name] = { type, data };
+      }
+    } catch {
+      /* unreadable logo: the cell stays empty */
+    }
+  }
+  return out;
+}
+
+function buildLogos(doc: XDocument, t: TitleBlockTemplate, orig: XElement | null): XElement {
+  const logos = doc.createElement("logos");
+  const mine = t.logos ?? {};
+  const used = new Set(t.cells.filter((c) => c.type === "logo" && c.value).map((c) => c.value!));
+  // keep original logos that are not replaced and still used (or never were our business)
+  for (const l of children(orig, "logo")) {
+    const name = attr(l, "name");
+    if (mine[name] || (t.logos && !used.has(name))) continue;
+    logos.appendChild(l.cloneNode(true));
+  }
+  for (const [name, l] of Object.entries(mine)) {
+    if (!used.has(name)) continue;
+    const el = createEl(doc, "logo", { name, type: l.type, storage: l.type === "svg" ? "xml" : "base64" });
+    if (l.type === "svg") {
+      const svg = parseXml(base64ToText(l.data)).documentElement;
+      if (svg) el.appendChild(adopt(doc, svg));
+    } else el.appendChild(doc.createTextNode(l.data));
+    logos.appendChild(el);
+  }
+  return logos;
 }
 
 export function parseTitleBlockTemplate(xml: string, lang = "en"): TitleBlockTemplate {
@@ -105,7 +153,9 @@ export function parseTitleBlockTemplate(xml: string, lang = "en"): TitleBlockTem
   return t;
 }
 
-const tbSignature = (t: TitleBlockTemplate) => stableStringify({ name: t.name, rows: t.rows, cols: t.cols, cells: t.cells });
+/** logos are compared only when the template carries them (older documents have none parsed) */
+const tbSignature = (t: TitleBlockTemplate, logos = true) =>
+  stableStringify({ name: t.name, rows: t.rows, cols: t.cols, cells: t.cells, ...(logos && t.logos ? { logos: t.logos } : {}) });
 
 function translationEl(doc: XDocument, tag: string, text: string | undefined): XElement {
   const el = doc.createElement(tag);
@@ -168,8 +218,14 @@ export function serializeTitleBlockTemplate(t: TitleBlockTemplate): string {
       const doc = parseXml(t.xml);
       const root = doc.documentElement as XElement;
       const orig = parseTitleBlockNode(root);
-      if (tbSignature(orig) === tbSignature(t)) return t.xml;
+      if (tbSignature(orig, !!t.logos) === tbSignature(t)) return t.xml;
       root.setAttribute("name", t.name);
+      if (t.logos) {
+        const oldLogos = child(root, "logos");
+        const logos = buildLogos(doc, t, oldLogos);
+        if (oldLogos) root.replaceChild(logos, oldLogos);
+        else root.insertBefore(logos, root.firstChild);
+      }
       const oldGrid = child(root, "grid");
       const grid = buildGrid(doc, t, oldGrid ? (oldGrid.cloneNode(true) as XElement) : null);
       if (oldGrid) root.replaceChild(grid, oldGrid);
@@ -184,7 +240,7 @@ export function serializeTitleBlockTemplate(t: TitleBlockTemplate): string {
   const root = doc.documentElement as XElement;
   root.setAttribute("name", t.name);
   root.appendChild(doc.createElement("information"));
-  root.appendChild(doc.createElement("logos"));
+  root.appendChild(buildLogos(doc, t, null));
   root.appendChild(buildGrid(doc, t, null));
   formatSubtree(doc, root, 0);
   return serializeXml(doc);
@@ -193,7 +249,7 @@ export function serializeTitleBlockTemplate(t: TitleBlockTemplate): string {
 export function titleBlockModified(t: TitleBlockTemplate): boolean {
   if (!t.xml) return true;
   try {
-    return tbSignature(parseTitleBlockTemplate(t.xml)) !== tbSignature(t);
+    return tbSignature(parseTitleBlockTemplate(t.xml), !!t.logos) !== tbSignature(t);
   } catch {
     return true;
   }
@@ -244,4 +300,28 @@ export function titleBlockColumnWidths(t: TitleBlockTemplate, total: number): nu
     }
   }
   return out;
+}
+
+const xmlLogos = new WeakMap<TitleBlockTemplate, Record<string, TitleBlockLogo>>();
+
+/**
+ * Logos of a template: its own `logos`, or — for templates stored before logos were parsed —
+ * the ones in its original xml (parsed once per template object).
+ */
+export function templateLogos(t: TitleBlockTemplate): Record<string, TitleBlockLogo> {
+  if (t.logos) return t.logos;
+  let l = xmlLogos.get(t);
+  if (!l) {
+    l = {};
+    if (t.xml && t.xml.includes("<logo ")) {
+      try {
+        const root = parseXml(t.xml).documentElement;
+        if (root) l = parseLogos(root, new Set(t.cells.filter((c) => c.type === "logo" && c.value).map((c) => c.value!)));
+      } catch {
+        /* no logos */
+      }
+    }
+    xmlLogos.set(t, l);
+  }
+  return l;
 }

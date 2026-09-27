@@ -18,6 +18,7 @@ import { PathBuilder } from "@/core/render/painter";
 import { exportQet } from "@/core/qet/project";
 import type { Doc, Page } from "@/core/model";
 import type { Painter } from "@/core/render/painter";
+import { rasterizeSvg } from "../logoUpload";
 
 type Fmt = "pdf" | "svg" | "png" | "qet" | "dxf";
 const FORMATS: { id: Fmt; label: string; icon: React.ReactNode; desc: string }[] = [
@@ -102,6 +103,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           keywords: ["Volt", "electrical diagram", ...(v ? [`version:${v.label}`, `status:${v.status}`] : [])],
           drawOpts: { extraFields },
           overlay,
+          rasterizeSvg,
           append: markup
             ? async (pdf, fonts) => {
                 const list = comments.filter((c) => pages.some((p) => p.id === c.pageId));

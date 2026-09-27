@@ -135,7 +135,10 @@ export const useEditor = create<EditorStore>((set, get) => ({
   apply(label, fn, opts) {
     const s = get();
     if (s.version && !s.version.editable) return false;
-    const [next, patches, inverse] = produceWithPatches(s.doc, fn);
+    // callers often write `(d) => (d.x = v)`; the arrow's value must not reach Immer as a replacement
+    const [next, patches, inverse] = produceWithPatches(s.doc, (d: Doc) => {
+      fn(d);
+    });
     if (!patches.length) return false;
     const entry: HistoryEntry = { label, patches, inverse, pageId: s.pageId, sel: s.sel, at: Date.now() };
     const past = [...s.past, entry];

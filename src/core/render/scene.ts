@@ -2,7 +2,8 @@ import { COMPONENT_INFO } from "../model";
 import type { Doc, ElemInst, ElementDef, FreeText, Junction, Page, PinDef, PlacedText, Pt, Rect, Styles, TextStyle, TitleBlockTemplate, Wire } from "../model";
 import { effectiveText, projectStyles } from "../styles";
 import { elemMatrix, pointAlong, rotOrient, toScene, transformRect, unionRect } from "../geometry";
-import { titleBlockColumnWidths, titleBlockHeight } from "../qet/titleblock";
+import { templateLogos, titleBlockColumnWidths, titleBlockHeight } from "../qet/titleblock";
+import { fitContain, LOGO_MIME, logoKey, logoSize } from "../logos";
 import { defaultTitleBlock } from "../doc";
 import { DASHES, PathBuilder, type Painter, type PathData, type StrokeStyle } from "./painter";
 import { PT, symbolFor, type CompiledSymbol } from "./symbol";
@@ -720,6 +721,12 @@ export function drawTitleBlock(pt: Painter, o: DrawOpts, styles: Styles, r: Rect
     for (let i = c.row; i < r2; i++) for (let j = c.col; j < c2; j++) covered.add(i + ":" + j);
     const x = colX[c.col], y = rowY[c.row], w = colX[c2] - x, h = rowY[r2] - y;
     grid.R(x, y, w, h);
+    if (c.type === "logo") {
+      const logo = c.value ? templateLogos(tpl)[c.value] : undefined;
+      const size = logo && pt.image ? logoSize(logo) : null;
+      if (logo && size) pt.image!({ key: logoKey(logo), mime: LOGO_MIME[logo.type], data: logo.data, ...fitContain(size, { x, y, w, h }, 2) });
+      continue;
+    }
     if (c.type !== "field" || lod < 0.25) continue;
     const size = (c.size ?? fieldStyle.size) * PT;
     const label = c.showLabel && c.label ? c.label : "";
