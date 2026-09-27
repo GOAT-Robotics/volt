@@ -30,6 +30,29 @@ export function ensureDef(doc: Doc, def: ElementDef) {
   if (!doc.defs[def.id]) doc.defs[def.id] = def;
 }
 
+/**
+ * Give an instance its own editable texts: the definition's dynamic texts (QElectroTech ≥0.7
+ * style) and always a reference text, so every reference can be dragged and rotated. Legacy /
+ * imported instances that carry no texts are upgraded in place — they render the same.
+ * Returns true when something was added.
+ */
+export function ensureInstanceTexts(def: ElementDef, e: ElemInst): boolean {
+  let changed = false;
+  if (!e.texts.length) {
+    for (const p of def.prims) {
+      if (p.t !== "dyntext") continue;
+      const role = p.info === "label" || p.info === "formula" ? "componentRef" : p.info === "comment" || p.info === "description" ? "componentName" : "annotation";
+      e.texts.push({ id: uid(), role, info: p.from === "ElementInfo" ? p.info ?? "label" : null, text: p.text, x: p.x, y: p.y, uuid: p.uuid });
+      changed = true;
+    }
+  }
+  if (!e.texts.some((t) => t.info === "label") && (def.pins.length > 0 || !!e.info.label)) {
+    e.texts.push({ id: uid(), role: "componentRef", info: "label", text: "", x: null, y: null });
+    changed = true;
+  }
+  return changed;
+}
+
 export function newElement(doc: Doc, page: Page, def: ElementDef, at: Pt, rot: 0 | 1 | 2 | 3 = 0, mirror = false): ElemInst {
   ensureDef(doc, def);
   const e: ElemInst = {
@@ -42,13 +65,7 @@ export function newElement(doc: Doc, page: Page, def: ElementDef, at: Pt, rot: 0
     info: { ...Object.fromEntries(Object.entries(def.info).filter(([k]) => k !== "label")) },
     texts: [],
   };
-  // instantiate definition dynamic texts so positions can be edited per instance
-  for (const p of def.prims) {
-    if (p.t !== "dyntext") continue;
-    const role = p.info === "label" || p.info === "formula" ? "componentRef" : p.info === "comment" || p.info === "description" ? "componentName" : "annotation";
-    e.texts.push({ id: uid(), role, info: p.from === "ElementInfo" ? p.info ?? "label" : null, text: p.text, x: p.x, y: p.y, uuid: p.uuid });
-  }
-  if (!e.texts.some((t) => t.info === "label") && def.pins.length > 0) e.texts.push({ id: uid(), role: "componentRef", info: "label", text: "", x: null, y: null });
+  ensureInstanceTexts(def, e);
   if (doc.numbering.autoOnPlace) {
     const ref = nextRef(doc, page, e);
     if (ref) e.info.label = ref;

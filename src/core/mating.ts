@@ -24,6 +24,14 @@ export function guessGender(def: ElementDef | undefined): Gender | null {
   return null;
 }
 
+/** a plug / socket connector (terminal blocks and ordinary components are not) */
+export function isConnector(def: ElementDef | undefined): boolean {
+  if (!def || !def.pins.length || def.linkType === "terminal") return false;
+  const s = [def.name, ...Object.values(def.names), def.category].join(" ").toLowerCase();
+  if (/terminal|borne|klemme|junction/.test(s)) return false;
+  return guessGender(def) !== null || /connector|connecteur|steckverbinder|conector|harness/.test(s);
+}
+
 /** pin pairs of two mated definitions: by number, then by name, then by order */
 export function matedPinPairs(a: ElementDef, b: ElementDef): { a: string; b: string; label: string }[] {
   const out: { a: string; b: string; label: string }[] = [];

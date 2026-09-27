@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Patch } from "immer";
 import type { Doc, Page, PartialStyles, Pt } from "@/core/model";
-import { emptySel, type Sel } from "@/core/ops";
+import { emptySel, ensureInstanceTexts, type Sel } from "@/core/ops";
 import type { DocDiff } from "@/core/diff";
 
 enablePatches();
@@ -114,6 +114,8 @@ export const useEditor = create<EditorStore>((set, get) => ({
   gridVisible: true,
 
   init(doc, version) {
+    // every reference gets its own movable / rotatable text (legacy & imported instances too)
+    for (const p of doc.pages) for (const e of p.elements) if (doc.defs[e.defId] && !doc.defs[e.defId].placeholder) ensureInstanceTexts(doc.defs[e.defId], e);
     const first = [...doc.pages].sort((a, b) => a.order - b.order)[0];
     set({
       doc,

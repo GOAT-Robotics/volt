@@ -9,7 +9,7 @@ import { NativeSelect } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/misc";
 import type { Doc, ElemInst, Page } from "@/core/model";
-import { clearMate, findElement, guessGender, matedPinPairs, setMate, type Gender } from "@/core/mating";
+import { clearMate, findElement, guessGender, isConnector, matedPinPairs, setMate, type Gender } from "@/core/mating";
 import { cn } from "@/lib/utils";
 import { Row, Section } from "./Inspector";
 
@@ -37,9 +37,10 @@ export function MatingSection({ e, page, doc, editable }: { e: ElemInst; page: P
   }, [pages, doc.defs, e.id, e.info.label, gender, def?.pins.length, page.id]);
   const pairs = mate && def && doc.defs[mate.e.defId] ? matedPinPairs(e.mate!.gender === "male" ? def : doc.defs[mate.e.defId], e.mate!.gender === "male" ? doc.defs[mate.e.defId] : def) : [];
   const link = (id: string, g: Gender) => s().apply("Mate connectors", (d) => setMate(d, e.id, id, g));
-  if (!def?.pins.length) return null;
+  // only connectors (or something already mated) get this section
+  if (!def?.pins.length || (!e.mate && !isConnector(def))) return null;
   return (
-    <Section title="Mating connector" defaultOpen={!!e.mate || !!guessGender(def)}>
+    <Section title="Mating connector" defaultOpen>
       <Row label="This side">
         <div className="flex rounded-md border border-border p-0.5 text-2xs" role="radiogroup" aria-label="Gender">
           {(["male", "female"] as const).map((g) => (
