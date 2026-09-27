@@ -46,7 +46,7 @@ export function Inspector({ readOnly }: { readOnly: boolean }) {
             <SelectField label="Line style" value={first.lineStyle} options={LINE_STYLES.map((o) => ({ ...o }))} disabled={readOnly} onChange={(v) => setStyle("lineStyle", v)} />
             <SelectField label="Line weight" value={first.lineWeight} options={LINE_WEIGHTS.map((o) => ({ ...o }))} disabled={readOnly} onChange={(v) => setStyle("lineWeight", v)} />
           </div>
-          <Swatches label="Line colour" value={first.color} options={COLOR_NAMES} disabled={readOnly} onChange={(v) => setStyle("color", v)} />
+          <Swatches label="Line color" value={first.color} options={COLOR_NAMES} disabled={readOnly} onChange={(v) => setStyle("color", v)} />
           <Swatches label="Fill" value={first.filling} options={FILLINGS} disabled={readOnly} onChange={(v) => setStyle("filling", v)} />
         </>
       )}
@@ -200,7 +200,7 @@ function PrimInspector({ p, readOnly }: { p: EdPrim; readOnly: boolean }) {
             <SelectField label="Line style" value={style.lineStyle} options={LINE_STYLES.map((o) => ({ ...o }))} disabled={d} onChange={(v) => styleSet("lineStyle", v)} />
             <SelectField label="Line weight" value={style.lineWeight} options={LINE_WEIGHTS.map((o) => ({ ...o }))} disabled={d} onChange={(v) => styleSet("lineWeight", v)} />
           </div>
-          <Swatches label="Line colour" value={style.color} options={COLOR_NAMES} disabled={d} onChange={(v) => styleSet("color", v)} />
+          <Swatches label="Line color" value={style.color} options={COLOR_NAMES} disabled={d} onChange={(v) => styleSet("color", v)} />
           {p.t !== "line" && p.t !== "arc" && <Swatches label="Fill" value={style.filling} options={FILLINGS} disabled={d} onChange={(v) => styleSet("filling", v)} />}
         </>
       )}
@@ -213,8 +213,8 @@ function PrimInspector({ p, readOnly }: { p: EdPrim; readOnly: boolean }) {
             <NumField label="Size" suffix="pt" value={p.size} min={1} max={72} disabled={d} onChange={(v) => set("size", v)} />
             <NumField label="Rotation" suffix="°" value={p.rotation} disabled={d} onChange={(v) => set("rotation", v)} />
             <label className="col-span-2 flex flex-col gap-0.5">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-subtle">Colour</span>
-              <input type="color" value={/^#[0-9a-f]{6}$/i.test(p.color) ? p.color : "#000000"} disabled={d} onChange={(e) => set("color", e.target.value)} className="h-7 w-full cursor-pointer rounded-md border border-border bg-panel" aria-label="Text colour" />
+              <span className="text-[10px] font-medium uppercase tracking-wide text-subtle">Color</span>
+              <input type="color" value={/^#[0-9a-f]{6}$/i.test(p.color) ? p.color : "#000000"} disabled={d} onChange={(e) => set("color", e.target.value)} className="h-7 w-full cursor-pointer rounded-md border border-border bg-panel" aria-label="Text color" />
             </label>
           </div>
         </>

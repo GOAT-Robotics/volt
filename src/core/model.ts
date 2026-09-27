@@ -118,6 +118,15 @@ export type TextStyle = {
   visible: boolean;
 };
 
+export const COMPONENT_INFO = [
+  { key: "description", name: "Name" },
+  { key: "rating", name: "Rating" },
+  { key: "manufacturer_reference", name: "Part number" },
+  { key: "manufacturer", name: "Manufacturer" },
+] as const;
+export type ComponentInfoKey = (typeof COMPONENT_INFO)[number]["key"];
+export type ComponentInfoFlags = Partial<Record<ComponentInfoKey, boolean>>;
+
 export type LineStyle = { color: string; width: number; dash: "solid" | "dashed" | "dotted" | "dashdot" };
 
 export type GraphicStyles = {
@@ -125,6 +134,8 @@ export type GraphicStyles = {
   bus: LineStyle;
   pin: { color: string; size: number; showPoint: boolean };
   outline: { color: string | null; widthScale: number };
+  /** which component information lines are shown under the reference by default */
+  componentInfo?: ComponentInfoFlags;
   border: LineStyle & { headerColor: string; font: string; size: number };
   titleBlock: LineStyle & { font: string };
   selection: string;
@@ -171,6 +182,8 @@ export type ElemInst = {
   z?: number;
   showPinNumbers?: boolean;
   showPinNames?: boolean;
+  /** show / hide the component information lines (name, rating, part number, manufacturer); unset = project default */
+  showInfo?: ComponentInfoFlags;
   outlineOverride?: Partial<LineStyle>;
   group?: GroupRef;
   /** QElectroTech cross-reference links (folio report pairs, master ↔ slaves): ids of linked elements */
@@ -211,6 +224,8 @@ export type Wire = {
   insulation?: string;
   /** conductor cross-section as entered ("1.5 mm²", "16 AWG", "1.25 sq") */
   section?: string;
+  /** names written at each end of the wire (wire markers); override the automatic end marking */
+  endLabels?: { a?: string; b?: string };
   bus?: boolean;
   override?: Partial<LineStyle>;
   group?: GroupRef;
@@ -228,8 +243,12 @@ export type WiringSettings = {
   showSection: boolean;
   /** small oblique tick through the wire at the annotation */
   tick: boolean;
-  /** draw each wire in its insulation colour (GN/YE striped) */
+  /** also draw wires in the standard color of their function (an explicit conductor color is always drawn) */
   colorize: boolean;
+  /** where the wire number is written */
+  numberAt?: "middle" | "ends" | "both";
+  /** at each end, also write where the other end goes ("X1:8") */
+  destination?: boolean;
   /** heavier lines for larger cross-sections */
   weightBySection: boolean;
 };

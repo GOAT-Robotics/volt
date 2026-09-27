@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Switch, Checkbox } from "@/components/ui/misc";
 import type { Cable, Doc, WiringSettings, WiringStandard } from "@/core/model";
-import { STANDARDS, FUNCTIONS, cableDesignation, colorLabel, colorOf, makeCores, sectionChoices, standardColor, wireInfo, wiringOf, type CoreScheme } from "@/core/wiring";
+import { wireEndLabel, STANDARDS, FUNCTIONS, cableDesignation, colorLabel, colorOf, makeCores, sectionChoices, standardColor, wireInfo, wiringOf, type CoreScheme } from "@/core/wiring";
 import { uid } from "@/core/ids";
 import { cn } from "@/lib/utils";
 import { Swatch, normSection } from "../Conductor";
@@ -72,7 +72,7 @@ export function WiringDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent wide title="Wiring & cables" description="Colour and cross-section conventions, how conductor information is shown, and the cables of this project.">
+      <DialogContent wide title="Wiring & cables" description="Color and cross-section conventions, how conductor information is shown, and the cables of this project.">
         <div className="max-h-[68vh] space-y-5 overflow-auto pr-1">
           <section>
             <h3 className="mb-2 text-2xs font-semibold uppercase tracking-wide text-muted">Standard</h3>
@@ -99,7 +99,7 @@ export function WiringDialog({ onClose }: { onClose: () => void }) {
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-2xs text-subtle">A wire's colour comes from, in order: its own colour, its cable core, then the standard colour for its function. Changing the standard updates standard colours only.</p>
+            <p className="mt-1.5 text-2xs text-subtle">A wire's color comes from, in order: its own color, its cable core, then the standard color for its function. Changing the standard updates standard colors only.</p>
           </section>
 
           <section>
@@ -107,10 +107,10 @@ export function WiringDialog({ onClose }: { onClose: () => void }) {
             <div className="grid grid-cols-2 gap-x-6 gap-y-1">
               {(
                 [
-                  ["showColor", "Show colour code (or cable core)"],
+                  ["showColor", "Show color code (or cable core)"],
                   ["showSection", "Show cross-section"],
                   ["tick", "Tick mark at the annotation"],
-                  ["colorize", "Draw wires in their insulation colour"],
+                  ["colorize", "Also draw wires in their function's standard color"],
                   ["weightBySection", "Heavier lines for larger cross-sections"],
                 ] as const
               ).map(([k, l]) => (
@@ -120,6 +120,28 @@ export function WiringDialog({ onClose }: { onClose: () => void }) {
                 </label>
               ))}
             </div>
+            <p className="mt-1 text-2xs text-subtle">A wire with a conductor color (its own or its cable core's) is always drawn in that color; the Appearance color is used only when none is set.</p>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-2xs font-semibold uppercase tracking-wide text-muted">Wire numbers and ends</h3>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+              <label className="flex h-7 items-center justify-between gap-2 text-xs">
+                Write the wire number
+                <NativeSelect value={ws.numberAt ?? "middle"} disabled={!editable} onChange={(e) => setWs({ ...ws, numberAt: e.target.value as WiringSettings["numberAt"] })} className="h-7 w-40" aria-label="Wire number placement">
+                  <option value="middle">In the middle</option>
+                  <option value="ends">At both ends</option>
+                  <option value="both">Middle and both ends</option>
+                </NativeSelect>
+              </label>
+              <label className="flex h-7 items-center justify-between text-xs">
+                At each end, show where the other end goes
+                <Switch checked={!!ws.destination} disabled={!editable} onCheckedChange={(v) => setWs({ ...ws, destination: v })} />
+              </label>
+            </div>
+            <p className="mt-1 text-2xs text-subtle">
+              A wire keeps one number end to end; it changes where the circuit passes through a device (e.g. an MCB). With destination marking each end also reads the far terminal, e.g. “1A-01-0 / X1:8” at the MCB end. Names typed at an end in the Wire panel override both.
+            </p>
           </section>
 
           <section>
@@ -244,7 +266,7 @@ function CoresInput({ cable, onChange, disabled, std }: { cable: Cable; onChange
   };
   return (
     <div>
-      <Input value={v} disabled={disabled} onChange={(e) => setV(e.target.value)} onBlur={commit} className="h-7" aria-label="Cores" title="Core names, comma separated (colour codes or numbers)" />
+      <Input value={v} disabled={disabled} onChange={(e) => setV(e.target.value)} onBlur={commit} className="h-7" aria-label="Cores" title="Core names, comma separated (color codes or numbers)" />
       <div className="mt-1 flex flex-wrap gap-0.5">
         {cable.cores.map((k, i) => (
           <span key={i} className="inline-flex items-center gap-0.5 rounded bg-panel-2 px-1 text-2xs text-muted">
@@ -272,13 +294,14 @@ function endText(doc: Doc, pageIdx: number, end: import("@/core/model").WireEnd)
 
 function wireListRows(doc: Doc): string[][] {
   const ws = wiringOf(doc);
-  const rows = [["Page", "Wire", "From", "To", "Function", "Colour", "Cross-section", "Cable", "Core"]];
+  const rows = [["Page", "Wire", "From", "To", "Name at start", "Name at end", "Function", "Color", "Cross-section", "Cable", "Core"]];
   const pages = [...doc.pages].sort((a, b) => a.order - b.order);
   pages.forEach((p) => {
     const idx = doc.pages.indexOf(p);
     for (const w of p.wires) {
       const i = wireInfo(doc, w);
-      rows.push([p.title, w.label ?? "", endText(doc, idx, w.a), endText(doc, idx, w.b), FUNCTIONS.find((f) => f.id === w.fn)?.name ?? "", i.color ? colorLabel(i.color, ws.standard) : "", i.section ?? "", w.cable ?? "", w.core ?? ""]);
+      const numberAtEnds = (ws.numberAt ?? "middle") !== "middle";
+      rows.push([p.title, w.label ?? "", endText(doc, idx, w.a), endText(doc, idx, w.b), wireEndLabel(doc, p, w, "a", numberAtEnds, !!ws.destination), wireEndLabel(doc, p, w, "b", numberAtEnds, !!ws.destination), FUNCTIONS.find((f) => f.id === w.fn)?.name ?? "", i.color ? colorLabel(i.color, ws.standard) : "", i.section ?? "", w.cable ?? "", w.core ?? ""]);
     }
   });
   return rows;

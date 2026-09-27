@@ -111,7 +111,7 @@ function validatePage(doc: Doc, page: Page, issues: Issue[], styles: ReturnType<
       }
 }
 
-/** Conductor colours and cables. */
+/** Conductor colors and cables. */
 function validateWiring(doc: Doc, pages: Page[], issues: Issue[]) {
   const std = wiringOf(doc).standard;
   const coreUse = new Map<string, { net: string; ids: string[]; pageId: string }[]>();
@@ -126,7 +126,7 @@ function validateWiring(doc: Doc, pages: Page[], issues: Issue[]) {
       // green-yellow is reserved for protective conductors (IEC 60204-1 13.2.2, NFPA 79 13.2.2)
       if (code === "GNYE" && w.fn && w.fn !== "PE") issues.push({ level: "error", code: "wire.gnyeMisuse", message: `${P}: wire${name} is green-yellow but not a protective earth conductor`, pageId: page.id, ids: [w.id] });
       if (w.fn === "PE" && code && code !== "GNYE" && !(std === "nfpa" && code === "GN")) issues.push({ level: "warning", code: "wire.peColor", message: `${P}: protective earth wire${name} is ${colorLabel(i.color!, std)}, expected green-yellow`, pageId: page.id, ids: [w.id] });
-      if (w.insulation && !colorOf(w.insulation)) issues.push({ level: "info", code: "wire.colorUnknown", message: `${P}: wire${name} colour "${w.insulation}" is not a standard colour code`, pageId: page.id, ids: [w.id] });
+      if (w.insulation && !colorOf(w.insulation)) issues.push({ level: "info", code: "wire.colorUnknown", message: `${P}: wire${name} color "${w.insulation}" is not a standard color code`, pageId: page.id, ids: [w.id] });
       if (w.cable && w.core) {
         const c = cableByTag(doc, w.cable);
         if (c && !c.cores.some((k) => k.name === w.core)) issues.push({ level: "error", code: "cable.coreMissing", message: `${P}: wire${name} uses core ${w.core}, which cable ${w.cable} does not have`, pageId: page.id, ids: [w.id] });

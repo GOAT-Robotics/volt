@@ -1,5 +1,5 @@
 "use client";
-/** Conductor information of one or more wires: function, insulation colour, cross-section, cable & core. */
+/** Conductor information of one or more wires: function, insulation color, cross-section, cable & core. */
 import { useMemo } from "react";
 import { useEditor } from "../store";
 import { useEditorUI } from "./context";
@@ -112,7 +112,7 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
         </NativeSelect>
       </Row>
       <Row
-        label="Colour"
+        label="Color"
         hint={
           insulation === "" && single && info?.color
             ? `${info.colorSource === "core" ? `From cable core ${single.core}` : `Standard for this function`}: ${colorLabel(info.color, ws.standard)} (${info.look?.name ?? info.color})`
@@ -128,8 +128,8 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
             placeholder={insulation === MIXED ? "Mixed" : info?.color ? colorLabel(info.color, ws.standard) : "e.g. BK"}
             list="volt-wire-colors"
             disabled={!editable}
-            onCommit={(v) => upd("Wire colour", (w) => (w.insulation = normColor(v)))}
-            aria-label="Insulation colour"
+            onCommit={(v) => upd("Wire color", (w) => (w.insulation = normColor(v)))}
+            aria-label="Insulation color"
           />
         </div>
       </Row>
@@ -177,7 +177,7 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
       )}
       {single && editable && (
         <Button size="xs" variant="secondary" onClick={applyToNet}>
-          Apply function, colour and size to the whole net
+          Apply function, color and size to the whole net
         </Button>
       )}
     </Section>

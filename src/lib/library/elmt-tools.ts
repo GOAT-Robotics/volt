@@ -23,6 +23,7 @@ export const INFO_KEYS = [
   { id: "function", label: "Function" },
   { id: "location", label: "Location" },
   { id: "manufacturer", label: "Manufacturer" },
+  { id: "rating", label: "Rating" },
   { id: "manufacturer_reference", label: "Manufacturer part number" },
   { id: "description", label: "Description" },
   { id: "designation", label: "Designation" },

@@ -12,8 +12,8 @@
  * read-only versions) and by PDF export (internal link annotations).
  */
 import type { Doc, ElemInst, Page, Pt, Rect, Styles } from "./model";
-import { docStyles, elementBounds, layoutElementTexts, pageGeometry, textBounds } from "./render/scene";
-import { symbolFor, PT } from "./render/symbol";
+import { docStyles, elementBounds, layoutElementTexts, pageGeometry, textBounds, wireTexts } from "./render/scene";
+import { symbolFor } from "./render/symbol";
 import { pointAlong, unionRect } from "./geometry";
 import type { Painter } from "./render/painter";
 
@@ -92,12 +92,11 @@ export function buildXref(doc: Doc, measure: Painter["measure"], styles: Styles 
     for (const w of page.wires) {
       const text = (w.label ?? "").trim();
       if (!text || w.pts.length < 2) continue;
-      const st = styles.text.wireLabel;
-      const size = st.size * PT;
-      const { p, horizontal } = pointAlong(w.pts, w.labelPos ?? 0.5);
-      const tw = measure(text, size, st.font, st.weight);
-      const h = size * st.lineHeight;
-      const rect = horizontal ? { x: p.x - tw / 2 + st.dx - 1, y: p.y - h - 1 + st.dy, w: tw + 2, h: h + 1 } : { x: p.x - h - 1 + st.dx, y: p.y - tw / 2 + st.dy - 1, w: h + 1, h: tw + 2 };
+      // the wire number exactly where the drawing put it (it may have moved to make room)
+      const laid = wireTexts(doc, page, styles, measure, "xref").get(w.id)?.find((t) => t.text === text);
+      if (!laid) continue;
+      const p = { x: laid.x, y: laid.y };
+      const rect = laid.rotation === 0 ? { x: laid.x - 1, y: laid.y - 0.5, w: laid.w + 2, h: laid.h + 1 } : { x: laid.x - 0.5, y: laid.y - laid.w - 1, w: laid.h + 1, h: laid.w + 2 };
       const i = dsu.add();
       occ.push({ idx: i, kind: "wire", text, pageId: page.id, id: w.id, rect, hit: [rect], at: p, group: -1 });
       const k = text.toLowerCase();

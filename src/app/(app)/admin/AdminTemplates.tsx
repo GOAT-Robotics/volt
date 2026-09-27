@@ -20,7 +20,7 @@ const ROLE_NAMES: Record<TextRole, string> = {
   pinNumber: "Pin number",
   pinName: "Pin name",
   wireLabel: "Wire label",
-  wireInfo: "Wire colour / cross-section",
+  wireInfo: "Wire color / cross-section",
   cableLabel: "Cable label",
   terminalLabel: "Terminal label",
   annotation: "Annotation",

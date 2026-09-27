@@ -288,7 +288,7 @@ export const COMMANDS: Command[] = [
   { id: "pageSettings", label: "Page settings…", section: "Page", run: (ui) => ui.openDialog("page") },
   { id: "styles", label: "Global styles…", section: "Project", keys: "⌘⇧S", run: (ui) => ui.openDialog("styles") },
   { id: "numbering", label: "Automatic numbering…", section: "Project", run: (ui) => ui.openDialog("numbering") },
-  { id: "wiring", label: "Wiring & cables… (colours, cross-sections, cables)", section: "Project", run: (ui) => ui.openDialog("wiring") },
+  { id: "wiring", label: "Wiring & cables… (colors, cross-sections, cables)", section: "Project", run: (ui) => ui.openDialog("wiring") },
   { id: "projectProps", label: "Project properties…", section: "Project", run: (ui) => ui.openDialog("projectProps") },
   { id: "export", label: "Export…", section: "Project", keys: "⌘E", enabled: (s) => s.version?.canExport ?? true, run: (ui) => ui.openDialog("export") },
   { id: "compat", label: "File compatibility report", section: "Project", run: (ui) => ui.openDialog("compat") },

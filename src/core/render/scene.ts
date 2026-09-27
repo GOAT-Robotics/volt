@@ -5,7 +5,7 @@ import { titleBlockColumnWidths, titleBlockHeight } from "../qet/titleblock";
 import { defaultTitleBlock } from "../doc";
 import { DASHES, PathBuilder, type Painter, type PathData, type StrokeStyle } from "./painter";
 import { PT, symbolFor, type CompiledSymbol } from "./symbol";
-import { cableMarks, sectionWeight, wireAnnotation, wireInfo, wiringOf } from "../wiring";
+import { cableMarks, sectionWeight, wireAnnotation, wireEndLabel, wireInfo, wiringOf } from "../wiring";
 
 /* ------------------------------------------------------------------ */
 /* Style cache                                                          */
@@ -76,6 +76,8 @@ export function layoutElementTexts(e: ElemInst, sym: CompiledSymbol, styles: Sty
   const used = new Set<string>();
   const bb = sym.bbox;
   let autoRow = 0;
+  let ref: LaidText | null = null;
+  const shown = new Set<string>();
   for (const t of e.texts) {
     if (t.uuid) used.add(t.uuid);
     const style = effectiveText(styles, t.role, t.override);
@@ -100,7 +102,10 @@ export function layoutElementTexts(e: ElemInst, sym: CompiledSymbol, styles: Sty
     const baseRot = e.rot * 90 + (style.rotation || 0);
     // element rotation also rotates the text box origin; keep readable
     const r = readable(p.x, p.y, baseRot, w, h);
-    out.push({ text, x: r.x, y: r.y, rotation: r.rot, style, w, h });
+    const lt: LaidText = { text, x: r.x, y: r.y, rotation: r.rot, style, w, h };
+    out.push(lt);
+    if (t.info === "label" && !ref) ref = lt;
+    if (t.info) shown.add(t.info);
   }
   // definition dynamic texts are templates: QElectroTech (≥0.7) and Volt instantiate them on the
   // element when placed, so they are only drawn for legacy instances that carry no texts at all.
@@ -119,9 +124,68 @@ export function layoutElementTexts(e: ElemInst, sym: CompiledSymbol, styles: Sty
     const h = size * style.lineHeight;
     const p = toScene(e, { x: ct.x, y: ct.y });
     const r = readable(p.x, p.y, e.rot * 90 + ct.rotation, w, h);
-    out.push({ text, x: r.x, y: r.y, rotation: r.rot, style, w, h });
+    const lt: LaidText = { text, x: r.x, y: r.y, rotation: r.rot, style, w, h };
+    out.push(lt);
+    if (ct.dyn.info === "label" && !ref) ref = lt;
+    if (ct.dyn.info) shown.add(ct.dyn.info);
   }
+  layoutComponentInfo(e, def, styles, measure, out, ref, shown, bb, autoRow);
   return out;
+}
+
+/**
+ * Component information block (name, rating, part number, manufacturer), stacked under the
+ * reference like the description / rating / catalog attributes of CAE tools. Each line can be
+ * shown or hidden per component; the project default comes from the global styles.
+ */
+function layoutComponentInfo(e: ElemInst, def: ElementDef, styles: Styles, measure: Painter["measure"], out: LaidText[], ref: LaidText | null, shown: Set<string>, bb: Rect, autoRow: number) {
+  const flags = { ...(styles.graphics.componentInfo ?? {}), ...(e.showInfo ?? {}) };
+  const val = (k: string) => (shown.has(k) || !flags[k as keyof typeof flags] ? "" : (e.info[k] ?? def.info[k] ?? "").trim());
+  const base = styles.text.componentName;
+  if (!base.visible) return;
+  const small: TextStyle = { ...base, size: Math.max(5, base.size - 1), color: "#6b7280" };
+  const lines: { text: string; style: TextStyle }[] = [];
+  const name = val("description");
+  const rating = val("rating");
+  const part = val("manufacturer_reference");
+  const mfr = val("manufacturer");
+  if (name) lines.push({ text: name, style: base });
+  if (rating) lines.push({ text: rating, style: base });
+  if (part || mfr) lines.push({ text: [mfr, part].filter(Boolean).join(" · "), style: small });
+  if (!lines.length) return;
+  if (ref) {
+    // continue the reference's own line direction, one row further "down" in text space
+    const a = (ref.rotation * Math.PI) / 180;
+    const nx = -Math.sin(a), ny = Math.cos(a);
+    const laid = lines.map((l) => {
+      const size = px(l.style);
+      return { ...l, w: measure(l.text, size, l.style.font, l.style.weight), h: size * l.style.lineHeight };
+    });
+    let ox = ref.x, oy = ref.y, off = ref.h + 0.5;
+    if (ref.rotation === 0) {
+      // the stack must not run across the symbol: if it would, start it right of the symbol
+      const body = transformRect(e, symbolFor(def).bbox);
+      const total = laid.reduce((t, l) => t + l.h, 0);
+      const bw = Math.max(...laid.map((l) => l.w));
+      const blk = { x: ref.x, y: ref.y + off, w: bw, h: total };
+      const hit = blk.x < body.x + body.w && blk.x + blk.w > body.x && blk.y < body.y + body.h && blk.y + blk.h > body.y;
+      if (hit) (ox = Math.max(ref.x, body.x + body.w + 3)), (oy = ref.y), (off = ref.h + 0.5);
+    }
+    for (const l of laid) {
+      out.push({ text: l.text, x: ox + nx * off, y: oy + ny * off, rotation: ref.rotation, style: l.style, w: l.w, h: l.h });
+      off += l.h;
+    }
+    return;
+  }
+  for (const l of lines) {
+    const size = px(l.style);
+    const w = measure(l.text, size, l.style.font, l.style.weight);
+    const h = size * l.style.lineHeight;
+    const p = toScene(e, { x: bb.x + bb.w + 4, y: bb.y + autoRow * (h + 1) });
+    autoRow++;
+    const r = readable(p.x, p.y, e.rot * 90, w, h);
+    out.push({ text: l.text, x: r.x, y: r.y, rotation: r.rot, style: l.style, w, h });
+  }
 }
 
 /** Pin number / name placement in scene coordinates (always readable). */
@@ -267,8 +331,18 @@ function wireGroups(styles: Styles, wires: Wire[], doc: WireLookDoc, tint?: Map<
   return groups;
 }
 function wireSecondColor(doc: WireLookDoc, w: Wire): string | null {
-  if (!doc.wiring?.colorize || w.override?.color) return null;
-  return wireInfo(doc, w).look?.hex2 ?? null;
+  return insulationHex(doc, w)?.hex2 ?? null;
+}
+/**
+ * Colour a wire is drawn in from its conductor data: an explicit color (on the wire or its cable
+ * core) always; the standard color of its function only with "draw in standard colors" on.
+ */
+function insulationHex(doc: WireLookDoc, w: Wire): { hex: string; hex2?: string } | null {
+  if (!w.insulation && !w.core && !(doc.wiring?.colorize && w.fn)) return null;
+  const i = wireInfo(doc, w);
+  if (!i.look) return null;
+  if (i.colorSource === "standard" && !doc.wiring?.colorize) return null;
+  return { hex: i.look.hex, hex2: i.look.hex2 };
 }
 const degCache = new WeakMap<Wire[], Degrees>();
 export function cachedDegrees(page: Page): Degrees {
@@ -318,11 +392,11 @@ export function wireStroke(styles: Styles, w: Wire, tint?: string, doc?: WireLoo
   const base = w.bus ? styles.graphics.bus : styles.graphics.wire;
   const o = w.override ?? {};
   const ws = doc?.wiring;
-  const look = ws && (ws.colorize || ws.weightBySection) ? wireInfo(doc, w) : null;
-  const insul = ws?.colorize && !o.color ? look?.look?.hex : undefined;
-  const weight = ws?.weightBySection && o.width === undefined ? sectionWeight(look?.section) : 1;
+  const insul = doc ? insulationHex(doc, w) : null;
+  const weight = ws?.weightBySection && o.width === undefined ? sectionWeight(wireInfo(doc!, w).section) : 1;
   return {
-    color: tint ?? o.color ?? insul ?? base.color,
+    // a conductor color wins over the appearance color; appearance applies when none is set
+    color: tint ?? insul?.hex ?? o.color ?? base.color,
     width: (o.width ?? base.width) * weight,
     dash: DASHES[o.dash ?? base.dash] ?? null,
     cap: "round",
@@ -364,52 +438,10 @@ export function drawPage(pt: Painter, o: DrawOpts) {
     if (pt.strokeMany) pt.strokeMany(g.paths, st);
     else for (const p of g.paths) pt.stroke(p, st);
   }
-  // wire labels
-  if (lod > 0.35) {
-    for (const w of wires) {
-      const text = w.label;
-      if (!text || w.pts.length < 2) continue;
-      const role = "wireLabel";
-      const st = styles.text[role];
-      if (!st.visible) continue;
-      const size = st.size * PT;
-      const { p, horizontal } = pointAlong(w.pts, w.labelPos ?? 0.5);
-      const tw = measure(text, size, st.font, st.weight);
-      const h = size * st.lineHeight;
-      if (horizontal) drawLaidText(pt, { text, x: p.x - tw / 2 + st.dx, y: p.y - h - 1 + st.dy, rotation: 0, style: st, w: tw, h }, o.alpha, o.tint?.get(w.id));
-      else drawLaidText(pt, { text, x: p.x - h - 1 + st.dx, y: p.y + tw / 2 + st.dy, rotation: 270, style: st, w: tw, h }, o.alpha, o.tint?.get(w.id));
-    }
-  }
+  // wire numbers, end markers and conductor color / cross-section
+  if (lod > 0.35) drawWireTexts(pt, doc, page, wires, styles, measure, o, lod);
   pt.end?.();
 
-  // conductor colour / cross-section, with a small tick through the wire
-  const ws = wiringOf(doc);
-  if (lod > 0.5 && (ws.showColor || ws.showSection)) {
-    const st = styles.text.wireInfo ?? styles.text.wireLabel;
-    if (st.visible) {
-      const size = st.size * PT;
-      const ticks = new PathBuilder();
-      let nTicks = 0;
-      for (const w of wires) {
-        if (w.pts.length < 2) continue;
-        const text = wireAnnotation(doc, w);
-        if (!text) continue;
-        const tw = measure(text, size, st.font, st.weight);
-        // on the longest straight run that fits the text; away from the wire number and the cable mark
-        const { p, horizontal } = annotationAnchor(w, tw, w.cable ? 0.2 : w.label ? 0.28 : 0.5);
-        const h = size * st.lineHeight;
-        const color = o.tint?.get(w.id);
-        if (ws.tick) {
-          if (horizontal) ticks.M(p.x - 2, p.y + 3).L(p.x + 2, p.y - 3);
-          else ticks.M(p.x - 3, p.y + 2).L(p.x + 3, p.y - 2);
-          nTicks++;
-        }
-        if (horizontal) drawLaidText(pt, { text, x: p.x - tw / 2 + st.dx, y: p.y + 2 + st.dy, rotation: 0, style: st, w: tw, h }, o.alpha, color);
-        else drawLaidText(pt, { text, x: p.x + 2 + st.dx, y: p.y + tw / 2 + st.dy, rotation: 270, style: st, w: tw, h }, o.alpha, color);
-      }
-      if (nTicks) pt.stroke(ticks.build(), { color: styles.graphics.wire.color, width: 0.8, cap: "round", minPx: 1, alpha: o.alpha });
-    }
-  }
   // cables: a line crossing the bundle, labelled with tag and type; dashed ellipse when shielded
   if (lod > 0.25) {
     const cst = styles.text.cableLabel;
@@ -704,4 +736,211 @@ function annotationAnchor(w: Wire, textW: number, f: number): { p: Pt; horizonta
   const margin = Math.min(0.45, (textW / 2 + 4) / Math.max(1, s.len));
   const t = Math.min(1 - margin, Math.max(margin, f));
   return { p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, horizontal: Math.abs(b.y - a.y) <= Math.abs(b.x - a.x) };
+}
+
+/**
+ * Texts of each wire, laid out like common CAE practice:
+ * - wire number above a horizontal run (left of a vertical one), in the middle and/or at both ends;
+ * - conductor color + cross-section on the other side of the wire at the same spot, with a tick;
+ * - end markers (manual names, or the number and the far-end address "X1:8").
+ * Texts never pile up on short wires: end markers go first, the second one moves to the other
+ * side when needed, a middle number repeated at the ends is dropped, and the conductor spec takes
+ * whichever side is free.
+ */
+export type WireTextItem = { text: string; style: TextStyle; w: number; h: number; x: number; y: number; rotation: number; tick?: [Pt, Pt]; spec?: boolean };
+const wireTextCache = new WeakMap<Wire[], Map<string, { key: unknown[]; items: Map<string, WireTextItem[]> }>>();
+
+/** Laid-out wire texts of a page (numbers, end markers, conductor specs), cached per content. */
+export function wireTexts(doc: Doc, page: Page, styles: Styles, measure: Painter["measure"], kind: string, withSpec = true): Map<string, WireTextItem[]> {
+  // one entry per measuring backend (canvas, PDF, label links …) so they do not evict each other
+  const key = [styles, doc.wiring, doc.cables, page.elements, doc.defs, withSpec];
+  let byKind = wireTextCache.get(page.wires);
+  if (!byKind) wireTextCache.set(page.wires, (byKind = new Map()));
+  let c = byKind.get(kind);
+  if (!c || c.key.some((k, i) => k !== key[i])) byKind.set(kind, (c = { key, items: layoutWireTexts(doc, page, page.wires, styles, measure, withSpec, kind) }));
+  return c.items;
+}
+
+function drawWireTexts(pt: Painter, doc: Doc, page: Page, wires: Wire[], styles: Styles, measure: Painter["measure"], o: DrawOpts, lod: number) {
+  // layout covers the whole page (stable while panning, independent of culling), cached per content
+  const c = { items: wireTexts(doc, page, styles, measure, pt.kind ?? "canvas") };
+  const ticks = new PathBuilder();
+  let nTicks = 0;
+  for (const w of wires) {
+    const items = c.items.get(w.id);
+    if (!items) continue;
+    const tint = o.tint?.get(w.id);
+    for (const it of items) {
+      if (it.spec && lod <= 0.5) continue; // conductor specs are too small to read when zoomed out
+      drawLaidText(pt, { text: it.text, x: it.x, y: it.y, rotation: it.rotation, style: it.style, w: it.w, h: it.h }, o.alpha, tint);
+      if (it.tick) {
+        ticks.M(it.tick[0].x, it.tick[0].y).L(it.tick[1].x, it.tick[1].y);
+        nTicks++;
+      }
+    }
+  }
+  if (nTicks) pt.stroke(ticks.build(), { color: styles.graphics.wire.color, width: 0.8, cap: "round", minPx: 1, alpha: o.alpha });
+}
+
+function layoutWireTexts(doc: Doc, page: Page, wires: Wire[], styles: Styles, measure: Painter["measure"], withSpec: boolean, kind: string): Map<string, WireTextItem[]> {
+  const result = new Map<string, WireTextItem[]>();
+  const ws = wiringOf(doc);
+  const numberAt = ws.numberAt ?? "middle";
+  const num = styles.text.wireLabel;
+  const info = styles.text.wireInfo ?? num;
+  const endStyle: TextStyle = { ...num, background: null };
+  const sizeOf = (st: TextStyle) => st.size * PT;
+  // every text placed on this page so far (all wires), in a coarse grid for collision checks
+  const CELL = 24;
+  const grid = new Map<string, Rect[]>();
+  const cells = (r: Rect, f: (k: string) => void) => {
+    for (let gx = Math.floor(r.x / CELL); gx <= Math.floor((r.x + r.w) / CELL); gx++) for (let gy = Math.floor(r.y / CELL); gy <= Math.floor((r.y + r.h) / CELL); gy++) f(gx + "," + gy);
+  };
+  const taken = {
+    push(r: Rect) {
+      cells(r, (k) => (grid.get(k) ?? grid.set(k, []).get(k)!).push(r));
+    },
+  };
+  type Seg = { a: Pt; b: Pt; len: number; horizontal: boolean; ux: number; uy: number };
+  type Item = { text: string; style: TextStyle; w: number; h: number; seg: number; c: number; side: 0 | 1; spec?: boolean; rect?: Rect };
+  const rectOf = (sg: Seg, it: Item): Rect => {
+    const p = { x: sg.a.x + sg.ux * it.c, y: sg.a.y + sg.uy * it.c };
+    const above = it.side === 0;
+    return sg.horizontal ? { x: p.x - it.w / 2, y: above ? p.y - it.h - 1 : p.y + 1.5, w: it.w, h: it.h } : { x: above ? p.x - it.h - 1 : p.x + 1.5, y: p.y - it.w / 2, w: it.h, h: it.w };
+  };
+  // component texts (references, names, info block) are obstacles too
+  for (const e of page.elements) {
+    const def = doc.defs[e.defId];
+    if (!def) continue;
+    for (const t of cachedElementTexts(e, symbolFor(def), styles, measure, kind)) taken.push(textBounds(t));
+  }
+  const overlaps = (r: Rect) => {
+    let hit = false;
+    cells(r, (k) => {
+      if (!hit) hit = !!grid.get(k)?.some((q) => r.x < q.x + q.w + 0.5 && r.x + r.w + 0.5 > q.x && r.y < q.y + q.h + 0.5 && r.y + r.h + 0.5 > q.y);
+    });
+    return hit;
+  };
+  type Ctx = { w: Wire; segs: Seg[]; anchor: { seg: number; d: number }; placed: Item[] };
+  const ctxs: Ctx[] = [];
+  for (const w of wires) {
+    if (w.pts.length < 2) continue;
+    const segs: Seg[] = w.pts.slice(0, -1).map((a, i) => {
+      const b = w.pts[i + 1];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      return { a, b, len, horizontal: Math.abs(b.y - a.y) <= Math.abs(b.x - a.x), ux: (b.x - a.x) / (len || 1), uy: (b.y - a.y) / (len || 1) };
+    });
+    ctxs.push({ w, segs, anchor: wireTextAnchorSeg(doc, w, styles, measure), placed: [] });
+  }
+  const mk = (text: string, style: TextStyle) => ({ text, style, w: measure(text, sizeOf(style), style.font, style.weight), h: sizeOf(style) * style.lineHeight });
+  /** try the candidate positions in order; the first one inside the segment and clear of other texts wins */
+  const place = (cx: Ctx, base: Omit<Item, "c" | "side">, cands: [number, 0 | 1][]): boolean => {
+    const sg = cx.segs[base.seg];
+    for (const [c, side] of cands) {
+      const it: Item = { ...base, c, side };
+      if (c - it.w / 2 < -0.5 || c + it.w / 2 > sg.len + 0.5) continue;
+      const r = rectOf(sg, it);
+      if (overlaps(r)) continue;
+      it.rect = r;
+      taken.push(r);
+      cx.placed.push(it);
+      return true;
+    }
+    return false;
+  };
+  const slides = (len: number, from: number, sides: (0 | 1)[]): [number, 0 | 1][] => {
+    const out: [number, 0 | 1][] = [];
+    for (const side of sides) out.push([from, side]);
+    // slide at most ~12 text heights along the wire: beyond that the text no longer reads as belonging here
+    for (let k = 4; k < Math.min(len, 96); k += 4) for (const d of [k, -k]) for (const side of sides) out.push([from + d, side]);
+    return out;
+  };
+
+  // pass 1: wire numbers in the middle (the most important text of a wire)
+  if (num.visible && numberAt !== "ends")
+    for (const cx of ctxs) {
+      if (!cx.w.label) continue;
+      const t = mk(cx.w.label, num);
+      const len = cx.segs[cx.anchor.seg].len;
+      place(cx, { ...t, seg: cx.anchor.seg }, slides(len, cx.anchor.d, numberAt === "both" ? [0] : [0, 1]));
+    }
+  // pass 2: end markers, just clear of each end
+  if (num.visible)
+    for (const cx of ctxs)
+      for (const end of ["a", "b"] as const) {
+        const text = wireEndLabel(doc, page, cx.w, end, numberAt !== "middle", !!ws.destination);
+        if (!text) continue;
+        const t = mk(text, endStyle);
+        const seg = end === "a" ? 0 : cx.segs.length - 1;
+        const len = cx.segs[seg].len;
+        if (len < 1) continue;
+        const d = t.w / 2 + 3;
+        const dir = end === "a" ? 1 : -1;
+        const start = end === "a" ? d : len - d;
+        const cands: [number, 0 | 1][] = [];
+        for (let k = 0; k <= Math.min(len / 2, 48); k += 4) cands.push([start + dir * k, 0], [start + dir * k, 1]);
+        place(cx, { ...t, seg }, cands);
+      }
+  // pass 3: conductor color / cross-section: the other side of the wire at the same spot, else the nearest free place
+  if (withSpec && (ws.showColor || ws.showSection) && info.visible)
+    for (const cx of ctxs) {
+      const spec = wireAnnotation(doc, cx.w);
+      if (!spec) continue;
+      const t = mk(spec, info);
+      const order = [cx.anchor.seg, ...cx.segs.map((_, i) => i).filter((i) => i !== cx.anchor.seg).sort((x, y) => cx.segs[y].len - cx.segs[x].len)];
+      for (const seg of order) {
+        const len = cx.segs[seg].len;
+        if (len < t.w + 4) continue;
+        if (place(cx, { ...t, seg, spec: true }, slides(len, seg === cx.anchor.seg ? cx.anchor.d : len / 2, [1, 0]))) break;
+      }
+    }
+
+  for (const { w, segs, placed } of ctxs) {
+    if (!placed.length) continue;
+    result.set(
+      w.id,
+      placed.map((it) => {
+        const sg = segs[it.seg];
+        const r = it.rect!;
+        const out: WireTextItem = sg.horizontal
+          ? { text: it.text, style: it.style, w: it.w, h: it.h, x: r.x + it.style.dx, y: r.y + it.style.dy, rotation: 0 }
+          : { text: it.text, style: it.style, w: it.w, h: it.h, x: r.x + it.style.dx, y: r.y + r.h + it.style.dy, rotation: 270 };
+        if (it.spec) out.spec = true;
+        if (it.spec && ws.tick) {
+          // tick through the wire just before the text
+          const c = it.c - it.w / 2 - 2.5;
+          const q = { x: sg.a.x + sg.ux * c, y: sg.a.y + sg.uy * c };
+          out.tick = [{ x: q.x - 1.8, y: q.y + 1.8 }, { x: q.x + 1.8, y: q.y - 1.8 }];
+        }
+        return out;
+      }),
+    );
+  }
+  return result;
+}
+
+/** Segment + distance along it where the number and the conductor spec are centred. */
+function wireTextAnchorSeg(doc: Doc, w: Wire, styles: Styles, measure: Painter["measure"]): { seg: number; d: number } {
+  const { p } = wireTextAnchor(doc, w, styles, measure);
+  let best = { seg: 0, d: 0, dist: Infinity };
+  for (let i = 0; i < w.pts.length - 1; i++) {
+    const a = w.pts[i], b = w.pts[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / (len * len)));
+    const q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    const dist = Math.hypot(q.x - p.x, q.y - p.y);
+    if (dist < best.dist) best = { seg: i, d: t * len, dist };
+  }
+  return { seg: best.seg, d: best.d };
+}
+
+
+/** Where a wire's number and conductor annotation sit (shared by rendering and label links). */
+export function wireTextAnchor(doc: Doc, w: Wire, styles: Styles, measure: Painter["measure"]): { p: Pt; horizontal: boolean } {
+  if (w.labelPos !== undefined) return pointAlong(w.pts, w.labelPos);
+  const num = styles.text.wireLabel, info = styles.text.wireInfo ?? num;
+  const nw = w.label ? measure(w.label, num.size * PT, num.font, num.weight) : 0;
+  const spec = wireAnnotation(doc, w);
+  const sw = spec ? measure(spec, info.size * PT, info.font, info.weight) : 0;
+  return annotationAnchor(w, Math.max(nw, sw), 0.5);
 }

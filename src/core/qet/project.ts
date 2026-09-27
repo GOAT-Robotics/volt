@@ -833,6 +833,7 @@ function importDiagram(ctx: ImportCtx, diag: XElement, di: number): Page {
     if (attrs.num) w.label = attrs.num;
     if (attrs.cable) w.cable = attrs.cable;
     if (attrs.core) w.core = attrs.core;
+    if (attrs.end_a || attrs.end_b) w.endLabels = { ...(attrs.end_a ? { a: attrs.end_a } : {}), ...(attrs.end_b ? { b: attrs.end_b } : {}) };
     if (attrs.conductor_color?.trim()) w.insulation = attrs.conductor_color;
     if (attrs.conductor_section?.trim()) w.section = attrs.conductor_section;
     const fn = functionOf(attrs.function);
@@ -1590,8 +1591,10 @@ function writeDiagram(ctx: ExportCtx, diag: XElement, page: Page, order: number)
     setText("conductor_color", w.insulation);
     setText("conductor_section", w.section);
     if (functionOf(attr(c, "function")) !== w.fn) setText("function", w.fn ? FUNCTIONS.find((f) => f.id === w.fn)?.id : "");
-    if (w.core) setText("core", w.core);
-    else if (c.hasAttribute("core")) c.removeAttribute("core");
+    for (const [k, v] of [["core", w.core], ["end_a", w.endLabels?.a], ["end_b", w.endLabels?.b]] as const) {
+      if (v) setText(k, v);
+      else if (c.hasAttribute(k)) c.removeAttribute(k);
+    }
     if (fresh && isUuid(w.id)) c.setAttribute("uuid", bracedUuid(w.id));
     writeConductorRefs(ctx, c, 1, A.out, A.pin);
     writeConductorRefs(ctx, c, 2, B.out, B.pin);

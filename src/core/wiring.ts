@@ -11,7 +11,7 @@
  *
  * Colour codes are IEC 60757 (BK, BN, RD, …); NFPA drawings show the usual US abbreviations.
  */
-import type { Cable, CableCore, Doc, Page, Wire, WireFunction, WiringSettings, WiringStandard } from "./model";
+import type { Cable, CableCore, Doc, Page, Wire, WireEnd, WireFunction, WiringSettings, WiringStandard } from "./model";
 
 export const DEFAULT_WIRING: WiringSettings = { standard: "iec", showColor: true, showSection: true, tick: true, colorize: false, weightBySection: false };
 export const wiringOf = (doc: Pick<Doc, "wiring">): WiringSettings => ({ ...DEFAULT_WIRING, ...(doc.wiring ?? {}) });
@@ -346,4 +346,42 @@ export function assignCores(doc: Pick<Doc, "cables" | "pages">, cable: Cable, wi
       free.splice(free.indexOf(pick), 1);
     } else w.core = undefined;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Wire ends                                                            */
+/* ------------------------------------------------------------------ */
+
+/** Address of a wire end: component reference and pin ("X1:8"), or null for junctions / open ends. */
+export function endAddress(doc: Pick<Doc, "defs">, page: Page, end: WireEnd): string | null {
+  if (end.k !== "pin") return null;
+  const e = elementsById(page).get(end.el);
+  if (!e) return null;
+  const pin = doc.defs[e.defId]?.pins.find((p) => p.id === end.pin);
+  const ref = e.info.label || doc.defs[e.defId]?.name || "?";
+  const p = pin?.number || pin?.name;
+  return p ? `${ref}:${p}` : ref;
+}
+
+/**
+ * Text written at one end of a wire. A manual end name wins; otherwise the wire number (when
+ * numbers are placed at the ends) and/or the address of the far end ("destination" marking).
+ */
+export function wireEndLabel(doc: Pick<Doc, "defs">, page: Page, w: Wire, end: "a" | "b", numberAtEnds: boolean, destination: boolean): string {
+  const manual = w.endLabels?.[end];
+  if (manual !== undefined && manual !== "") return manual;
+  const parts: string[] = [];
+  if (numberAtEnds && w.label) parts.push(w.label);
+  if (destination) {
+    const far = endAddress(doc, page, end === "a" ? w.b : w.a);
+    if (far) parts.push(far);
+  }
+  return parts.join(" / ");
+}
+
+const elIdx = new WeakMap<object, Map<string, Page["elements"][number]>>();
+function elementsById(page: Page) {
+  let m = elIdx.get(page.elements);
+  if (!m) elIdx.set(page.elements, (m = new Map(page.elements.map((e) => [e.id, e]))));
+  return m;
 }

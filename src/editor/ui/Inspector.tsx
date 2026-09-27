@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Badge, Switch, Tip } from "@/components/ui/misc";
 import { getPage, emptySel } from "@/core/ops";
 import type { Doc, ElemInst, LineStyle, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
-import { TEXT_ROLES } from "@/core/model";
-import { ConductorSection } from "./Conductor";
+import { TEXT_ROLES, COMPONENT_INFO, type ComponentInfoFlags, type ComponentInfoKey } from "@/core/model";
+import { ConductorSection, Swatch } from "./Conductor";
+import { endAddress, wireEndLabel, wireInfo, wiringOf } from "@/core/wiring";
 import { ROLE_LABELS } from "@/core/styles";
 import { docStyles } from "@/core/render/scene";
 import { symbolThumb } from "../thumb";
@@ -244,15 +245,16 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
 const COMMON_INFO = ["label", "comment", "function", "location", "manufacturer", "manufacturer_reference", "supplier", "quantity", "unity", "description", "designation", "machine_manufacturer_reference", "auxiliary1"];
 const INFO_LABEL: Record<string, string> = {
   label: "Reference",
+  description: "Name",
+  rating: "Rating",
+  manufacturer_reference: "Part number",
+  manufacturer: "Manufacturer",
   comment: "Comment",
   function: "Function",
   location: "Location",
-  manufacturer: "Manufacturer",
-  manufacturer_reference: "Part number",
   supplier: "Supplier",
   quantity: "Quantity",
   unity: "Unit",
-  description: "Description",
   designation: "Designation",
   machine_manufacturer_reference: "Machine ref.",
   auxiliary1: "Auxiliary",
@@ -272,8 +274,8 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
   const [showAll, setShowAll] = useState(false);
   const [newKey, setNewKey] = useState("");
   if (!def) return <p className="p-3 text-xs text-danger">Definition missing.</p>;
-  const infoKeys = [...new Set(["label", "comment", "function", "location", "manufacturer", "manufacturer_reference", ...Object.keys(def.info), ...Object.keys(e.info)])];
-  const visibleKeys = showAll ? [...new Set([...infoKeys, ...COMMON_INFO])] : infoKeys;
+  const infoKeys = [...new Set(["label", "comment", "function", "location", ...Object.keys(def.info), ...Object.keys(e.info)])];
+  const visibleKeys = (showAll ? [...new Set([...infoKeys, ...COMMON_INFO])] : infoKeys).filter((k) => !COMPONENT_INFO.some((c) => c.key === k));
   return (
     <div>
       <div className="flex items-center gap-3 border-b border-border p-3">
@@ -333,6 +335,7 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
           )}
         </div>
       </Section>
+      <ComponentInfoSection e={e} doc={doc} editable={editable} upd={upd} />
       <Section title="Placement">
         <Row label="Position">
           <div className="grid grid-cols-2 gap-1">
@@ -433,6 +436,55 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
   );
 }
 
+function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc; editable: boolean; upd: (l: string, f: (x: ElemInst) => void) => void }) {
+  const def = doc.defs[e.defId];
+  const styles = docStyles(doc);
+  const defaults = styles.graphics.componentInfo ?? {};
+  const shown = (k: ComponentInfoKey) => e.showInfo?.[k] ?? defaults[k] ?? false;
+  const s = useEditor.getState;
+  const makeDefault = () =>
+    s().apply("Component info display", (d) => {
+      const flags = Object.fromEntries(COMPONENT_INFO.map((c) => [c.key, shown(c.key)])) as ComponentInfoFlags;
+      d.styles = { ...d.styles, graphics: { ...(d.styles.graphics ?? {}), componentInfo: flags } };
+      for (const p of d.pages) for (const x of p.elements) delete x.showInfo;
+    });
+  const custom = !!e.showInfo && COMPONENT_INFO.some((c) => e.showInfo![c.key] !== undefined && e.showInfo![c.key] !== (defaults[c.key] ?? false));
+  return (
+    <Section
+      title="Component info"
+      actions={
+        editable && custom ? (
+          <button className="text-2xs text-accent hover:underline" onClick={makeDefault} title="Show these lines on every component of the project">
+            Use for all
+          </button>
+        ) : undefined
+      }
+    >
+      {COMPONENT_INFO.map((c) => {
+        const on = shown(c.key);
+        return (
+          <Row key={c.key} label={c.name}>
+            <div className="flex items-center gap-1">
+              <Commit
+                value={e.info[c.key] ?? ""}
+                placeholder={def?.info[c.key] ?? (c.key === "rating" ? "e.g. 16 A, 400 V" : c.key === "description" ? "e.g. 2-pole MCB" : "")}
+                disabled={!editable}
+                onCommit={(v) => upd(`Edit ${c.name.toLowerCase()}`, (x) => (v ? (x.info[c.key] = v) : delete x.info[c.key]))}
+                aria-label={c.name}
+              />
+              <Tip content={on ? `Hide ${c.name.toLowerCase()} on the drawing` : `Show ${c.name.toLowerCase()} on the drawing`}>
+                <Button variant="ghost" size="icon-sm" disabled={!editable} aria-pressed={on} aria-label={`${on ? "Hide" : "Show"} ${c.name.toLowerCase()}`} onClick={() => upd(on ? `Hide ${c.name.toLowerCase()}` : `Show ${c.name.toLowerCase()}`, (x) => (x.showInfo = { ...(x.showInfo ?? {}), [c.key]: !on }))}>
+                  {on ? <Eye /> : <EyeOff className="text-subtle" />}
+                </Button>
+              </Tip>
+            </div>
+          </Row>
+        );
+      })}
+    </Section>
+  );
+}
+
 function runMove(pageId: string, e: ElemInst, dx: number, dy: number) {
   if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!dx && !dy)) return;
   import("@/core/ops").then(({ moveSelection, getPage }) =>
@@ -526,12 +578,34 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
       if (x) fn(x);
     });
   const a = endLabel(doc, page, w.a), b = endLabel(doc, page, w.b);
+  const wi = wireInfo(doc, w);
+  const conductorLook = wi.look && (wi.colorSource !== "standard" || wiringOf(doc).colorize) ? wi.look : null;
   return (
     <div>
       <Section title="Wire">
         <Row label="Label / No.">
           <Commit value={w.label ?? ""} disabled={!editable} onCommit={(v) => upd("Wire label", (x) => (x.label = v || undefined))} />
         </Row>
+        {(["a", "b"] as const).map((end) => {
+          const here = endAddress(doc, page, w[end]);
+          const auto = wireEndLabel(doc, page, w, end, (wiringOf(doc).numberAt ?? "middle") !== "middle", !!wiringOf(doc).destination);
+          return (
+            <Row key={end} label={here ? `At ${here}` : end === "a" ? "At start" : "At end"} hint={end === "b" && !w.endLabels ? "Names written at each end of the wire (wire markers). Leave empty for automatic." : undefined}>
+              <Commit
+                value={w.endLabels?.[end] ?? ""}
+                placeholder={auto || "—"}
+                disabled={!editable}
+                onCommit={(v) =>
+                  upd("Wire end name", (x) => {
+                    const e = { ...(x.endLabels ?? {}), [end]: v.trim() || undefined };
+                    x.endLabels = e.a || e.b ? e : undefined;
+                  })
+                }
+                aria-label={`Name at ${here ?? end}`}
+              />
+            </Row>
+          );
+        })}
         <Row label="Label position">
           <input type="range" min={0.05} max={0.95} step={0.05} value={w.labelPos ?? 0.5} disabled={!editable} onChange={(ev) => upd("Label position", (x) => (x.labelPos = Number(ev.target.value)))} className="w-full accent-[var(--accent)]" aria-label="Label position" />
         </Row>
@@ -558,8 +632,14 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
         </Button>
       </Section>
       <Section title="Appearance" actions={<Overridden on={!!w.override} onReset={() => upd("Reset wire style", (x) => (x.override = undefined))} />}>
-        <Row label="Color">
-          <ColorInput value={eff.color} disabled={!editable} onChange={(v) => upd("Wire color", (x) => (x.override = { ...(x.override ?? {}), color: v }))} />
+        <Row label="Color" hint={conductorLook ? `Drawn in the conductor color ${conductorLook.code} (${conductorLook.name}). Clear it in Conductor to use this color.` : undefined}>
+          {conductorLook ? (
+            <span className="flex items-center gap-1.5 text-xs text-muted">
+              <Swatch code={conductorLook.code} /> {conductorLook.name}
+            </span>
+          ) : (
+            <ColorInput value={eff.color} disabled={!editable} onChange={(v) => upd("Wire color", (x) => (x.override = { ...(x.override ?? {}), color: v }))} />
+          )}
         </Row>
         <Row label="Thickness">
           <Commit type="number" step={0.25} value={eff.width} disabled={!editable} onCommit={(v) => upd("Wire thickness", (x) => (x.override = { ...(x.override ?? {}), width: Math.max(0.25, Number(v) || 1) }))} />

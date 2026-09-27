@@ -110,3 +110,55 @@ describe("project files and checks", () => {
     expect(codes).toContain("wire.peColor");
   });
 });
+
+import { wireStroke, layoutElementTexts, docStyles } from "../render/scene";
+import { symbolFor } from "../render/symbol";
+import { approxMeasure } from "../render/svg";
+import { endAddress, wireEndLabel } from "../wiring";
+
+describe("drawing priorities and wire ends", () => {
+  it("a conductor color wins over the appearance color; standard colors only when enabled", () => {
+    const doc = newDoc("t");
+    const st = docStyles(doc);
+    expect(wireStroke(st, wire("a", 0, { insulation: "BU", override: { color: "#ff00ff" } }), undefined, doc).color).toBe(colorOf("BU")!.hex);
+    expect(wireStroke(st, wire("a", 0, { override: { color: "#ff00ff" } }), undefined, doc).color).toBe("#ff00ff");
+    expect(wireStroke(st, wire("a", 0, { fn: "acControl" }), undefined, doc).color).toBe(st.graphics.wire.color);
+    doc.wiring = { standard: "iec", showColor: true, showSection: true, tick: true, colorize: true, weightBySection: false };
+    expect(wireStroke(st, wire("a", 0, { fn: "acControl" }), undefined, doc).color).toBe(colorOf("RD")!.hex);
+  });
+
+  it("names each end: manual name, number at ends, far-end address", () => {
+    const doc = newDoc("t");
+    doc.numbering.autoOnPlace = false;
+    const page = doc.pages[0];
+    const def = mkDef("box", [{ id: "t", x: 0, y: -20, orient: "n", number: "1" }, { id: "b", x: 0, y: 20, orient: "s", number: "2" }]);
+    const q1 = newElement(doc, page, def, { x: 105, y: 105 });
+    const x1 = newElement(doc, page, def, { x: 105, y: 305 });
+    q1.info.label = "Q1";
+    x1.info.label = "X1";
+    const w = addWire(page, { k: "pin", el: q1.id, pin: "b", p: { x: 105, y: 125 } }, { k: "pin", el: x1.id, pin: "t", p: { x: 105, y: 285 } }, [{ x: 105, y: 125 }, { x: 105, y: 285 }])!;
+    w.label = "1A-01-0";
+    expect(endAddress(doc, page, w.b)).toBe("X1:1");
+    expect(wireEndLabel(doc, page, w, "a", false, false)).toBe("");
+    expect(wireEndLabel(doc, page, w, "a", true, false)).toBe("1A-01-0");
+    expect(wireEndLabel(doc, page, w, "a", true, true)).toBe("1A-01-0 / X1:1");
+    expect(wireEndLabel(doc, page, w, "b", false, true)).toBe("Q1:2");
+    w.endLabels = { b: "W7" };
+    expect(wireEndLabel(doc, page, w, "b", true, true)).toBe("W7");
+  });
+
+  it("stacks name, rating and manufacturer / part number under the reference", () => {
+    const doc = newDoc("t");
+    doc.numbering.autoOnPlace = false;
+    const def = mkDef("mcb", [{ id: "t", x: 0, y: -20, orient: "n" }]);
+    const e = newElement(doc, doc.pages[0], def, { x: 105, y: 105 });
+    Object.assign(e.info, { label: "Q1", description: "2-pole MCB", rating: "16 A", manufacturer: "Schneider", manufacturer_reference: "A9F74216" });
+    const texts = () => layoutElementTexts(e, symbolFor(def), docStyles(doc), approxMeasure).map((t) => t.text);
+    expect(texts()).toEqual(["Q1", "2-pole MCB", "16 A"]);
+    e.showInfo = { manufacturer: true, manufacturer_reference: true, rating: false };
+    expect(texts()).toEqual(["Q1", "2-pole MCB", "Schneider · A9F74216"]);
+    const laid = layoutElementTexts(e, symbolFor(def), docStyles(doc), approxMeasure);
+    expect(laid[1].y).toBeGreaterThan(laid[0].y);
+    expect(laid[1].x).toBeCloseTo(laid[0].x);
+  });
+});
