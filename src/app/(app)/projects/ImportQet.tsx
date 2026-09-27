@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Field, Input, NativeSelect } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/misc";
+import { ImportDialog } from "@/library-editor/browser/ImportDialog";
+import type { LibraryInfo } from "@/library-editor/types";
 import { TagInput } from "@/components/volt/common";
 import { downloadBlob, cn } from "@/lib/utils";
 import type { CompatItem, CompatLevel, CompatReport } from "@/core/model";
@@ -19,16 +21,15 @@ export function ImportQetButton({ folders, currentFolder }: { folders: FolderRow
   const input = React.useRef<HTMLInputElement>(null);
   const [parsing, setParsing] = React.useState(false);
   const [parsed, setParsed] = React.useState<Parsed | null>(null);
-  /** an element (.elmt) or a .zip of them goes to the personal library instead */
-  const importElements = async (file: File) => {
-    const fd = new FormData();
-    fd.append("files", file, file.name);
-    const r = await fetch("/api/library/import", { method: "POST", body: fd });
-    const j = (await r.json().catch(() => ({}))) as { error?: string; created?: number; updated?: number; skipped?: number; errors?: string[] };
-    if (!r.ok) return void toast.error(j.error ?? "Import failed");
-    if (j.errors?.length && !j.created) return void toast.error(`Could not import ${file.name}: ${j.errors[0]}`);
-    if (!j.created && j.skipped) return void toast.info(`${file.name} is already in your library`);
-    toast.success(`${j.created ?? 0} element${j.created === 1 ? "" : "s"} added to your personal library — find ${j.created === 1 ? "it" : "them"} under Library → Mine or in the editor's library panel`);
+  /** an element (.elmt) or a .zip of them goes to the library, through the import review */
+  const [elements, setElements] = React.useState<File[] | null>(null);
+  const [libs, setLibs] = React.useState<LibraryInfo[]>([]);
+  const importElements = (file: File) => {
+    void fetch("/api/library/libraries")
+      .then((r) => (r.ok ? r.json() : { libraries: [] }))
+      .then((j: { libraries: LibraryInfo[] }) => setLibs(j.libraries))
+      .catch(() => {});
+    setElements([file]);
   };
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -57,6 +58,15 @@ export function ImportQetButton({ folders, currentFolder }: { folders: FolderRow
       <Button onClick={() => input.current?.click()} disabled={parsing}>
         {parsing ? <Spinner /> : <Upload />} Import .qet
       </Button>
+      <ImportDialog
+        open={!!elements}
+        initialFiles={elements}
+        libraries={libs}
+        onClose={() => setElements(null)}
+        onDone={(r) => {
+          if (r.created || r.updated) toast.success("Added to your personal library — find it under Library → Mine or in the editor's library panel");
+        }}
+      />
       {parsed && <ImportPreview parsed={parsed} folders={folders} currentFolder={currentFolder} onClose={() => setParsed(null)} />}
     </>
   );

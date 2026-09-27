@@ -95,8 +95,59 @@ export type ImportOptions = {
   categoryPrefix?: string;
   note?: string;
   approvedById?: string | null;
+  /** per-file edits from the import review, keyed by the entry path */
+  overrides?: Record<string, ImportOverride>;
+  /** parse and report only (the import review); nothing is written */
+  dryRun?: boolean;
 };
-export type ImportResult = { created: number; skipped: number; updated: number; errors: string[]; ids: string[] };
+export type ImportOverride = {
+  /** skip this file */
+  exclude?: boolean;
+  name?: string;
+  category?: string;
+  prefix?: string;
+  description?: string;
+  tags?: string[];
+  /** element information defaults (manufacturer, manufacturer_reference, rating, …); "" removes one */
+  info?: Record<string, string>;
+};
+/** One element as the import review shows it. */
+export type ImportPreview = {
+  path: string;
+  name: string;
+  names: Record<string, string>;
+  category: string;
+  prefix: string;
+  info: Record<string, string>;
+  type: string;
+  linkType: string;
+  pins: number;
+  width: number;
+  height: number;
+  uuid: string;
+  /** an element with the same uuid is already in the user's libraries */
+  duplicate: { id: string; name: string } | null;
+  /** element xml for the thumbnail (only for reviews of up to PREVIEW_XML_LIMIT elements) */
+  xml?: string;
+};
+export const PREVIEW_XML_LIMIT = 200;
+export type ImportResult = { created: number; skipped: number; updated: number; errors: string[]; ids: string[]; preview?: ImportPreview[] };
+
+/** Applies the review's edits to a parsed element. */
+function applyOverride(def: ElementDef, ov: ImportOverride): ElementDef {
+  const out: ElementDef = { ...def, names: { ...def.names }, info: { ...def.info } };
+  const name = ov.name?.trim();
+  if (name) {
+    out.names.en = name;
+    out.name = name;
+  }
+  for (const [k, v] of Object.entries(ov.info ?? {})) {
+    const t = v.trim();
+    if (t) out.info[k] = t;
+    else delete out.info[k];
+  }
+  return out;
+}
 
 /** Expand .zip entries into .elmt entries (keeping folder paths); ignores qet_directory & junk. */
 export function expandEntries(files: ImportEntry[]): { entries: ImportEntry[]; errors: string[]; dirNames: Map<string, string> } {
@@ -149,7 +200,7 @@ export async function importElmts(files: ImportEntry[], o: ImportOptions): Promi
   const { entries, errors, dirNames } = expandEntries(files);
   const res: ImportResult = { created: 0, skipped: 0, updated: 0, errors, ids: [] };
   const root = commonRoot(entries.map((e) => e.path));
-  const existing = await db.libraryElement.findMany({ where: { ownerId: o.ownerId, kind: "ELEMENT", library: { workspaceId: o.library.workspaceId } }, select: { id: true, uuid: true, content: true, revision: true } });
+  const existing = await db.libraryElement.findMany({ where: { ownerId: o.ownerId, kind: "ELEMENT", library: { workspaceId: o.library.workspaceId } }, select: { id: true, uuid: true, content: true, revision: true, name: true } });
   const byUuid = new Map(existing.map((e) => [e.uuid, e]));
   const seenInBatch = new Set<string>();
   for (const e of entries) {
@@ -168,11 +219,38 @@ export async function importElmts(files: ImportEntry[], o: ImportOptions): Promi
       res.errors.push((err as Error).message);
       continue;
     }
+    const ov = o.overrides?.[e.path];
+    if (ov?.exclude) continue;
+    if (ov && (ov.name?.trim() || ov.info)) {
+      def = applyOverride(def, ov);
+      xml = serializeElmt(def);
+    }
     const folder = categoryFromPath(rel);
     const segs = folder ? folder.split("/") : [];
     const named = segs.map((seg, i) => dirNames.get(segs.slice(0, i + 1).join("/")) ?? dirNames.get([root, ...segs.slice(0, i + 1)].filter(Boolean).join("/")) ?? seg);
-    const cat = normCategory([o.categoryPrefix ?? "", ...named].filter(Boolean).join("/"));
-    const name = def.names.en || def.name || rel.split("/").pop()!.replace(/\.elmt$/i, "");
+    const cat = ov?.category !== undefined ? normCategory(ov.category) : normCategory([o.categoryPrefix ?? "", ...named].filter(Boolean).join("/"));
+    const name = def.names.en || def.name || Object.values(def.names)[0] || rel.split("/").pop()!.replace(/\.elmt$/i, "");
+    const prefix = ov?.prefix !== undefined ? ov.prefix.trim().slice(0, 12) : def.prefix || guessPrefix({ ...def, category: cat });
+    if (o.dryRun) {
+      const dupRow = def.uuid ? byUuid.get(def.uuid) : undefined;
+      (res.preview ??= []).push({
+        path: e.path,
+        name,
+        names: def.names,
+        category: cat,
+        prefix,
+        info: def.info,
+        type: def.kind.type ?? "simple",
+        linkType: def.linkType,
+        pins: def.pins.length,
+        width: def.width,
+        height: def.height,
+        uuid: def.uuid,
+        duplicate: dupRow ? { id: dupRow.id, name: dupRow.name } : null,
+        ...(entries.length <= PREVIEW_XML_LIMIT ? { xml } : {}),
+      });
+      continue;
+    }
     let uuid = def.uuid || "";
     const dup = uuid ? byUuid.get(uuid) : undefined;
     if (uuid && (dup || seenInBatch.has(uuid))) {
@@ -187,7 +265,13 @@ export async function importElmts(files: ImportEntry[], o: ImportOptions): Promi
           continue;
         }
         const full = await db.libraryElement.findUniqueOrThrow({ where: { id: dup.id } });
-        await addRevision(full, xml, o.ownerId, o.note ?? `Re-imported from ${rel}`);
+        await addRevision(
+          full,
+          xml,
+          o.ownerId,
+          o.note ?? `Re-imported from ${rel}`,
+          ov ? { name, category: cat, prefix, ...(ov.description !== undefined ? { description: ov.description.trim() } : {}), ...(ov.tags ? { tags: JSON.stringify(ov.tags) } : {}) } : {},
+        );
         res.updated++;
         res.ids.push(dup.id);
         continue;
@@ -210,9 +294,9 @@ export async function importElmts(files: ImportEntry[], o: ImportOptions): Promi
         ownerId: o.ownerId,
         name,
         category: cat,
-        prefix: def.prefix || guessPrefix({ ...def, category: cat }),
-        description: "",
-        tags: [def.kind.type, def.linkType !== "simple" ? def.linkType : ""].filter(Boolean) as string[],
+        prefix,
+        description: ov?.description?.trim() ?? "",
+        tags: ov?.tags ?? ([def.kind.type, def.linkType !== "simple" ? def.linkType : ""].filter(Boolean) as string[]),
         uuid,
         content: xml,
         meta: author ? { author } : {},
@@ -225,7 +309,7 @@ export async function importElmts(files: ImportEntry[], o: ImportOptions): Promi
         approvedById: o.approvedById ?? null,
         approvedAt: o.approvedById ? new Date() : null,
       });
-      byUuid.set(uuid, { id: el.id, uuid, content: xml, revision: 1 });
+      byUuid.set(uuid, { id: el.id, uuid, content: xml, revision: 1, name });
       res.created++;
       res.ids.push(el.id);
     } catch (err) {

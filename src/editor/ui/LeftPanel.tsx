@@ -15,6 +15,8 @@ import { reorderPages } from "./PageTabs";
 import { runCommand } from "./commands";
 import { emptySel } from "@/core/ops";
 import { parseElmt } from "@/core/qet/elmt";
+import { ImportDialog } from "@/library-editor/browser/ImportDialog";
+import type { LibraryInfo } from "@/library-editor/types";
 
 const PANEL_MIN = 220, PANEL_MAX = 480;
 
@@ -181,34 +183,22 @@ function LibraryPanel() {
     }
   };
 
-  const importFiles = async (files: FileList | File[] | null) => {
+  /** chosen or dropped files open the import review (names, category, manufacturer…) */
+  const importFiles = (files: FileList | File[] | null) => {
     const all = [...(files ?? [])]; // copy first: clearing the input empties its live FileList
     if (fileRef.current) fileRef.current.value = ""; // choosing the same file again must fire onChange
     if (!all.length) return;
     const list = all.filter((f) => /\.(elmt|zip)$/i.test(f.name));
     if (!list.length) return ui.toast(all.some((f) => /\.qet$/i.test(f.name)) ? "That is a project (.qet); open it from Projects → Import .qet" : "Choose QElectroTech element files (.elmt) or a .zip of them", { tone: "error" });
-    const fd = new FormData();
-    for (const f of list) fd.append("files", f, (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name);
-    const res = await fetch("/api/library/import", { method: "POST", body: fd });
-    const j = (await res.json().catch(() => ({}))) as { error?: string; created?: number; updated?: number; skipped?: number; errors?: string[] };
-    if (!res.ok) return ui.toast(j.error ?? `Import failed (${res.status})`, { tone: "error" });
-    const n = (x?: number) => x ?? 0;
-    const parts = [
-      n(j.created) && `${j.created} imported`,
-      n(j.updated) && `${j.updated} updated`,
-      n(j.skipped) && `${j.skipped} already in your library`,
-      j.errors?.length && `${j.errors.length} could not be read: ${j.errors[0]}`,
-    ].filter(Boolean);
-    ui.toast(parts.join(" · ") || "Nothing imported", { tone: j.errors?.length && !n(j.created) && !n(j.updated) ? "error" : undefined });
-    setScope("mine");
-    // show what arrived: a single element is searched by name
-    if (list.length === 1 && /\.elmt$/i.test(list[0].name) && !j.errors?.length) {
-      const xml = await list[0].text();
-      const name = (/<name lang="en">([^<]+)<\/name>/.exec(xml) ?? /<name lang="[^"]*">([^<]+)<\/name>/.exec(xml))?.[1];
-      if (name) setQ(name);
-    }
-    setReload((x) => x + 1);
+    if (!libs)
+      void fetch("/api/library/libraries")
+        .then((r) => (r.ok ? r.json() : { libraries: [] }))
+        .then((j: { libraries: LibraryInfo[] }) => setLibs(j.libraries))
+        .catch(() => setLibs([]));
+    setImporting(list);
   };
+  const [importing, setImporting] = useState<File[] | null>(null);
+  const [libs, setLibs] = useState<LibraryInfo[] | null>(null);
 
   const chips: { id: Scope; label: string; icon: React.ReactNode }[] = [
     { id: "all", label: "All", icon: <Library /> },
@@ -227,9 +217,23 @@ function LibraryPanel() {
       onDrop={(e) => {
         if (!e.dataTransfer.files.length) return;
         e.preventDefault();
-        void importFiles([...e.dataTransfer.files]);
+        importFiles([...e.dataTransfer.files]);
       }}
     >
+      <ImportDialog
+        open={!!importing}
+        initialFiles={importing}
+        libraries={libs ?? []}
+        onClose={() => setImporting(null)}
+        onDone={(r) => {
+          if (!r.created && !r.updated) return;
+          setScope("mine");
+          // show what arrived: a single element is searched by name
+          const one = r.ids.length === 1 ? importing?.[0] : null;
+          if (one && /\.elmt$/i.test(one.name)) void fetch(`/api/library/elements/${r.ids[0]}`).then((x) => (x.ok ? x.json() : null)).then((j) => j?.name && setQ(j.name));
+          setReload((x) => x + 1);
+        }}
+      />
       <div className="space-y-2 border-b border-border p-2">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-subtle" />

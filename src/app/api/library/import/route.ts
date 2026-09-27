@@ -3,13 +3,29 @@ import { apiCtx, HttpError } from "@/lib/session";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { assertMember, personalLibrary, writableLibrary } from "@/lib/library/access";
-import { importElmts, MAX_IMPORT_BYTES, type ImportEntry } from "@/lib/library/store";
+import { z } from "zod";
+import { importElmts, MAX_IMPORT_BYTES, type ImportEntry, type ImportOverride } from "@/lib/library/store";
+
+const OverridesSchema = z.record(
+  z.string(),
+  z.object({
+    exclude: z.boolean().optional(),
+    name: z.string().max(200).optional(),
+    category: z.string().max(300).optional(),
+    prefix: z.string().max(12).optional(),
+    description: z.string().max(5000).optional(),
+    tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+    info: z.record(z.string().max(60), z.string().max(500)).optional(),
+  }),
+);
 import { normCategory } from "@/lib/library/elmt-tools";
 
 export const runtime = "nodejs";
 
 /**
  * multipart: files (.elmt / .zip; the filename may carry a relative path → category)
+ * dryRun=1 → { preview, errors } (the import review: parsed details, duplicates; nothing written)
+ * overrides: JSON { [path]: { exclude, name, category, prefix, description, tags, info } } from the review
  * optional: libraryId | newLibrary (name) + license / attribution / source / description,
  *           category (prefix for all imported categories), duplicates = skip | copy | update
  * → { created, skipped, updated, errors, ids, libraryId }
@@ -39,9 +55,19 @@ export const POST = route(async (req) => {
     const v = fd.get(k);
     return typeof v === "string" && v.trim() ? v.trim() : null;
   };
+  const dryRun = str("dryRun") === "1";
+  let overrides: Record<string, ImportOverride> | undefined;
+  if (str("overrides")) {
+    try {
+      overrides = OverridesSchema.parse(JSON.parse(str("overrides")!));
+    } catch {
+      throw new HttpError(400, "Invalid element details");
+    }
+  }
   let library;
   const newName = str("newLibrary");
-  if (newName) {
+  if (dryRun) library = str("libraryId") && !newName ? await writableLibrary(ctx, str("libraryId")) : await personalLibrary(ctx);
+  else if (newName) {
     library = await db.library.create({
       data: {
         workspaceId: ctx.workspace.id,
@@ -64,7 +90,10 @@ export const POST = route(async (req) => {
     status: "DRAFT",
     onDuplicate: dup === "copy" || dup === "update" ? dup : "skip",
     categoryPrefix: normCategory(str("category") ?? ""),
+    overrides,
+    dryRun,
   });
+  if (dryRun) return { preview: res.preview ?? [], errors: res.errors.slice(0, 200) };
   await audit({
     workspaceId: ctx.workspace.id,
     actorId: ctx.user.id,
