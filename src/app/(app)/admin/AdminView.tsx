@@ -158,6 +158,13 @@ function GeneralTab({ data }: { data: AdminData }) {
         <Row label="Re-authentication for signing" hint="Signatories must have signed in within this many minutes.">
           <Num value={s.signReauthMinutes} onChange={(n) => up("signReauthMinutes", n)} min={1} label="Re-auth minutes" />
         </Row>
+        <Row label="Link previews" hint="What a pasted project or library link shows in Teams, Slack or Outlook. Their servers fetch it without signing in, so anyone holding the link sees this.">
+          <NativeSelect value={s.linkPreviews} onChange={(e) => up("linkPreviews", e.target.value as WorkspaceSettings["linkPreviews"])} className="w-60" aria-label="Link previews">
+            <option value="picture">Name and picture (title page / symbol)</option>
+            <option value="name">Name only</option>
+            <option value="off">Nothing (just “Volt”)</option>
+          </NativeSelect>
+        </Row>
       </Section>
       <Section title="Approval policy" description="Project templates can override these per project.">
         <Row label="Minimum approvals" hint="Distinct approvers needed before a version is approved.">

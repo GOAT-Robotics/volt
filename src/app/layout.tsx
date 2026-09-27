@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { headers } from "next/headers";
+import { siteMetadata } from "@/lib/og/meta";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: { default: "Volt", template: "%s · Volt" },
-  description: "Electrical diagrams with review and release control.",
-};
+export function generateMetadata(): Promise<Metadata> {
+  return siteMetadata();
+}
 export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: dark)", color: "#0e0e10" }, { color: "#f7f7f8" }] };
 
 const themeScript = `try{var t=localStorage.getItem('volt-theme');var d=t==='dark'||(!t||t==='system')&&matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark')}catch(e){}`;

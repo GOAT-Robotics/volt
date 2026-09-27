@@ -1,4 +1,8 @@
+import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { libraryPreview, projectPreview, SITE_DESCRIPTION } from "@/lib/og/preview";
+import { COMPANY, previewMetadata } from "@/lib/og/meta";
 import { signIn, DEV_LOGIN, ENTRA_ENABLED } from "@/auth";
 import { getCtx } from "@/lib/session";
 import { AuthShell } from "@/components/brand/AuthLayout";
@@ -12,6 +16,49 @@ const ERRORS: Record<string, string> = {
   Configuration: "Sign-in is not configured correctly.",
 };
 
+/**
+ * A shared link (/projects/…, /library/…) lands here when the visitor is not signed in — including
+ * the servers of Teams, Slack or Outlook that build link previews. They get the project's or
+ * component's preview (as far as the organization allows, see lib/og/preview); people get the form.
+ */
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ callbackUrl?: string }> }): Promise<Metadata> {
+  const cb = safeCallback((await searchParams).callbackUrl);
+  const proj = /^\/projects\/([a-z0-9]{10,40})(?:[/?#]|$)/i.exec(cb);
+  const lib = /^\/library\/([a-z0-9]{10,40})(?:[/?#]|$)/i.exec(cb);
+  const p = proj ? await projectPreview(proj[1]).catch(() => null) : lib ? await libraryPreview(lib[1]).catch(() => null) : null;
+  if (p) return previewMetadata(p, { title: `${p.title} — sign in`, robots: { index: false, follow: false } });
+  return {
+    title: "Sign in",
+    description: SITE_DESCRIPTION,
+    alternates: { canonical: "/login" },
+    robots: { index: true, follow: false },
+  };
+}
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Volt",
+  applicationCategory: "BusinessApplication",
+  applicationSubCategory: "Electrical CAD",
+  operatingSystem: "Web browser",
+  description: SITE_DESCRIPTION,
+  featureList: [
+    "Electrical schematics editor compatible with QElectroTech (.qet, .elmt)",
+    "Shared component and circuit block library",
+    "Cross references, wire numbering and conductor data",
+    "Cover sheets, title blocks and revision history",
+    "Reviews, approvals and electronically signed releases",
+    "PDF, SVG, PNG, DXF and QElectroTech export",
+  ],
+  publisher: {
+    "@type": "Organization",
+    name: COMPANY,
+    url: "https://www.example.com",
+    address: { "@type": "PostalAddress", addressLocality: "Springfield", addressRegion: "State", addressCountry: "IN" },
+  },
+};
+
 export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string; callbackUrl?: string; reauth?: string; signedOut?: string }> }) {
   const sp = await searchParams;
   // Only skip the login page for a session whose user still exists and has access. A stale cookie
@@ -20,8 +67,10 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   if (ctx) redirect(safeCallback(sp.callbackUrl));
   const reauth = !!sp.reauth;
   const cb = safeCallback(sp.callbackUrl);
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <AuthShell>
+          <script type="application/ld+json" nonce={nonce} dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
           <h1 className="text-sm font-semibold">Sign in</h1>
           <p className="mt-1 text-xs text-muted">Use your organization account.</p>
           {sp.signedOut && !sp.error && !reauth && (

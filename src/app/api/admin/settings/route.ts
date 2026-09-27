@@ -43,6 +43,7 @@ const Settings = z.object({
   autosaveSeconds: z.number().int().min(1).max(600),
   library: z.object({ requireApprovalForOrg: z.boolean() }),
   versionScheme: z.enum(["INTEGER", "DECIMAL", "LETTER", "CUSTOM"]),
+  linkPreviews: z.enum(["off", "name", "picture"]).default("picture"),
 });
 
 export const PUT = route(async (req) => {

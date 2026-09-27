@@ -140,3 +140,19 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* sign-in background: schematic line art with current running along a few wires */
+.volt-flow path {
+  stroke-dasharray: 5 40;
+  animation: volt-flow 3.2s linear infinite;
+}
+@keyframes volt-flow {
+  to {
+    stroke-dashoffset: -90;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .volt-flow {
+    display: none;
+  }
+}

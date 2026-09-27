@@ -4,7 +4,7 @@ import { canPublish, isAdmin, isApprover } from "@/lib/library/access";
 import { LibraryBrowser } from "@/library-editor/browser/LibraryBrowser";
 import type { LibUser } from "@/library-editor/types";
 
-export const metadata = { title: "Library · Volt" };
+export const metadata = { title: "Library" };
 
 export default async function LibraryPage() {
   const ctx = await requireCtx();

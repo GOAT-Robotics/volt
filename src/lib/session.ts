@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { auth } from "@/auth";
 import { db } from "./db";
 import { parseRoles, rolesAllow, type Action, type Role } from "./roles";
@@ -53,7 +53,11 @@ export const getCtx = cache(async (): Promise<Ctx | null> => {
 
 export async function requireCtx(): Promise<Ctx> {
   const c = await getCtx();
-  if (!c) redirect("/login");
+  if (!c) {
+    // back to the same page after sign-in (and link previews can describe it: see /login)
+    const here = (await headers()).get("x-volt-path");
+    redirect(here && here.startsWith("/") && !here.startsWith("//") && !here.startsWith("/login") ? `/login?callbackUrl=${encodeURIComponent(here)}` : "/login");
+  }
   return c;
 }
 

@@ -22,6 +22,12 @@ export type WorkspaceSettings = {
   autosaveSeconds: number;
   library: { requireApprovalForOrg: boolean };
   versionScheme: "INTEGER" | "DECIMAL" | "LETTER" | "CUSTOM";
+  /**
+   * What a shared link shows in Teams, Slack, Outlook … (their servers fetch it without signing in):
+   * "off" — only "Volt"; "name" — project / component name; "picture" — name and a picture of the
+   * title page or symbol.
+   */
+  linkPreviews: "off" | "name" | "picture";
 };
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -50,6 +56,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   autosaveSeconds: 4,
   library: { requireApprovalForOrg: true },
   versionScheme: "INTEGER",
+  linkPreviews: "picture",
 };
 
 export function parseSettings(s: string | null | undefined): WorkspaceSettings {

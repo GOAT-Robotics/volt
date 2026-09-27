@@ -9,6 +9,8 @@ import { auditLabel, describeAudit } from "@/lib/describe";
 import { isAdmin, isGuestCtx } from "@/lib/access";
 import { parseRoles } from "@/lib/roles";
 import type { CompatReport } from "@/core/model";
+import { projectPreview } from "@/lib/og/preview";
+import { previewMetadata } from "@/lib/og/meta";
 import { ProjectView, type ProjectData } from "./ProjectView";
 
 export async function generateMetadata({ params }: { params: Promise<{ projectId: string }> }): Promise<Metadata> {
@@ -16,7 +18,9 @@ export async function generateMetadata({ params }: { params: Promise<{ projectId
   const ctx = await getCtx();
   if (!ctx) return { title: "Project" };
   const p = await loadProject(ctx, projectId).catch(() => null);
-  return { title: p?.project.name ?? "Project" };
+  if (!p) return { title: "Project" };
+  const pv = await projectPreview(projectId).catch(() => null);
+  return pv ? previewMetadata(pv, { title: p.project.name }) : { title: p.project.name };
 }
 
 export default async function ProjectPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ tab?: string }> }) {

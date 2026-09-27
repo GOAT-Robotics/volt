@@ -53,6 +53,8 @@ export function proxy(req: NextRequest) {
   ].join("; ");
   const headers = new Headers(req.headers);
   headers.set("x-nonce", nonce);
+  // the page being asked for (sign-in comes back to it)
+  headers.set("x-volt-path", (pathname + req.nextUrl.search).slice(0, 1000));
   headers.set("content-security-policy", csp);
   const res = NextResponse.next({ request: { headers } });
   res.headers.set("content-security-policy", csp);
@@ -62,7 +64,7 @@ export function proxy(req: NextRequest) {
 export const config = {
   matcher: [
     {
-      source: "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png).*)",
+      source: "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|brand/|fonts/|icon-|manifest.webmanifest|robots.txt|sitemap.xml|og(?:/|$)).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
