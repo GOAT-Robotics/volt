@@ -24,6 +24,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates tini && rm -rf /var/lib/apt/lists/* \
   && groupadd -r volt && useradd -r -g volt -d /app volt
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 DATA_DIR=/app/data
+# Keep the JS heap small so the server fits comfortably on 1 GB hosts (override in .env if needed)
+ENV NODE_OPTIONS=--max-old-space-size=256
 COPY --from=builder --chown=volt:volt /app/.next/standalone ./
 COPY --from=builder --chown=volt:volt /app/.next/static ./.next/static
 COPY --from=builder --chown=volt:volt /app/public ./public
