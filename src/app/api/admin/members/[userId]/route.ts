@@ -33,6 +33,9 @@ export const PATCH = route<{ userId: string }>(async (req, { params }) => {
   if (b.disabled !== undefined && b.disabled !== m.user.disabled) {
     if (userId === ctx.user.id) throw new HttpError(409, "You cannot disable your own account");
     if (b.disabled && wasAdmin && !(await adminsLeft(ctx.workspace.id, userId))) throw new HttpError(409, "The workspace needs at least one active administrator");
+    // disabling is account-wide: only when this workspace is the only one the user belongs to
+    if (b.disabled && (await db.membership.count({ where: { userId, workspaceId: { not: ctx.workspace.id } } })))
+      throw new HttpError(409, "This user also belongs to other workspaces — remove their roles here instead of disabling the account");
     // disabling keeps the user and all history; sign-in and API access are refused
     await db.user.update({ where: { id: userId }, data: { disabled: b.disabled } });
     await audit({ workspaceId: ctx.workspace.id, actorId: ctx.user.id, type: "admin.member", data: { action: b.disabled ? "disable" : "enable", user: m.user.email } });

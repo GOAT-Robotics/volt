@@ -72,14 +72,19 @@ export function assertCan(ctx: Ctx, a: Action, projectRoles: Role[] = []) {
   if (!can(ctx, a, projectRoles)) throw new HttpError(403, `Not permitted: ${a}`);
 }
 
-/** Loads a project in the ctx workspace (or one the user is invited to) + effective project roles. */
+/**
+ * Loads a project in the ctx workspace (or one the user is invited to) + effective roles.
+ * Workspace roles only count inside their own workspace: in a project of another workspace
+ * (or for guests) only the project roles the user was given apply.
+ */
 export async function loadProject(ctx: Ctx, projectId: string) {
   const project = await db.project.findUnique({ where: { id: projectId }, include: { members: true } });
   if (!project) throw new HttpError(404, "Project not found");
   const pm = project.members.find((m) => m.userId === ctx.user.id);
   const projectRoles = pm ? parseRoles(pm.roles) : [];
-  const inWorkspace = project.workspaceId === ctx.workspace.id && ctx.roles.length > 0 && !(ctx.roles.length === 1 && ctx.roles[0] === "GUEST");
+  const guest = ctx.user.isGuest || ctx.roles.length === 0 || (ctx.roles.length === 1 && ctx.roles[0] === "GUEST");
+  const inWorkspace = project.workspaceId === ctx.workspace.id && !guest;
   if (!inWorkspace && !pm) throw new HttpError(404, "Project not found");
-  const roles = inWorkspace ? projectRoles : projectRoles;
-  return { project, projectRoles: roles, can: (a: Action) => can(ctx, a, roles) || (!inWorkspace && rolesAllow(roles, a)) };
+  const roles: Role[] = inWorkspace ? [...new Set([...ctx.roles, ...projectRoles])] : projectRoles;
+  return { project, projectRoles: roles, inWorkspace, can: (a: Action) => rolesAllow(roles, a) };
 }

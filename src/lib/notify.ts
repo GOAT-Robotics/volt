@@ -43,10 +43,16 @@ export async function notify(userIds: string[], n: { type: NotifyType; title: st
       await fetch(settings.notifications.teamsWebhook, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: `**${n.title}**\n\n${n.body ?? ""}${n.link ? `\n\n${base}${n.link}` : ""}` }),
+        // titles and bodies carry user text (names, comments): escape Markdown so it cannot inject links
+        body: JSON.stringify({ text: `**${md(n.title)}**\n\n${md(n.body ?? "")}${n.link ? `\n\n${base}${n.link}` : ""}` }),
       }).catch(() => {});
     }
   } catch (e) {
     console.error("[notify]", e);
   }
+}
+
+/** Escapes Markdown for Teams message cards */
+function md(s: string) {
+  return s.replace(/([\\`*_{}\[\]()#+\-.!<>|~])/g, "\\$1");
 }

@@ -54,17 +54,16 @@ export const GET = route(async (req) => {
     });
   }
   const offset = Math.max(0, Number(sp.get("offset")) || 0);
-  const [rows, total] = await Promise.all([
-    db.libraryElement.findMany({
-      where: { AND: and },
-      include: { library: true, shares: { select: { userId: true, canEdit: true } } },
-      orderBy: [{ category: "asc" }, { name: "asc" }],
-      skip: offset,
-      take: limit,
-      omit: { content: true },
-    }),
-    db.libraryElement.count({ where: { AND: and } }),
-  ]);
+  const rows = await db.libraryElement.findMany({
+    where: { AND: and },
+    include: { library: true, shares: { select: { userId: true, canEdit: true } } },
+    orderBy: [{ category: "asc" }, { name: "asc" }],
+    skip: offset,
+    take: limit,
+    omit: { content: true },
+  });
+  // the (full-scan) count only when the page is full
+  const total = rows.length < limit ? offset + rows.length : await db.libraryElement.count({ where: { AND: and } });
   const owners = await db.user.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.ownerId))] } }, select: { id: true, name: true } });
   const names = new Map(owners.map((u) => [u.id, u.name]));
   return { items: rows.map((r) => toLibItem(ctx, { ...r, content: "" }, names.get(r.ownerId))), limit, total, truncated: offset + rows.length < total };
@@ -89,7 +88,7 @@ const Create = z.object({
 export const POST = route(async (req) => {
   const ctx = await apiCtx();
   assertMember(ctx);
-  const b = await body(req, Create);
+  const b = await body(req, Create, 20 * 1024 * 1024);
   let def;
   try {
     def = checkElmt(b.content, b.name);

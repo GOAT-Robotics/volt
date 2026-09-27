@@ -44,7 +44,7 @@ export function AppShell({ user, children, inboxCount }: { user: ShellUser; chil
                   <MenuItem
                     key={w.id}
                     onSelect={() => {
-                      document.cookie = `volt_ws=${w.id}; path=/; max-age=31536000; samesite=lax`;
+                      document.cookie = `volt_ws=${w.id}; path=/; max-age=31536000; samesite=lax${location.protocol === "https:" ? "; secure" : ""}`;
                       location.href = "/projects";
                     }}
                   >

@@ -4,7 +4,7 @@ import { apiCtx, HttpError, loadProject } from "@/lib/session";
 import { db } from "@/lib/db";
 import { docHash, nextLabel, parseDoc, reindexVersion } from "@/lib/versioning";
 import { audit } from "@/lib/audit";
-import { applyExpiry } from "@/lib/workflow";
+import { applyProjectExpiry } from "@/lib/workflow";
 import { WORKING } from "@/lib/projects";
 
 export const runtime = "nodejs";
@@ -14,8 +14,7 @@ export const GET = route<{ id: string }>(async (_req, { params }) => {
   const { id } = await params;
   const { can } = await loadProject(ctx, id);
   if (!can("project.view") && !can("review.comment")) throw new HttpError(403, "No access");
-  const rows = await db.version.findMany({ where: { projectId: id }, omit: { doc: true }, orderBy: { seq: "desc" } });
-  await Promise.all(rows.filter((r) => ["IN_REVIEW", "APPROVED"].includes(r.status)).map((r) => applyExpiry(r.id)));
+  await applyProjectExpiry(id);
   const fresh = await db.version.findMany({ where: { projectId: id }, omit: { doc: true }, orderBy: { seq: "desc" } });
   const users = new Map((await db.user.findMany({ where: { id: { in: [...new Set(fresh.map((r) => r.createdById))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const labels = new Map(fresh.map((r) => [r.id, r.label]));

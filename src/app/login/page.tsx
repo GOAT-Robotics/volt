@@ -74,5 +74,6 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
 
 /** Only same-origin relative paths are allowed as post-login destinations. */
 function safeCallback(u?: string) {
-  return u && u.startsWith("/") && !u.startsWith("//") && !u.startsWith("/login") ? u : "/projects";
+  // same-site paths only: "//host" and "/\\host" are protocol-relative in browsers
+  return u && u.startsWith("/") && !/^\/[\/\\]/.test(u) && !/[\r\n\t\\]/.test(u) && !u.startsWith("/login") ? u : "/projects";
 }

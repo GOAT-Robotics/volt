@@ -33,7 +33,7 @@ const Create = z.object({
 export const POST = route(async (req) => {
   const ctx = await apiCtx();
   assertMember(ctx);
-  const b = await body(req, Create);
+  const b = await body(req, Create, 20 * 1024 * 1024);
   const lib = await writableLibrary(ctx, b.libraryId);
   const el = await createElementRecord({
     libraryId: lib.id,

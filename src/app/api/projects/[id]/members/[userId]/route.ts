@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { joinRoles, parseRoles } from "@/lib/roles";
 import { PROJECT_ROLES } from "@/lib/constants";
+import { assertGrantable } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,7 @@ export const PATCH = route<{ id: string; userId: string }>(async (req, { params 
   const m = await db.projectMember.findUnique({ where: { projectId_userId: { projectId: id, userId } }, include: { user: true } });
   if (!m) throw new HttpError(404, "Member not found");
   if (parseRoles(m.roles).includes("OWNER") && !b.roles.includes("OWNER") && !(await ownersLeft(id, userId))) throw new HttpError(409, "A project needs at least one owner");
+  assertGrantable(ctx, project, m.user, parseRoles(m.roles), b.roles);
   await db.projectMember.update({ where: { id: m.id }, data: { roles: joinRoles(b.roles) } });
   await audit({ workspaceId: project.workspaceId, projectId: id, actorId: ctx.user.id, type: "project.member", data: { user: m.user.email, roles: joinRoles(b.roles), action: "update" } });
   return { ok: true };

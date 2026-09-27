@@ -57,6 +57,7 @@ model Membership {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, userId])
+  @@index([userId])
 }
 
 model GroupMapping {
@@ -77,6 +78,8 @@ model Folder {
   name        String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   projects    Project[]
+
+  @@index([workspaceId])
 }
 
 model Project {
@@ -105,6 +108,7 @@ model Project {
   attachments Attachment[]
 
   @@index([workspaceId, state])
+  @@index([workspaceId, state, updatedAt])
 }
 
 /// per-project roles: OWNER, DESIGNER, REVIEWER, APPROVER, SIGNATORY, VIEWER, GUEST
@@ -117,6 +121,7 @@ model ProjectMember {
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
+  @@index([userId])
 }
 
 model Favorite {
@@ -127,32 +132,33 @@ model Favorite {
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@id([userId, projectId])
+  @@index([projectId])
 }
 
 /// status: DRAFT | IN_REVIEW | CHANGES_REQUESTED | APPROVED | REJECTED | SIGNED | RELEASED | SUPERSEDED | WITHDRAWN
 model Version {
-  id           String    @id @default(cuid())
-  projectId    String
-  seq          Int
-  label        String
-  parentId     String?
-  status       String    @default("DRAFT")
-  summary      String    @default("")
-  description  String    @default("")
-  ticket       String?
-  doc          String // JSON Doc (see src/core/model.ts)
-  docRev       Int       @default(1)
-  docHash      String?
-  createdById  String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  submittedAt  DateTime?
-  approvedAt   DateTime?
-  signedAt     DateTime?
-  releasedAt   DateTime?
-  endedAt      DateTime?
-  endReason    String?
-  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  projectId   String
+  seq         Int
+  label       String
+  parentId    String?
+  status      String    @default("DRAFT")
+  summary     String    @default("")
+  description String    @default("")
+  ticket      String?
+  doc         String // JSON Doc (see src/core/model.ts)
+  docRev      Int       @default(1)
+  docHash     String?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  submittedAt DateTime?
+  approvedAt  DateTime?
+  signedAt    DateTime?
+  releasedAt  DateTime?
+  endedAt     DateTime?
+  endReason   String?
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   reviews    Review[]
   signatures Signature[]
@@ -162,6 +168,7 @@ model Version {
 
   @@unique([projectId, seq])
   @@index([projectId, status])
+  @@index([createdById])
 }
 
 model Autosave {
@@ -186,6 +193,8 @@ model ImportRecord {
   userId    String
   createdAt DateTime @default(now())
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
 }
 
 /// scope: PERSONAL | SHARED | ORG ; LibraryElement.status: DRAFT | PUBLISHED | PENDING_APPROVAL | APPROVED | DEPRECATED
@@ -202,36 +211,42 @@ model Library {
   createdAt   DateTime         @default(now())
   workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   elements    LibraryElement[]
+
+  @@index([workspaceId, scope, ownerId])
 }
 
 model LibraryElement {
-  id          String    @id @default(cuid())
-  libraryId   String
-  kind        String    @default("ELEMENT") // ELEMENT | BLOCK
-  category    String    @default("") // slash path e.g. "10_electric/20_relays"
-  name        String
-  description String    @default("")
-  tags        String    @default("[]")
-  prefix      String    @default("")
-  uuid        String // QET element uuid
-  content     String // ELEMENT: .elmt XML ; BLOCK: JSON BlockContent
-  meta        String    @default("{}") // manufacturer, partNumber, function, ...
-  visibility  String    @default("PRIVATE") // PRIVATE | SHARED | ORG
-  status      String    @default("DRAFT")
-  revision    Int       @default(1)
-  ownerId     String
+  id           String                   @id @default(cuid())
+  libraryId    String
+  kind         String                   @default("ELEMENT") // ELEMENT | BLOCK
+  category     String                   @default("") // slash path e.g. "10_electric/20_relays"
+  name         String
+  description  String                   @default("")
+  tags         String                   @default("[]")
+  prefix       String                   @default("")
+  uuid         String // QET element uuid
+  content      String // ELEMENT: .elmt XML ; BLOCK: JSON BlockContent
+  meta         String                   @default("{}") // manufacturer, partNumber, function, ...
+  visibility   String                   @default("PRIVATE") // PRIVATE | SHARED | ORG
+  status       String                   @default("DRAFT")
+  revision     Int                      @default(1)
+  ownerId      String
   approvedById String?
-  approvedAt  DateTime?
-  source      String?
-  license     String?
-  attribution String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  library     Library   @relation(fields: [libraryId], references: [id], onDelete: Cascade)
-  revisions   LibraryElementRevision[]
-  shares      LibraryShare[]
+  approvedAt   DateTime?
+  source       String?
+  license      String?
+  attribution  String?
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  library      Library                  @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  revisions    LibraryElementRevision[]
+  shares       LibraryShare[]
 
   @@index([libraryId, category])
+  @@index([ownerId, kind])
+  @@index([uuid])
+  @@index([visibility, status])
+  @@index([category, name])
 }
 
 model LibraryElementRevision {
@@ -255,6 +270,7 @@ model LibraryShare {
   element   LibraryElement @relation(fields: [elementId], references: [id], onDelete: Cascade)
 
   @@id([elementId, userId])
+  @@index([userId])
 }
 
 model StyleTemplate {
@@ -269,6 +285,8 @@ model StyleTemplate {
   history     String    @default("[]")
   updatedAt   DateTime  @updatedAt
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
 }
 
 model ProjectTemplate {
@@ -284,83 +302,96 @@ model ProjectTemplate {
   history     String    @default("[]")
   updatedAt   DateTime  @updatedAt
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
 }
 
 /// status: OPEN | APPROVED | REJECTED | CHANGES_REQUESTED | CANCELLED
 model Review {
-  id           String             @id @default(cuid())
-  versionId    String
+  id            String             @id @default(cuid())
+  versionId     String
   submittedById String
-  instructions String             @default("")
-  dueDate      DateTime?
-  sequential   Boolean            @default(false)
-  status       String             @default("OPEN")
-  createdAt    DateTime           @default(now())
-  closedAt     DateTime?
-  version      Version            @relation(fields: [versionId], references: [id], onDelete: Cascade)
-  assignments  ReviewAssignment[]
+  instructions  String             @default("")
+  dueDate       DateTime?
+  sequential    Boolean            @default(false)
+  status        String             @default("OPEN")
+  createdAt     DateTime           @default(now())
+  closedAt      DateTime?
+  version       Version            @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  assignments   ReviewAssignment[]
+
+  @@index([versionId, status, createdAt])
+  @@index([submittedById, createdAt])
 }
 
 /// decision: PENDING | APPROVED | REJECTED | CHANGES_REQUESTED
 model ReviewAssignment {
-  id           String    @id @default(cuid())
-  reviewId     String
-  order        Int       @default(0)
-  userId       String?
-  groupId      String? // Entra group object id
-  groupName    String?
-  canApprove   Boolean   @default(true)
-  decision     String    @default("PENDING")
-  reason       String?
-  decidedById  String?
-  decidedAt    DateTime?
-  review       Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  reviewId    String
+  order       Int       @default(0)
+  userId      String?
+  groupId     String? // Entra group object id
+  groupName   String?
+  canApprove  Boolean   @default(true)
+  decision    String    @default("PENDING")
+  reason      String?
+  decidedById String?
+  decidedAt   DateTime?
+  review      Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, order])
+  @@index([userId, decision])
+  @@index([groupId, decision])
+  @@index([decidedById, decidedAt])
 }
 
 /// status: OPEN | RESOLVED | REJECTED | REOPENED
 model Comment {
-  id          String    @id @default(cuid())
-  projectId   String
-  versionId   String?
-  pageId      String?
-  anchor      String? // JSON {type:'element'|'wire'|'text'|'region'|'point', id?, x, y, w?, h?}
-  parentId    String?
-  body        String
-  status      String    @default("OPEN")
-  mentions    String    @default("[]")
-  authorId    String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  version     Version?  @relation(fields: [versionId], references: [id], onDelete: Cascade)
-  author      User      @relation(fields: [authorId], references: [id])
+  id        String   @id @default(cuid())
+  projectId String
+  versionId String?
+  pageId    String?
+  anchor    String? // JSON {type:'element'|'wire'|'text'|'region'|'point', id?, x, y, w?, h?}
+  parentId  String?
+  body      String
+  status    String   @default("OPEN")
+  mentions  String   @default("[]")
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version   Version? @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
 
   @@index([projectId, versionId])
+  @@index([versionId, parentId, status])
+  @@index([parentId])
 }
 
 /// status: REQUESTED | SIGNED | DECLINED | EXPIRED | INVALIDATED | CANCELLED
 model Signature {
-  id           String    @id @default(cuid())
-  versionId    String
-  signatoryId  String
+  id            String    @id @default(cuid())
+  versionId     String
+  signatoryId   String
   requestedById String
-  purpose      String
-  order        Int       @default(0)
-  status       String    @default("REQUESTED")
-  expiresAt    DateTime?
-  docHash      String
-  pdfHash      String?
-  provider     String    @default("builtin")
-  providerRef  String?
-  evidence     String? // JSON
-  seal         String? // provider signature over evidence
-  signedAt     DateTime?
+  purpose       String
+  order         Int       @default(0)
+  status        String    @default("REQUESTED")
+  expiresAt     DateTime?
+  docHash       String
+  pdfHash       String?
+  provider      String    @default("builtin")
+  providerRef   String?
+  evidence      String? // JSON
+  seal          String? // provider signature over evidence
+  signedAt      DateTime?
   declineReason String?
-  batch        String? // signatures requested together (one signing round)
-  createdAt    DateTime  @default(now())
-  version      Version   @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  batch         String? // signatures requested together (one signing round)
+  createdAt     DateTime  @default(now())
+  version       Version   @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
   @@index([signatoryId, status])
+  @@index([versionId, status, order])
 }
 
 model Attachment {
@@ -378,6 +409,7 @@ model Attachment {
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([ownerType, ownerId])
+  @@index([projectId, createdAt])
 }
 
 model Notification {
@@ -392,6 +424,7 @@ model Notification {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt])
+  @@index([userId, createdAt])
 }
 
 model AuditEvent {
@@ -409,6 +442,7 @@ model AuditEvent {
 
   @@index([workspaceId, createdAt])
   @@index([projectId, createdAt])
+  @@index([versionId, actorId, type, createdAt])
 }
 
 model SearchEntry {
@@ -421,6 +455,6 @@ model SearchEntry {
   text      String
   version   Version @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
-  @@index([text])
   @@index([versionId])
+  @@index([versionId, kind])
 }

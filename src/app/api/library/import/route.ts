@@ -1,8 +1,9 @@
-import { route } from "@/lib/api";
+import { rateLimit } from "@/lib/ratelimit";
+import { formData, route } from "@/lib/api";
 import { apiCtx, HttpError } from "@/lib/session";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { assertMember, personalLibrary, writableLibrary } from "@/lib/library/access";
+import { assertMember, isApprover, personalLibrary, writableLibrary } from "@/lib/library/access";
 import { z } from "zod";
 import { importElmts, MAX_IMPORT_BYTES, type ImportEntry, type ImportOverride } from "@/lib/library/store";
 
@@ -32,15 +33,11 @@ export const runtime = "nodejs";
  */
 export const POST = route(async (req) => {
   const ctx = await apiCtx();
+  rateLimit(`library.import:${ctx.user.id}`, 30);
   assertMember(ctx);
   const len = Number(req.headers.get("content-length") ?? 0);
   if (len > MAX_IMPORT_BYTES) throw new HttpError(413, "Upload too large (max 80 MB)");
-  let fd: FormData;
-  try {
-    fd = await req.formData();
-  } catch {
-    throw new HttpError(400, "Expected multipart/form-data");
-  }
+  const fd = await formData(req, MAX_IMPORT_BYTES, "Upload");
   const files: ImportEntry[] = [];
   let total = 0;
   for (const v of fd.getAll("files")) {
@@ -92,6 +89,8 @@ export const POST = route(async (req) => {
     categoryPrefix: normCategory(str("category") ?? ""),
     overrides,
     dryRun,
+    requireApprovalForOrg: ctx.settings.library.requireApprovalForOrg,
+    isApprover: isApprover(ctx),
   });
   if (dryRun) return { preview: res.preview ?? [], errors: res.errors.slice(0, 200) };
   await audit({

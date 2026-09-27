@@ -15,6 +15,7 @@ export const GET = route<{ id: string }>(async (req, { params }) => {
   const a = await loadElement(ctx, id);
   const revParam = new URL(req.url).searchParams.get("rev");
   const want = revParam ? Number(revParam) : a.viewerRevision;
+  if (!Number.isInteger(want) || want < 1) throw new HttpError(400, "Invalid revision");
   if (!a.full && want > a.viewerRevision) throw new HttpError(404, "Revision not available");
   let content = a.el.content;
   if (want !== a.el.revision) {

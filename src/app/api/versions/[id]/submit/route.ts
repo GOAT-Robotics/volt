@@ -2,7 +2,7 @@ import { z } from "zod";
 import { route, body } from "@/lib/api";
 import { apiCtx, HttpError } from "@/lib/session";
 import { db } from "@/lib/db";
-import { docHash, loadVersion, parseDoc } from "@/lib/versioning";
+import { docHash, flushReindex, loadVersion, parseDoc } from "@/lib/versioning";
 import { audit } from "@/lib/audit";
 import { startReview } from "@/lib/workflow";
 import { requiredFieldsFor } from "@/lib/projects";
@@ -24,6 +24,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   const ctx = await apiCtx();
   const { id } = await params;
   const b = await body(req, Body);
+  await flushReindex(id);
   const a = await loadVersion(ctx, id);
   if (!a.can("project.edit") && !a.can("project.manage")) throw new HttpError(403, "You cannot submit this version");
   if (!["DRAFT", "CHANGES_REQUESTED"].includes(a.version.status)) throw new HttpError(409, "Only draft versions can be submitted");

@@ -1,8 +1,9 @@
+import { rateLimit } from "@/lib/ratelimit";
 import { z } from "zod";
-import { route } from "@/lib/api";
+import { readBody, route } from "@/lib/api";
 import { apiCtx, HttpError } from "@/lib/session";
 import { db } from "@/lib/db";
-import { assertEditable, clientDoc, docHash, loadVersion, parseDoc, reindexVersion, withStoredSource } from "@/lib/versioning";
+import { assertEditable, docHash, loadVersion, scheduleReindex, withStoredSource } from "@/lib/versioning";
 import { gunzipSync } from "node:zlib";
 import { audit } from "@/lib/audit";
 import type { Doc } from "@/core/model";
@@ -13,8 +14,18 @@ const MAX = 60 * 1024 * 1024;
 export const GET = route<{ id: string }>(async (_req, { params }) => {
   const ctx = await apiCtx();
   const { id } = await params;
-  const a = await loadVersion(ctx, id);
-  return { doc: clientDoc(parseDoc(a.version.doc)), label: a.version.label, status: a.version.status, docRev: a.version.docRev };
+  const a = await loadVersion(ctx, id, { withDoc: false });
+  // The stored JSON goes out as is, minus the original project file (often several MB, fetched
+  // separately for export): SQLite drops it, so the document is never parsed or re-serialised here.
+  const rows = await db.$queryRaw<{ d: string }[]>`
+    SELECT CASE WHEN json_type(doc, '$.qet.source') IS NOT NULL
+      THEN json_set(json_remove(doc, '$.qet.source'), '$.qet.hasSource', json('true'))
+      ELSE doc END AS d
+    FROM "Version" WHERE id = ${id}`;
+  const d = rows[0]?.d;
+  if (!d) throw new HttpError(404, "Version not found");
+  const head = JSON.stringify({ label: a.version.label, status: a.version.status, docRev: a.version.docRev });
+  return new Response(`${head.slice(0, -1)},"doc":${d}}`, { headers: { "content-type": "application/json", "cache-control": "no-store" } });
 });
 
 const Body = z.object({
@@ -26,16 +37,22 @@ const Body = z.object({
 
 async function save(req: Request, id: string) {
   const ctx = await apiCtx();
-  const len = Number(req.headers.get("content-length") ?? 0);
-  if (len > MAX) throw new HttpError(413, "Document too large");
+  rateLimit(`save:${ctx.user.id}`, 300);
   // the editor gzips large documents
-  const text = req.headers.get("content-encoding") === "gzip" ? gunzipSync(Buffer.from(await req.arrayBuffer()), { maxOutputLength: MAX + 1 }).toString("utf8") : await req.text();
+  const raw = await readBody(req, MAX, "Document");
+  const text = req.headers.get("content-encoding") === "gzip" ? gunzipSync(raw, { maxOutputLength: MAX + 1 }).toString("utf8") : new TextDecoder().decode(raw);
   if (text.length > MAX) throw new HttpError(413, "Document too large");
   const body = Body.parse(JSON.parse(text));
   const incoming = body.doc as unknown as Doc;
-  const a = await loadVersion(ctx, id, { withDoc: !!incoming.qet?.hasSource });
+  const a = await loadVersion(ctx, id, { withDoc: false });
   assertEditable(a);
-  const doc = withStoredSource(incoming, (a.version as { doc?: string }).doc);
+  // the original project file stays on the server: read just that string (not the whole document)
+  let stored: string | null = null;
+  if (incoming.qet?.hasSource) {
+    const r = await db.$queryRaw<{ s: string | null }[]>`SELECT json_extract(doc, '$.qet.source') AS s FROM "Version" WHERE id = ${id}`;
+    stored = r[0]?.s ?? null;
+  }
+  const doc = withStoredSource(incoming, stored);
   const res = await db.version.updateMany({
     where: { id, docRev: body.baseRev, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } },
     data: { doc: JSON.stringify(doc), docRev: { increment: 1 }, docHash: docHash(doc) },
@@ -48,7 +65,7 @@ async function save(req: Request, id: string) {
   const recent = await db.auditEvent.findFirst({ where: { versionId: id, actorId: ctx.user.id, type: "version.save", createdAt: { gt: new Date(Date.now() - 10 * 60_000) } } });
   if (!recent) await audit({ workspaceId: a.project.workspaceId, projectId: a.project.id, versionId: id, actorId: ctx.user.id, type: "version.save", data: { rev: body.baseRev + 1 } });
   await db.project.update({ where: { id: a.project.id }, data: { updatedAt: new Date() } });
-  void reindexVersion(id, a.project.id, doc).catch((e) => console.error("[reindex]", e));
+  scheduleReindex(id, a.project.id, doc);
   return { rev: body.baseRev + 1 };
 }
 

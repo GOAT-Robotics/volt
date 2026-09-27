@@ -1,3 +1,4 @@
+import { rateLimit } from "@/lib/ratelimit";
 import { route } from "@/lib/api";
 import { apiCtx, HttpError } from "@/lib/session";
 import { loadVersion } from "@/lib/versioning";
@@ -12,6 +13,7 @@ const OK = ["APPROVED", "SIGNED", "RELEASED", "SUPERSEDED"];
 /** Signed release PDF: canonical drawing + approval & signature record. */
 export const GET = route<{ id: string }>(async (req, { params }) => {
   const ctx = await apiCtx();
+  rateLimit(`pdf:${ctx.user.id}`, 30);
   const { id } = await params;
   const a = await loadVersion(ctx, id, { withDoc: false });
   if (!a.canExport) throw new HttpError(403, "Export is not permitted for your role");

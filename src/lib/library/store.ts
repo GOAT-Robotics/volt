@@ -3,10 +3,10 @@ import type { Library, LibraryElement } from "@prisma/client";
 import { db, J } from "@/lib/db";
 import { parseElmt, serializeElmt } from "@/core/qet/elmt";
 import type { ElementDef } from "@/core/model";
+import { APPROVED_REV_KEY } from "./access";
 import { categoryFromPath, guessPrefix, newUuid, normCategory, slugify } from "./elmt-tools";
 
-export const MAX_IMPORT_BYTES = 80 * 1024 * 1024;
-export const MAX_IMPORT_FILES = 5000;
+export { MAX_IMPORT_BYTES, MAX_IMPORT_FILES } from "./limits";
 
 export type NewElement = {
   libraryId: string;
@@ -85,7 +85,9 @@ export function checkElmt(xml: string, path = "element"): ElementDef {
   return def;
 }
 
-export type ImportEntry = { path: string; data: Uint8Array };
+export type { ImportEntry } from "./archive";
+import { expandEntries, type ImportEntry } from "./archive";
+export { expandEntries };
 export type ImportOptions = {
   library: Library;
   ownerId: string;
@@ -99,6 +101,9 @@ export type ImportOptions = {
   overrides?: Record<string, ImportOverride>;
   /** parse and report only (the import review); nothing is written */
   dryRun?: boolean;
+  /** organisation elements updated by an import follow the library approval workflow */
+  requireApprovalForOrg?: boolean;
+  isApprover?: boolean;
 };
 export type ImportOverride = {
   /** skip this file */
@@ -149,44 +154,6 @@ function applyOverride(def: ElementDef, ov: ImportOverride): ElementDef {
   return out;
 }
 
-/** Expand .zip entries into .elmt entries (keeping folder paths); ignores qet_directory & junk. */
-export function expandEntries(files: ImportEntry[]): { entries: ImportEntry[]; errors: string[]; dirNames: Map<string, string> } {
-  const entries: ImportEntry[] = [];
-  const errors: string[] = [];
-  const dirNames = new Map<string, string>();
-  const take = (path: string, data: Uint8Array) => {
-    const p = path.replace(/\\/g, "/");
-    if (/(^|\/)(__MACOSX|\.)/.test(p)) return;
-    const base = p.split("/").pop() ?? "";
-    if (base === "qet_directory") {
-      const n = /<name\s+lang="en">([^<]*)<\/name>/.exec(strFromU8(data))?.[1];
-      if (n) dirNames.set(categoryFromPath(p), n.trim());
-      return;
-    }
-    if (/\.elmt$/i.test(base)) entries.push({ path: p, data });
-    else if (/\.zip$/i.test(base)) {
-      try {
-        const inner = Object.entries(unzipSync(data)).filter(([k]) => !k.endsWith("/") && !/(^|\/)(__MACOSX|\.)/.test(k));
-        const prefix = categoryFromPath(p);
-        // a single wrapper folder (e.g. "my_collection/…") is the archive itself, not a category
-        const tops = new Set(inner.map(([k]) => (k.includes("/") ? k.split("/")[0] : "")));
-        const wrap = tops.size === 1 ? [...tops][0] : "";
-        for (const [k, v] of inner) take((prefix ? prefix + "/" : "") + (wrap ? k.slice(wrap.length + 1) : k), v);
-      } catch (e) {
-        errors.push(`${p}: could not read ZIP archive (${(e as Error).message})`);
-      }
-    }
-  };
-  for (const f of files) {
-    if (entries.length > MAX_IMPORT_FILES) {
-      errors.push(`Too many files — only the first ${MAX_IMPORT_FILES} were processed`);
-      break;
-    }
-    take(f.path, f.data);
-  }
-  return { entries, errors, dirNames };
-}
-
 /** Strip a common single top-level folder ("my_collection/…") only when every entry shares it and it looks like an archive root. */
 function commonRoot(paths: string[]): string {
   if (paths.length < 2) return "";
@@ -200,7 +167,16 @@ export async function importElmts(files: ImportEntry[], o: ImportOptions): Promi
   const { entries, errors, dirNames } = expandEntries(files);
   const res: ImportResult = { created: 0, skipped: 0, updated: 0, errors, ids: [] };
   const root = commonRoot(entries.map((e) => e.path));
-  const existing = await db.libraryElement.findMany({ where: { ownerId: o.ownerId, kind: "ELEMENT", library: { workspaceId: o.library.workspaceId } }, select: { id: true, uuid: true, content: true, revision: true, name: true } });
+  // only the elements this batch could collide with (by uuid); never the XML of the whole library
+  const uuids = [...new Set(entries.map((e) => /<uuid\s+uuid="\{?([0-9a-fA-F-]{36})\}?"/.exec(strFromU8(e.data.subarray(0, 8192), true))?.[1]?.toLowerCase()).filter((u): u is string => !!u))];
+  const existing: { id: string; uuid: string; revision: number; name: string }[] = [];
+  for (let i = 0; i < uuids.length; i += 500)
+    existing.push(
+      ...(await db.libraryElement.findMany({
+        where: { ownerId: o.ownerId, kind: "ELEMENT", uuid: { in: uuids.slice(i, i + 500) }, library: { workspaceId: o.library.workspaceId } },
+        select: { id: true, uuid: true, revision: true, name: true },
+      })),
+    );
   const byUuid = new Map(existing.map((e) => [e.uuid, e]));
   const seenInBatch = new Set<string>();
   for (const e of entries) {
@@ -260,18 +236,24 @@ export async function importElmts(files: ImportEntry[], o: ImportOptions): Promi
         continue;
       }
       if (mode === "update" && dup) {
-        if (dup.content === xml) {
+        const full = await db.libraryElement.findUniqueOrThrow({ where: { id: dup.id } });
+        if (full.content === xml) {
           res.skipped++;
           continue;
         }
-        const full = await db.libraryElement.findUniqueOrThrow({ where: { id: dup.id } });
-        await addRevision(
-          full,
-          xml,
-          o.ownerId,
-          o.note ?? `Re-imported from ${rel}`,
-          ov ? { name, category: cat, prefix, ...(ov.description !== undefined ? { description: ov.description.trim() } : {}), ...(ov.tags ? { tags: JSON.stringify(ov.tags) } : {}) } : {},
-        );
+        // an organisation element: same workflow as editing it (pending approval, or the new
+        // revision becomes the approved one when an approver imports it)
+        const wf: { status?: string; meta?: string } = {};
+        if (full.visibility === "ORG" && (full.status === "APPROVED" || full.status === "PUBLISHED")) {
+          const meta = JSON.parse(full.meta || "{}") as Record<string, unknown>;
+          if (o.requireApprovalForOrg && !o.isApprover) wf.status = "PENDING_APPROVAL";
+          else if (full.status === "APPROVED") meta[APPROVED_REV_KEY] = full.revision + 1;
+          wf.meta = JSON.stringify(meta);
+        }
+        await addRevision(full, xml, o.ownerId, o.note ?? `Re-imported from ${rel}`, {
+          ...(ov ? { name, category: cat, prefix, ...(ov.description !== undefined ? { description: ov.description.trim() } : {}), ...(ov.tags ? { tags: JSON.stringify(ov.tags) } : {}) } : {}),
+          ...wf,
+        });
         res.updated++;
         res.ids.push(dup.id);
         continue;
@@ -309,7 +291,7 @@ export async function importElmts(files: ImportEntry[], o: ImportOptions): Promi
         approvedById: o.approvedById ?? null,
         approvedAt: o.approvedById ? new Date() : null,
       });
-      byUuid.set(uuid, { id: el.id, uuid, content: xml, revision: 1, name });
+      byUuid.set(uuid, { id: el.id, uuid, revision: 1, name });
       res.created++;
       res.ids.push(el.id);
     } catch (err) {
@@ -345,7 +327,8 @@ export function buildZip(items: Pick<LibraryElement, "id" | "name" | "category" 
     files[fn] = strToU8(it.content);
   }
   for (const d of dirs) files[`${d}/qet_directory`] = strToU8(qetDirectory(d === root ? rootName : d.split("/").pop()!));
-  return zipSync(files, { level: 6 });
+  // XML compresses well even at level 1, which is several times faster (this runs on the request thread)
+  return zipSync(files, { level: 1 });
 }
 
 export function metaOf(el: Pick<LibraryElement, "meta">) {

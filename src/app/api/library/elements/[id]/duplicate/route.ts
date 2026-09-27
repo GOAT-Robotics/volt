@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { route, body } from "@/lib/api";
-import { apiCtx } from "@/lib/session";
-import { J } from "@/lib/db";
+import { apiCtx, HttpError } from "@/lib/session";
+import { db, J } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { assertMember, loadElement, publicMeta, writableLibrary } from "@/lib/library/access";
 import { createElementRecord } from "@/lib/library/store";
@@ -20,10 +20,18 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   const el = a.el;
   const lib = await writableLibrary(ctx, b.libraryId);
   const name = b.name ?? `${el.name} (copy)`;
+  // viewers without full access copy the revision they are allowed to see, not a pending draft
+  let rev = el.revision;
   let content = el.content;
+  let meta = el.meta;
+  if (!a.full && a.viewerRevision && a.viewerRevision !== el.revision) {
+    const r = await db.libraryElementRevision.findUnique({ where: { elementId_revision: { elementId: el.id, revision: a.viewerRevision } } });
+    if (!r) throw new HttpError(404, "Revision not found");
+    ((rev = r.revision), (content = r.content), (meta = r.meta || el.meta));
+  }
   let uuid = newUuid();
   if (el.kind === "ELEMENT") {
-    const def = parseElmt(el.content, { id: el.id });
+    const def = parseElmt(content, { id: el.id });
     content = serializeElmt({ ...def, uuid, names: { ...def.names, en: name }, name });
   } else uuid = `block:${uuid}`;
   const copy = await createElementRecord({
@@ -37,11 +45,11 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
     tags: J.parse<string[]>(el.tags, []),
     uuid,
     content,
-    meta: { ...publicMeta(el.meta), derivedFrom: `${el.id}@${el.revision}` },
+    meta: { ...publicMeta(meta), derivedFrom: `${el.id}@${rev}` },
     license: el.license,
     attribution: el.attribution,
     source: el.source,
-    note: `Duplicated from “${el.name}” rev ${el.revision}`,
+    note: `Duplicated from “${el.name}” rev ${rev}`,
   });
   await audit({ workspaceId: ctx.workspace.id, actorId: ctx.user.id, type: "library.duplicate", data: { id: copy.id, from: el.id, name } });
   return { id: copy.id, revision: copy.revision };

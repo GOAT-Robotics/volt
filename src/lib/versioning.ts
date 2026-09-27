@@ -1,4 +1,5 @@
 import "server-only";
+import { guestMayComment } from "./comments";
 import { createHash } from "node:crypto";
 import { db } from "./db";
 import { HttpError, loadProject, type Ctx } from "./session";
@@ -58,15 +59,17 @@ export type VersionAccess = {
 export async function loadVersion(ctx: Ctx, versionId: string, opts: { withDoc?: boolean } = {}): Promise<VersionAccess> {
   const version = await db.version.findUnique({ where: { id: versionId }, ...(opts.withDoc === false ? { omit: { doc: true } } : {}) });
   if (!version) throw new HttpError(404, "Version not found");
-  const { project, can } = await loadProject(ctx, version.projectId);
+  const { project, can, inWorkspace } = await loadProject(ctx, version.projectId);
   if (!can("project.view") && !can("review.comment")) throw new HttpError(403, "No access to this project");
+  // guest reviewers (comment-only) see just the versions they were asked to review
+  if (!can("project.view") && !(await guestMayComment(ctx, versionId))) throw new HttpError(403, "This version was not shared with you");
   const status = version.status as VersionStatus;
   let editable = EDITABLE_STATUSES.includes(status) && can("project.edit") && project.state === "ACTIVE";
   let reason: string | undefined;
   if (!EDITABLE_STATUSES.includes(status)) reason = status === "IN_REVIEW" ? "Frozen for review — start a new version to make changes" : `This version is ${status.toLowerCase().replace("_", " ")} and immutable`;
   else if (!can("project.edit")) reason = "You have view access only";
   else if (project.state !== "ACTIVE") ((reason = "Project is archived"), (editable = false));
-  const isGuest = ctx.user.isGuest || (ctx.roles.length === 1 && ctx.roles[0] === "GUEST");
+  const isGuest = !inWorkspace;
   const canExport = isGuest ? ctx.settings.exports.guestCanExport : can("project.export") && (can("project.edit") || ctx.settings.exports.viewerCanExport);
   return { version: version as VersionAccess["version"], project, can, editable, reason, canComment: can("review.comment"), canExport };
 }
@@ -113,12 +116,43 @@ export function clientDoc(doc: Doc): Doc {
   return { ...doc, qet: { ...qet, hasSource: true } };
 }
 
-/** Put back the stored original project file into a document coming from the editor. */
-export function withStoredSource(incoming: Doc, storedDoc: string | null | undefined): Doc {
-  if (!incoming.qet?.hasSource || incoming.qet.source || !storedDoc) return incoming;
-  // the source is a plain string property: parse only what is needed
-  const stored = JSON.parse(storedDoc) as Doc;
-  const source = stored.qet?.source;
-  const { hasSource: _h, ...qet } = incoming.qet;
-  return { ...incoming, qet: { ...qet, ...(source ? { source } : {}) } };
+/**
+ * Put back the stored original project file into a document coming from the editor. The source
+ * only ever comes from the server copy (`storedSource`): a source sent by a client is dropped
+ * (it is served back for export and must not be something a user can write).
+ */
+export function withStoredSource(incoming: Doc, storedSource: string | null | undefined): Doc {
+  if (!incoming.qet) return incoming;
+  const { hasSource: _h, source: _s, ...qet } = incoming.qet;
+  return { ...incoming, qet: { ...qet, ...(storedSource ? { source: storedSource } : {}) } };
+}
+
+/**
+ * Search rows are rebuilt at most every 30 s per version while someone is editing (autosave
+ * runs every few seconds); the latest document wins.
+ */
+const pendingIndex = new Map<string, { projectId: string; doc: Doc; timer: ReturnType<typeof setTimeout> }>();
+export function scheduleReindex(versionId: string, projectId: string, doc: Doc) {
+  const cur = pendingIndex.get(versionId);
+  if (cur) {
+    cur.doc = doc;
+    return;
+  }
+  const entry = {
+    projectId,
+    doc,
+    timer: setTimeout(() => {
+      pendingIndex.delete(versionId);
+      void reindexVersion(versionId, entry.projectId, entry.doc).catch((e) => console.error("[reindex]", e));
+    }, 30_000),
+  };
+  pendingIndex.set(versionId, entry);
+}
+/** runs a pending reindex now (before submit, so review/search see the final document) */
+export async function flushReindex(versionId: string) {
+  const cur = pendingIndex.get(versionId);
+  if (!cur) return;
+  clearTimeout(cur.timer);
+  pendingIndex.delete(versionId);
+  await reindexVersion(versionId, cur.projectId, cur.doc);
 }

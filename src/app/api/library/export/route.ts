@@ -1,6 +1,7 @@
+import { rateLimit } from "@/lib/ratelimit";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
-import { route } from "@/lib/api";
+import { body, route } from "@/lib/api";
 import { apiCtx, HttpError } from "@/lib/session";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -19,15 +20,14 @@ async function exportZip(ctx: Awaited<ReturnType<typeof apiCtx>>, q: z.infer<typ
   if (q.category) and.push({ OR: [{ category: q.category }, { category: { startsWith: q.category + "/" } }] });
   const rows = await db.libraryElement.findMany({ where: { AND: and }, include: { library: true, shares: { select: { userId: true, canEdit: true } } }, orderBy: [{ category: "asc" }, { name: "asc" }] });
   if (!rows.length) throw new HttpError(404, "Nothing to export");
-  // plain org viewers get the approved revision
-  const items = await Promise.all(
-    rows.map(async (r) => {
-      const a = accessFor(ctx, r);
-      if (a.viewerRevision === r.revision) return r;
-      const rev = await db.libraryElementRevision.findUnique({ where: { elementId_revision: { elementId: r.id, revision: a.viewerRevision } } });
-      return { ...r, content: rev?.content ?? r.content };
-    }),
-  );
+  // plain org viewers get the approved revision (one query for all of them)
+  const pinned = rows.map((r) => ({ r, rev: accessFor(ctx, r).viewerRevision })).filter((x) => x.rev !== x.r.revision);
+  const revs = new Map<string, string>();
+  for (let i = 0; i < pinned.length; i += 300) {
+    const chunk = pinned.slice(i, i + 300);
+    for (const x of await db.libraryElementRevision.findMany({ where: { OR: chunk.map((p) => ({ elementId: p.r.id, revision: p.rev })) }, select: { elementId: true, content: true } })) revs.set(x.elementId, x.content);
+  }
+  const items = rows.map((r) => (revs.has(r.id) ? { ...r, content: revs.get(r.id)! } : r));
   const lib = q.libraryId ? rows[0].library.name : q.name || "volt_library";
   const zip = buildZip(items, lib);
   await audit({ workspaceId: ctx.workspace.id, actorId: ctx.user.id, type: "library.export", data: { ids: items.map((i) => i.id).slice(0, 200), count: items.length, libraryId: q.libraryId ?? null, format: "zip" } });
@@ -38,6 +38,7 @@ async function exportZip(ctx: Awaited<ReturnType<typeof apiCtx>>, q: z.infer<typ
 /** GET ?ids=a,b | ?libraryId=… [&category=…] */
 export const GET = route(async (req) => {
   const ctx = await apiCtx();
+  rateLimit(`library.export:${ctx.user.id}`, 10);
   assertMember(ctx);
   const sp = new URL(req.url).searchParams;
   return exportZip(ctx, Q.parse({ ids: sp.get("ids")?.split(",").filter(Boolean), libraryId: sp.get("libraryId") ?? undefined, category: sp.get("category") ?? undefined, name: sp.get("name") ?? undefined }));
@@ -46,6 +47,7 @@ export const GET = route(async (req) => {
 /** POST { ids } for large selections */
 export const POST = route(async (req) => {
   const ctx = await apiCtx();
+  rateLimit(`library.export:${ctx.user.id}`, 10);
   assertMember(ctx);
-  return exportZip(ctx, Q.parse(await req.json().catch(() => ({}))));
+  return exportZip(ctx, Q.parse(await body(req, z.unknown()).catch(() => ({}))));
 });

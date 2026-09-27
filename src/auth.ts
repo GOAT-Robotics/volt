@@ -4,7 +4,10 @@ import Credentials from "next-auth/providers/credentials";
 import { db } from "@/lib/db";
 import { syncUserOnSignIn } from "@/lib/membership";
 
-const devLogin = process.env.AUTH_DEV_LOGIN === "true" && process.env.NODE_ENV !== "production";
+// never together with Entra, never in a production build
+const devLogin = process.env.AUTH_DEV_LOGIN === "true" && process.env.NODE_ENV !== "production" && !process.env.AUTH_MICROSOFT_ENTRA_ID_ID;
+if (process.env.AUTH_MICROSOFT_ENTRA_ID_ID && !/login\.microsoftonline\.com\/[0-9a-f-]{36}\//i.test(process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER ?? "") && !process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT)
+  console.error("[auth] AUTH_MICROSOFT_ENTRA_ID_ISSUER must name your tenant (https://login.microsoftonline.com/<tenant-id>/v2.0/) — Entra sign-ins are refused until it does");
 const sessionHours = Number(process.env.SESSION_HOURS ?? 12);
 
 declare module "next-auth" {
@@ -58,6 +61,7 @@ export const authConfig: NextAuthConfig = {
         email: String(user.email ?? p.preferred_username ?? "").toLowerCase(),
         name: String(user.name ?? p.name ?? user.email ?? "User"),
         oid: account?.provider === "microsoft-entra-id" ? String(p.oid ?? user.id ?? "") : null,
+        tid: typeof p.tid === "string" ? p.tid : null,
         groups: Array.isArray(p.groups) ? (p.groups as string[]) : [],
         isGuest: p.acct === 1 || String(user.email ?? "").includes("#EXT#"),
       });

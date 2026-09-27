@@ -114,7 +114,7 @@ export function parseLogos(el: XElement, used?: Set<string>): Record<string, Tit
         out[name] = { type, data: textToBase64(serializeXml(svg)) };
       } else {
         const data = textOf(l).replace(/\s+/g, "");
-        if (data) out[name] = { type, data };
+        if (data && /^[A-Za-z0-9+/=]+$/.test(data)) out[name] = { type, data };
       }
     } catch {
       /* unreadable logo: the cell stays empty */

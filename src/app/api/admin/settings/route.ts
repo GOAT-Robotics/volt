@@ -31,7 +31,14 @@ const Settings = z.object({
   signature: z.object({ provider: z.literal("builtin"), statement: z.string().trim().min(10).max(2000), expiryDays: z.number().int().min(0).max(365) }),
   exports: z.object({ viewerCanExport: z.boolean(), guestCanExport: z.boolean(), formats: z.array(z.enum(["pdf", "svg", "png", "qet", "dxf"])).min(1) }),
   retention: z.object({ archiveAfterDays: z.number().int().min(1).max(36500).nullable(), deleteAutosavesAfterDays: z.number().int().min(1).max(3650), keepAuditYears: z.number().int().min(1).max(100) }),
-  notifications: z.object({ email: z.boolean(), teamsWebhook: z.string().trim().url().startsWith("https://").nullable().or(z.literal("").transform(() => null)) }),
+  notifications: z.object({ email: z.boolean(), teamsWebhook: z
+      .string()
+      .trim()
+      .url()
+      .startsWith("https://")
+      // Microsoft webhook hosts only (the server posts to it: no internal addresses)
+      .refine((u) => /^https:\/\/[a-z0-9.-]+\.(webhook\.office\.com|logic\.azure\.com|environment\.api\.powerplatform\.com)(:443)?\//i.test(u), "Use a Microsoft Teams / Power Automate webhook URL")
+      .nullable().or(z.literal("").transform(() => null)) }),
   qetBaseline: z.string().trim().min(1).max(20),
   autosaveSeconds: z.number().int().min(1).max(600),
   library: z.object({ requireApprovalForOrg: z.boolean() }),

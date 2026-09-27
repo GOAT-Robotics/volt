@@ -6,6 +6,9 @@ import { drawPage, pageGeometry, type DrawOpts } from "./scene";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const f = (n: number) => String(Math.round(n * 100) / 100);
+/** colours and other attribute values that come from documents are escaped too */
+const a = (s: string | number | undefined | null) => esc(String(s ?? ""));
+const B64 = /^[A-Za-z0-9+/=]*$/;
 
 /** Approximate text metrics when no canvas is available (Helvetica-like average widths). */
 export function approxMeasure(text: string, size: number, _font?: string, weight = 400): number {
@@ -43,12 +46,12 @@ export class SvgPainter implements Painter {
   stroke(p: PathData, s: StrokeStyle) {
     if (!p.ops.length) return;
     this.out.push(
-      `<path d="${pathToSvgD(p, f)}" fill="none" stroke="${s.color}" stroke-width="${f(s.width)}"${s.dash ? ` stroke-dasharray="${s.dash.map((d) => f(d * Math.max(1, s.width))).join(" ")}"` : ""} stroke-linecap="${s.cap ?? "butt"}" stroke-linejoin="${s.join ?? "miter"}"${s.alpha !== undefined && s.alpha !== 1 ? ` opacity="${s.alpha}"` : ""}/>`,
+      `<path d="${pathToSvgD(p, f)}" fill="none" stroke="${a(s.color)}" stroke-width="${f(s.width)}"${s.dash ? ` stroke-dasharray="${s.dash.map((d) => f(d * Math.max(1, s.width))).join(" ")}"` : ""} stroke-linecap="${a(s.cap ?? "butt")}" stroke-linejoin="${a(s.join ?? "miter")}"${s.alpha !== undefined && s.alpha !== 1 ? ` opacity="${f(s.alpha)}"` : ""}/>`,
     );
   }
   fill(p: PathData, color: string, alpha?: number) {
     if (!p.ops.length) return;
-    this.out.push(`<path d="${pathToSvgD(p, f)}" fill="${color}" stroke="none"${alpha !== undefined && alpha !== 1 ? ` fill-opacity="${alpha}"` : ""}/>`);
+    this.out.push(`<path d="${pathToSvgD(p, f)}" fill="${a(color)}" stroke="none"${alpha !== undefined && alpha !== 1 ? ` fill-opacity="${f(alpha)}"` : ""}/>`);
   }
   text(t: TextDraw) {
     const anchor = t.align === "center" ? "middle" : t.align === "right" ? "end" : "start";
@@ -58,21 +61,21 @@ export class SvgPainter implements Painter {
       const w = this.measure(t.text, t.size, t.font, t.weight);
       const ax = t.align === "center" ? t.x - w / 2 : t.align === "right" ? t.x - w : t.x;
       const ay = t.baseline === "top" ? t.y : t.baseline === "middle" ? t.y - t.size / 2 : t.y - t.size * 0.8;
-      this.out.push(`<rect x="${f(ax - 1)}" y="${f(ay - 0.5)}" width="${f(w + 2)}" height="${f(t.size * 1.15)}" fill="${t.background}"${tr}/>`);
+      this.out.push(`<rect x="${f(ax - 1)}" y="${f(ay - 0.5)}" width="${f(w + 2)}" height="${f(t.size * 1.15)}" fill="${a(t.background)}"${tr}/>`);
     }
     this.out.push(
-      `<text x="${f(t.x)}" y="${f(t.y)}" font-family="${esc(t.font)}" font-size="${f(t.size)}" font-weight="${t.weight ?? 400}"${t.italic ? ' font-style="italic"' : ""} fill="${t.color}" text-anchor="${anchor}" dominant-baseline="${base}"${tr}${t.alpha !== undefined && t.alpha !== 1 ? ` opacity="${t.alpha}"` : ""} xml:space="preserve">${esc(t.text)}</text>`,
+      `<text x="${f(t.x)}" y="${f(t.y)}" font-family="${esc(t.font)}" font-size="${f(t.size)}" font-weight="${f(t.weight ?? 400)}"${t.italic ? ' font-style="italic"' : ""} fill="${a(t.color)}" text-anchor="${anchor}" dominant-baseline="${base}"${tr}${t.alpha !== undefined && t.alpha !== 1 ? ` opacity="${f(t.alpha)}"` : ""} xml:space="preserve">${esc(t.text)}</text>`,
     );
   }
   image(d: ImageDraw) {
-    if (d.w <= 0 || d.h <= 0) return;
+    if (d.w <= 0 || d.h <= 0 || !/^image\/(png|jpeg|svg\+xml)$/.test(d.mime) || !B64.test(d.data)) return;
     this.out.push(`<image x="${f(d.x)}" y="${f(d.y)}" width="${f(d.w)}" height="${f(d.h)}" preserveAspectRatio="none" href="data:${d.mime};base64,${d.data}"/>`);
   }
   measure(text: string, size: number, font: string, weight?: number) {
     return this.measureFn(text, size, font, weight);
   }
   begin(layer: string) {
-    this.out.push(`<g id="${layer}-${this.out.length}" data-layer="${layer}">`);
+    this.out.push(`<g id="${a(layer)}-${this.out.length}" data-layer="${a(layer)}">`);
   }
   end() {
     this.out.push("</g>");

@@ -1,4 +1,5 @@
-import { route } from "@/lib/api";
+import { rateLimit } from "@/lib/ratelimit";
+import { formData, route } from "@/lib/api";
 import { apiCtx, assertCan, HttpError } from "@/lib/session";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -12,14 +13,10 @@ const MAX = 50 * 1024 * 1024;
 /** Import a QElectroTech .qet project: re-parsed server-side, original bytes + compatibility report preserved. */
 export const POST = route(async (req) => {
   const ctx = await apiCtx();
+  rateLimit(`project.import:${ctx.user.id}`, 10);
   assertCan(ctx, "project.create");
   if (Number(req.headers.get("content-length") ?? 0) > MAX + 1024 * 1024) throw new HttpError(413, "File exceeds the 50 MB limit");
-  let fd: FormData;
-  try {
-    fd = await req.formData();
-  } catch {
-    throw new HttpError(400, "Expected multipart form data");
-  }
+  const fd = await formData(req, MAX + 1024 * 1024, "File");
   const file = fd.get("file");
   if (!(file instanceof File)) throw new HttpError(400, "No file uploaded");
   if (file.size > MAX) throw new HttpError(413, "File exceeds the 50 MB limit");

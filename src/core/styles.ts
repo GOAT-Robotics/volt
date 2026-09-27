@@ -137,7 +137,7 @@ export const CSS_NAMED: Record<string, string> = {aliceblue:"#f0f8ff",antiquewhi
 export function qetColor(c: string | undefined, fallback = "#000000"): string {
   if (!c) return fallback;
   if (QET_COLORS[c]) return QET_COLORS[c];
-  if (c.startsWith("#")) return c;
+  if (c.startsWith("#")) return /^#[0-9a-f]{3,8}$/i.test(c) ? c : fallback;
   const m = /^HTML(Pink|Red|Orange|Yellow|Brown|Purple|White|Gray|Grey|Blue|Cyan|Green)(\w+)$/.exec(c);
   if (m) return CSS_NAMED[m[2].toLowerCase()] ?? fallback;
   return CSS_NAMED[c.toLowerCase()] ?? fallback;

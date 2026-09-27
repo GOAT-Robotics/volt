@@ -1,4 +1,5 @@
-import { route } from "@/lib/api";
+import { rateLimit } from "@/lib/ratelimit";
+import { formData, route } from "@/lib/api";
 import { apiCtx, HttpError, loadProject } from "@/lib/session";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -15,11 +16,13 @@ export const GET = route<{ id: string }>(async (req, { params }) => {
   const { id } = await params;
   const { can } = await loadProject(ctx, id);
   if (!can("project.view") && !can("review.comment")) throw new HttpError(403, "No access");
+  // comment-only guests: files on comments and reviews, not the project's documents
+  const guestTypes = can("project.view") ? null : ["COMMENT", "REVIEW"];
   const url = new URL(req.url);
   const ownerType = url.searchParams.get("ownerType");
   const ownerId = url.searchParams.get("ownerId");
   const rows = await db.attachment.findMany({
-    where: { projectId: id, ...(ownerType ? { ownerType } : {}), ...(ownerId ? { ownerId } : {}) },
+    where: { projectId: id, ...(ownerType ? { ownerType } : {}), ...(ownerId ? { ownerId } : {}), ...(guestTypes ? { ownerType: { in: guestTypes.filter((t) => !ownerType || t === ownerType) } } : {}) },
     omit: { data: true },
     orderBy: { createdAt: "desc" },
   });
@@ -54,21 +57,22 @@ async function checkOwner(projectId: string, ownerType: string, ownerId: string)
 
 export const POST = route<{ id: string }>(async (req, { params }) => {
   const ctx = await apiCtx();
+  rateLimit(`attach:${ctx.user.id}`, 60);
   const { id } = await params;
   const { project, can } = await loadProject(ctx, id);
   if (Number(req.headers.get("content-length") ?? 0) > MAX_ATTACHMENT + 64 * 1024) throw new HttpError(413, "File exceeds the 25 MB limit");
-  let fd: FormData;
-  try {
-    fd = await req.formData();
-  } catch {
-    throw new HttpError(400, "Expected multipart form data");
-  }
+  const fd = await formData(req, MAX_ATTACHMENT + 64 * 1024, "File");
   const file = fd.get("file");
   const ownerType = String(fd.get("ownerType") ?? "PROJECT").toUpperCase();
   const ownerId = String(fd.get("ownerId") ?? id);
   if (!(OWNER_TYPES as readonly string[]).includes(ownerType)) throw new HttpError(400, "Invalid ownerType");
   if (!(file instanceof File)) throw new HttpError(400, "No file uploaded");
   const versionId = await checkOwner(id, ownerType, ownerId);
+  // comments and reviews of closed versions are part of the record
+  if (versionId && (ownerType === "COMMENT" || ownerType === "REVIEW")) {
+    const v = await db.version.findUnique({ where: { id: versionId }, select: { status: true } });
+    if (!v || !["DRAFT", "CHANGES_REQUESTED", "IN_REVIEW"].includes(v.status)) throw new HttpError(409, "This version is closed — files can no longer be attached to its comments or review");
+  }
   // who may attach what
   if (ownerType === "COMMENT") {
     if (!can("review.comment")) throw new HttpError(403, "You cannot comment on this project");

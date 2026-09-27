@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { parseRoles, joinRoles } from "@/lib/roles";
 import { PROJECT_ROLES } from "@/lib/constants";
+import { assertGrantable } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,9 @@ export const GET = route<{ id: string }>(async (_req, { params }) => {
   const { can } = await loadProject(ctx, id);
   if (!can("project.view") && !can("review.comment")) throw new HttpError(403, "No access");
   const rows = await db.projectMember.findMany({ where: { projectId: id }, include: { user: true } });
-  return { members: rows.map((m) => ({ userId: m.userId, name: m.user.name, email: m.user.email, isGuest: m.user.isGuest, disabled: m.user.disabled, roles: parseRoles(m.roles) })) };
+  // comment-only guests see names, not email addresses
+  const full = can("project.view");
+  return { members: rows.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, disabled: m.user.disabled, roles: parseRoles(m.roles) })) };
 });
 
 const Body = z
@@ -39,6 +42,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   if (!user) throw new HttpError(404, "User not found");
   if (user.disabled) throw new HttpError(409, "This user is disabled");
   const existing = await db.projectMember.findUnique({ where: { projectId_userId: { projectId: id, userId: user.id } } });
+  assertGrantable(ctx, project, user, parseRoles(existing?.roles), [...parseRoles(existing?.roles), ...b.roles]);
   const roles = joinRoles([...parseRoles(existing?.roles), ...b.roles]);
   await db.projectMember.upsert({ where: { projectId_userId: { projectId: id, userId: user.id } }, update: { roles }, create: { projectId: id, userId: user.id, roles } });
   await audit({ workspaceId: project.workspaceId, projectId: id, actorId: ctx.user.id, type: "project.member", data: { user: user.email, roles, action: existing ? "update" : "add" } });

@@ -6,7 +6,7 @@ import { HttpError, type Ctx } from "./session";
 import { parseSettings, type ApprovalPolicy } from "./settings";
 import { effectivePolicy } from "./projects";
 import { usersInGroup, userCan } from "./access";
-import { rolesAllow, type Role } from "./roles";
+import { parseRoles, rolesAllow, type Role } from "./roles";
 
 type ReviewWithAssignments = NonNullable<Awaited<ReturnType<typeof loadReview>>>;
 async function loadReview(reviewId: string) {
@@ -59,6 +59,17 @@ export async function applyExpiry(versionId: string): Promise<void> {
   }
 }
 
+/** applyExpiry for every version of a project, with one signature update and one policy lookup */
+export async function applyProjectExpiry(projectId: string): Promise<void> {
+  await db.signature.updateMany({ where: { version: { projectId }, status: "REQUESTED", expiresAt: { lt: new Date() } }, data: { status: "EXPIRED" } });
+  const project = await db.project.findUnique({ where: { id: projectId } });
+  if (!project) return;
+  const policy = await policyForProject(project);
+  if (!policy.approvalExpiryDays || policy.approvalExpiryDays <= 0) return;
+  const open = await db.version.findMany({ where: { projectId, status: { in: ["IN_REVIEW", "APPROVED"] } }, select: { id: true } });
+  for (const v of open) await applyExpiry(v.id);
+}
+
 /* ------------------------------------------------------------------ */
 /* Review evaluation                                                    */
 /* ------------------------------------------------------------------ */
@@ -91,6 +102,7 @@ function assigneeName(a: { userId: string | null }) {
 async function primeNames(r: ReviewWithAssignments) {
   const ids = r.assignments.flatMap((a) => [a.userId, a.decidedById]).filter((x): x is string => !!x);
   if (!ids.length) return;
+  if (names.size > 5000) names.clear();
   const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
   for (const u of users) names.set(u.id, u.name);
 }
@@ -116,8 +128,9 @@ export async function reviewInfo(ctx: Ctx, versionId: string, roles: Role[]) {
   let canDecide = false;
   if (r.status === "OPEN" && r.version.status === "IN_REVIEW") {
     const { mine, now } = eligibleAssignments(r, ctx.user.id, ctx.user.groups);
-    const decide = rolesAllow([...ctx.roles, ...roles], "review.decide");
-    const approve = rolesAllow([...ctx.roles, ...roles], "review.approve");
+    // `roles` are the effective roles from loadProject (workspace roles only count in their own workspace)
+    const decide = rolesAllow(roles, "review.decide");
+    const approve = rolesAllow(roles, "review.approve");
     if (!mine.length) blockers.push("You are not assigned to this review");
     else if (!now.length) blockers.push("Sequential review — waiting for earlier reviewers");
     else if (!decide) blockers.push("Your role does not allow review decisions");
@@ -193,7 +206,7 @@ export async function decide(ctx: Ctx, reviewId: string, projectRoles: Role[], d
   const r = await loadReview(reviewId);
   if (!r) throw new HttpError(404, "Review not found");
   if (r.status !== "OPEN" || r.version.status !== "IN_REVIEW") throw new HttpError(409, "This review is closed");
-  const roles = [...ctx.roles, ...projectRoles];
+  const roles = projectRoles; // effective roles from loadProject
   if (!rolesAllow(roles, "review.decide")) throw new HttpError(403, "Your role does not allow review decisions");
   if (decision === "APPROVED" && !rolesAllow(roles, "review.approve")) throw new HttpError(403, "Approving requires the Approver role");
   if (decision !== "APPROVED" && !reason.trim()) throw new HttpError(400, "A reason is required");
@@ -295,8 +308,11 @@ export async function startReview(
     } else {
       if (seen.has(rv.groupId)) continue;
       seen.add(rv.groupId);
+      // only Entra groups mapped in this workspace; they approve when their mapped roles allow it
       const gm = await db.groupMapping.findFirst({ where: { workspaceId: v.project.workspaceId, entraGroupId: rv.groupId } });
-      assignments.push({ order: order++, groupId: rv.groupId, groupName: gm?.displayName ?? rv.groupName ?? rv.groupId, canApprove: true });
+      if (!gm) throw new HttpError(400, `Group ${rv.groupName ?? rv.groupId} is not set up in this workspace (Administration → Groups)`);
+      if (!rolesAllow(parseRoles(gm.roles), "review.decide")) throw new HttpError(400, `Group ${gm.displayName || rv.groupId} does not have a reviewer or approver role`);
+      assignments.push({ order: order++, groupId: rv.groupId, groupName: gm.displayName || rv.groupName || rv.groupId, canApprove: rolesAllow(parseRoles(gm.roles), "review.approve") });
     }
   }
   const approvers = assignments.filter((a) => a.canApprove);

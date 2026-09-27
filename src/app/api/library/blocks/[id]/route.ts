@@ -23,7 +23,7 @@ export const PUT = route<{ id: string }>(async (req, { params }) => {
   const { id } = await params;
   const a = await loadElement(ctx, id);
   if (a.el.kind !== "BLOCK") throw new HttpError(400, "Not a block");
-  const b = await body(req, Put);
+  const b = await body(req, Put, 20 * 1024 * 1024);
   const { content, ...rest } = b;
   return updateElement(ctx, a, { ...rest, content: content ? JSON.stringify({ junctions: [], texts: [], ports: [], ...content }) : undefined });
 });

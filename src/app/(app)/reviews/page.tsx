@@ -21,7 +21,12 @@ export default async function ReviewsPage() {
 
   const [pending, sigs, submitted, decided] = await Promise.all([
     db.reviewAssignment.findMany({
-      where: { decision: "PENDING", review: { status: "OPEN", version: { status: "IN_REVIEW" } }, OR: [{ userId: me }, { groupId: { in: groups } }] },
+      where: {
+        decision: "PENDING",
+        review: { status: "OPEN", version: { status: "IN_REVIEW" } },
+        // group assignments only count in workspaces the user belongs to
+        OR: [{ userId: me }, { groupId: { in: groups }, review: { version: { project: { workspaceId: { in: ctx.workspaces.map((w) => w.id) } } } } }],
+      },
       include: { review: { include: { assignments: true, version: { omit: { doc: true }, include: { project: true } } } } },
       orderBy: { review: { createdAt: "asc" } },
     }),
@@ -29,8 +34,9 @@ export default async function ReviewsPage() {
     db.review.findMany({ where: { submittedById: me }, include: { assignments: true, version: { omit: { doc: true }, include: { project: true } } }, orderBy: { createdAt: "desc" }, take: 25 }),
     db.reviewAssignment.findMany({ where: { decidedById: me }, include: { review: { include: { version: { omit: { doc: true }, include: { project: true } } } } }, orderBy: { decidedAt: "desc" }, take: 20 }),
   ]);
-  const earlierSigs = new Map<string, number>();
-  for (const s of sigs) earlierSigs.set(s.id, await db.signature.count({ where: { versionId: s.versionId, status: "REQUESTED", order: { lt: s.order } } }));
+  // signatures still waiting before mine, per version (one query)
+  const open = sigs.length ? await db.signature.findMany({ where: { versionId: { in: [...new Set(sigs.map((s) => s.versionId))] }, status: "REQUESTED" }, select: { versionId: true, order: true } }) : [];
+  const earlierSigs = new Map<string, number>(sigs.map((s) => [s.id, open.filter((o) => o.versionId === s.versionId && o.order < s.order).length]));
   const submitterIds = [...new Set(pending.map((a) => a.review.submittedById))];
   const names = new Map((await db.user.findMany({ where: { id: { in: submitterIds } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   // dedupe (user + group assignment on the same review)

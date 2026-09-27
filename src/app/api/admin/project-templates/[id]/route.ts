@@ -47,7 +47,7 @@ export const PATCH = route<{ id: string }>(async (req, { params }) => {
   const ctx = await apiCtx();
   assertAdmin(ctx);
   const { id } = await params;
-  const b = await body(req, Patch);
+  const b = await body(req, Patch, 20 * 1024 * 1024);
   const t = await db.projectTemplate.findFirst({ where: { id, workspaceId: ctx.workspace.id } });
   if (!t) throw new HttpError(404, "Project template not found");
   const at = new Date().toISOString();

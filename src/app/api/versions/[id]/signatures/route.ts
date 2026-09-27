@@ -31,7 +31,8 @@ export const GET = route<{ id: string }>(async (_req, { params }) => {
       docHash: s.docHash,
       pdfHash: s.pdfHash,
       provider: s.provider,
-      evidence: J.parse(s.evidence, null),
+      // signer IP, user agent and account ids: for project managers and the signatory
+      evidence: a.can("project.manage") || s.signatoryId === ctx.user.id ? J.parse(s.evidence, null) : null,
       seal: s.seal,
     })),
     eligible: a.can("project.manage") ? await eligibleSignatories(a.project.workspaceId, a.project.id) : [],

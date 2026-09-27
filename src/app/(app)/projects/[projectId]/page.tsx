@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { requireCtx, loadProject, HttpError } from "@/lib/session";
+import { getCtx, requireCtx, loadProject, HttpError } from "@/lib/session";
 import { db, J } from "@/lib/db";
-import { applyExpiry } from "@/lib/workflow";
+import { applyProjectExpiry } from "@/lib/workflow";
 import { effectivePolicy } from "@/lib/projects";
 import { eligibleSignatories } from "@/lib/signing/service";
 import { auditLabel, describeAudit } from "@/lib/describe";
@@ -13,8 +13,10 @@ import { ProjectView, type ProjectData } from "./ProjectView";
 
 export async function generateMetadata({ params }: { params: Promise<{ projectId: string }> }): Promise<Metadata> {
   const { projectId } = await params;
-  const p = await db.project.findUnique({ where: { id: projectId }, select: { name: true } });
-  return { title: p?.name ?? "Project" };
+  const ctx = await getCtx();
+  if (!ctx) return { title: "Project" };
+  const p = await loadProject(ctx, projectId).catch(() => null);
+  return { title: p?.project.name ?? "Project" };
 }
 
 export default async function ProjectPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ tab?: string }> }) {
@@ -31,16 +33,17 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const { project, can } = lp;
   if (!can("project.view") && !can("review.comment")) notFound();
 
-  const pre = await db.version.findMany({ where: { projectId, status: { in: ["IN_REVIEW", "APPROVED"] } }, select: { id: true } });
-  for (const v of pre) await applyExpiry(v.id);
+  await applyProjectExpiry(projectId);
+  // comment-only guests: the versions they review, not the project's records
+  const full = can("project.view");
 
   const [versions, reviews, signatures, events, members, attachments, imports, folders, fav, policy] = await Promise.all([
     db.version.findMany({ where: { projectId }, omit: { doc: true }, orderBy: { seq: "desc" } }),
     db.review.findMany({ where: { version: { projectId } }, include: { assignments: { orderBy: { order: "asc" } } }, orderBy: { createdAt: "desc" } }),
     db.signature.findMany({ where: { version: { projectId } }, orderBy: [{ createdAt: "desc" }, { order: "asc" }] }),
-    db.auditEvent.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, take: 300, include: { actor: { select: { name: true } } } }),
+    !full ? [] : db.auditEvent.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, take: 300, include: { actor: { select: { name: true } } } }),
     db.projectMember.findMany({ where: { projectId }, include: { user: true } }),
-    db.attachment.findMany({ where: { projectId }, omit: { data: true }, orderBy: { createdAt: "desc" } }),
+    db.attachment.findMany({ where: { projectId, ...(full ? {} : { ownerType: { in: ["REVIEW", "COMMENT"] } }) }, omit: { data: true }, orderBy: { createdAt: "desc" } }),
     db.importRecord.findMany({ where: { projectId }, omit: { original: true }, orderBy: { createdAt: "desc" } }),
     isGuestCtx(ctx) ? [] : db.folder.findMany({ where: { workspaceId: project.workspaceId }, orderBy: { name: "asc" } }),
     db.favorite.findUnique({ where: { userId_projectId: { userId: ctx.user.id, projectId } } }),
@@ -116,7 +119,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       status: s.status,
       order: s.order,
       purpose: s.purpose,
-      signatory: users.get(s.signatoryId) ? { id: s.signatoryId, name: users.get(s.signatoryId)!.name, email: users.get(s.signatoryId)!.email } : { id: s.signatoryId, name: "Unknown", email: "" },
+      signatory: users.get(s.signatoryId) ? { id: s.signatoryId, name: users.get(s.signatoryId)!.name, email: full ? users.get(s.signatoryId)!.email : "" } : { id: s.signatoryId, name: "Unknown", email: "" },
       requestedBy: nm(s.requestedById) ?? "",
       createdAt: s.createdAt.toISOString(),
       expiresAt: s.expiresAt?.toISOString() ?? null,
@@ -125,11 +128,12 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       docHash: s.docHash,
       pdfHash: s.pdfHash,
       provider: s.provider,
-      evidence: J.parse<Record<string, unknown> | null>(s.evidence, null),
+      // signer IP, user agent and account ids: for project managers and the signatory
+      evidence: canManage || s.signatoryId === ctx.user.id ? J.parse<Record<string, unknown> | null>(s.evidence, null) : null,
       seal: s.seal,
     })),
     activity: events.map((e) => ({ id: e.id, type: e.type, label: auditLabel(e.type), detail: describeAudit(e.type, { ...J.parse<Record<string, unknown>>(e.data, {}), ...(e.versionId && !J.parse<Record<string, unknown>>(e.data, {}).label && labelOf.get(e.versionId) ? { label: labelOf.get(e.versionId) } : {}) }), actor: e.actor?.name ?? "System", createdAt: e.createdAt.toISOString() })),
-    members: members.map((m) => ({ userId: m.userId, name: m.user.name, email: m.user.email, isGuest: m.user.isGuest, disabled: m.user.disabled, roles: parseRoles(m.roles) })),
+    members: members.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, disabled: m.user.disabled, roles: parseRoles(m.roles) })),
     attachments: attachments.map((a) => ({ id: a.id, ownerType: a.ownerType, ownerId: a.ownerId, filename: a.filename, mime: a.mime, size: a.size, sha256: a.sha256, uploadedBy: nm(a.userId) ?? "", uploadedById: a.userId, createdAt: a.createdAt.toISOString(), context: a.ownerType === "REVIEW" ? `Review of v${labelOf.get(reviews.find((r) => r.id === a.ownerId)?.versionId ?? "") ?? "?"}` : a.ownerType === "RELEASE" ? `v${labelOf.get(a.ownerId) ?? "?"}` : a.ownerType === "COMMENT" ? "Comment" : "Project" })),
     imports: imports.map((i) => ({ id: i.id, filename: i.filename, sha256: i.sha256, createdAt: i.createdAt.toISOString(), versionLabel: i.versionId ? labelOf.get(i.versionId) ?? null : null, report: J.parse<CompatReport | null>(i.report, null) })),
     eligibleSignatories: canManage ? await eligibleSignatories(project.workspaceId, projectId) : [],

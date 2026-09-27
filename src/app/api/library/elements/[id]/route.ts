@@ -66,7 +66,7 @@ async function patch(req: Request, id: string) {
   const ctx = await apiCtx();
   assertMember(ctx);
   const a = await loadElement(ctx, id);
-  const b = await body(req, Patch);
+  const b = await body(req, Patch, 20 * 1024 * 1024);
   return updateElement(ctx, a, b);
 }
 

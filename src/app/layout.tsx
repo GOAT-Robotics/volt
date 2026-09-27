@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+import { headers } from "next/headers";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,11 +11,12 @@ export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme
 
 const themeScript = `try{var t=localStorage.getItem('volt-theme');var d=t==='dark'||(!t||t==='system')&&matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark')}catch(e){}`;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <Script id="volt-theme" strategy="beforeInteractive">
+        <Script id="volt-theme" strategy="beforeInteractive" nonce={nonce}>
           {themeScript}
         </Script>
         {children}

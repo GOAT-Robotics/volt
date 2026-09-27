@@ -36,9 +36,12 @@ export const PATCH = route<{ id: string }>(async (req, { params }) => {
   if (!root) throw new HttpError(404, "Thread not found");
   // commenters in the thread, the version author and project owners/managers may change status
   const participants = await db.comment.findMany({ where: { OR: [{ id: root.id }, { parentId: root.id }] }, select: { authorId: true } });
-  const allowed = participants.some((p) => p.authorId === ctx.user.id) || a.version.createdById === ctx.user.id || a.can("project.manage");
-  if (!allowed) throw new HttpError(403, "Only commenters, the version author or project owners can change a comment's status");
-  if (["SUPERSEDED", "WITHDRAWN"].includes(a.version.status)) throw new HttpError(409, "This version is closed");
+  // closing a thread (which can complete a review) is for its author, the version author or owners;
+  // anyone in the thread may reopen it
+  const closing = b.status === "RESOLVED" || b.status === "REJECTED";
+  const allowed = root.authorId === ctx.user.id || a.version.createdById === ctx.user.id || a.can("project.manage") || (!closing && participants.some((p) => p.authorId === ctx.user.id));
+  if (!allowed) throw new HttpError(403, closing ? "Only the comment's author, the version author or project owners can resolve it" : "Only people in this thread can reopen it");
+  if (!["DRAFT", "CHANGES_REQUESTED", "IN_REVIEW"].includes(a.version.status)) throw new HttpError(409, "This version is closed — its comments are part of the record");
   const u = await db.comment.update({ where: { id: root.id }, data: { status: b.status }, include: { author: { select: { id: true, name: true } } } });
   await audit({ workspaceId: a.project.workspaceId, projectId: a.project.id, versionId: a.version.id, actorId: ctx.user.id, type: "comment.status", data: { commentId: root.id, from: root.status, to: b.status } });
   // resolving the last open comment may complete a pending review

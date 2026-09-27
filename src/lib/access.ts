@@ -71,7 +71,7 @@ export async function projectManagers(projectId: string, workspaceId: string): P
 }
 
 export function contentDisposition(filename: string, inline = false) {
-  const safe = filename.replace(/[\r\n"]/g, "_");
+  const safe = filename.replace(/[\r\n"\\]/g, "_");
   const ascii = safe.replace(/[^\x20-\x7e]/g, "_");
   return `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(safe)}`;
 }
@@ -86,4 +86,22 @@ export function fileResponse(data: Uint8Array | Buffer, opts: { filename: string
       "cache-control": opts.cache ?? "private, no-store",
     },
   });
+}
+
+/** project roles that carry approval, signing or ownership power */
+const PRIVILEGED_PROJECT_ROLES = ["OWNER", "APPROVER", "SIGNATORY"];
+
+/**
+ * Who may hand out which project roles: approval, signing and ownership only by a workspace
+ * admin of the project's workspace (a project owner cannot make themselves or a friend a
+ * signatory), never to guests, and nobody changes their own privileged roles.
+ */
+export function assertGrantable(ctx: Ctx, project: { workspaceId: string }, target: { id: string; isGuest: boolean }, before: string[], after: string[]) {
+  const added = after.filter((r) => PRIVILEGED_PROJECT_ROLES.includes(r) && !before.includes(r));
+  const removed = before.filter((r) => PRIVILEGED_PROJECT_ROLES.includes(r) && !after.includes(r));
+  if (!added.length && !removed.length) return;
+  const admin = ctx.workspace.id === project.workspaceId && ctx.roles.includes("ADMIN");
+  if (added.length && target.isGuest) throw new HttpError(403, "Guests cannot be owners, approvers or signatories");
+  if (target.id === ctx.user.id && added.length && !admin) throw new HttpError(403, "You cannot give yourself approval, signing or owner rights");
+  if (added.some((r) => r !== "OWNER") && !admin) throw new HttpError(403, "Only a workspace admin can make someone an approver or signatory");
 }

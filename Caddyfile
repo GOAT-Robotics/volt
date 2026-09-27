@@ -1,7 +1,13 @@
 volt.example.com {
     encode zstd gzip
+    # largest upload is an 80 MB library archive; anything bigger never reaches the app
+    request_body {
+        max_size 100MB
+    }
     reverse_proxy volt:3000
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+        -X-Powered-By
     }
 }
