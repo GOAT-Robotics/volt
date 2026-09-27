@@ -13,5 +13,6 @@ export const VERSION_SCHEMES = [
 export const EXTRA_AUDIT_LABELS: Record<string, string> = {
   "project.delete": "Deleted project",
   "admin.retention": "Ran retention cleanup",
+  "admin.backup": "Backed up the database",
   "project.folder": "Changed folders",
 };

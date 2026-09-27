@@ -507,6 +507,7 @@ function RetentionTab({ data }: { data: AdminData }) {
   const r = data.settings.retention;
   return (
     <div className="max-w-2xl space-y-4">
+      <BackupSection />
       <Section title="Retention cleanup" description="Uses the retention settings from the General tab. Every run is recorded in the audit log.">
         <dl className="grid grid-cols-[1fr_auto] gap-y-2 p-4 text-xs">
           <dt>Delete editor autosaves older than {r.deleteAutosavesAfterDays} days</dt>
@@ -534,5 +535,96 @@ function RetentionTab({ data }: { data: AdminData }) {
         }}
       />
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+type BackupStatus = {
+  config: { enabled: boolean; bucket: string | null; prefix: string; region: string; intervalHours: number; keepDays: number; encryption: string; includeSigningKey: boolean };
+  lastOk: { at: string; key: string | null; bytes: number | null } | null;
+  running: boolean;
+  runs: { id: string; trigger: string; status: string; startedAt: string; finishedAt: string | null; key: string | null; bytes: number | null; sha256: string | null; error: string | null }[];
+};
+
+const mb = (b: number | null) => (b == null ? "—" : `${(b / 1048576).toFixed(1)} MB`);
+
+/** Database backups to S3: where they go, how often, the recent runs, and "Back up now". */
+function BackupSection() {
+  const [st, setSt] = React.useState<BackupStatus | null>(null);
+  const [run, busy] = useMutation();
+  const load = React.useCallback(() => void api<BackupStatus>("/api/admin/backups").then(setSt).catch(() => {}), []);
+  React.useEffect(load, [load]);
+  if (!st) return null;
+  const c = st.config;
+  const stale = c.enabled && (!st.lastOk || Date.now() - new Date(st.lastOk.at).getTime() > c.intervalHours * 2 * 3600_000);
+  return (
+    <Section
+      title="Database backups"
+      description="Projects, drawings, library, comments, signatures and files all live in one database; it is copied to S3 on a schedule."
+      actions={
+        c.enabled ? (
+          <Button
+            size="xs"
+            variant="primary"
+            disabled={busy || st.running}
+            onClick={async () => {
+              await run(() => api("/api/admin/backups", { method: "POST", json: {} }), "Backup uploaded", { refresh: false });
+              load();
+            }}
+          >
+            {busy || st.running ? <Spinner /> : <Save />} Back up now
+          </Button>
+        ) : undefined
+      }
+    >
+      <div className="space-y-3 p-4 text-xs">
+        {!c.enabled ? (
+          <p className="rounded-md border border-warning/30 bg-warning-soft p-2.5">
+            Backups are <b>off</b>. Set <code>BACKUP_S3_BUCKET</code> (and AWS credentials or an instance role) in the server’s <code>.env</code> and restart Volt.
+          </p>
+        ) : (
+          <>
+            <dl className="grid grid-cols-[140px_1fr] gap-y-1.5">
+              <dt className="text-muted">Destination</dt>
+              <dd className="font-mono text-2xs">
+                s3://{c.bucket}/{c.prefix} <span className="text-muted">({c.region}, {c.encryption})</span>
+              </dd>
+              <dt className="text-muted">Schedule</dt>
+              <dd>
+                Every {c.intervalHours} h, kept {c.keepDays} day{c.keepDays === 1 ? "" : "s"} (the newest 7 always)
+              </dd>
+              <dt className="text-muted">Last backup</dt>
+              <dd className={stale ? "font-medium text-danger" : ""}>{st.lastOk ? `${relTime(st.lastOk.at)} · ${mb(st.lastOk.bytes)}` : "none yet"}</dd>
+            </dl>
+            {st.runs.length > 0 && (
+              <Table>
+                <thead>
+                  <tr>
+                    <th>Started</th>
+                    <th>Trigger</th>
+                    <th>Status</th>
+                    <th className="text-right">Size</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {st.runs.slice(0, 8).map((r) => (
+                    <tr key={r.id} title={r.error ?? r.key ?? ""}>
+                      <td>{relTime(r.startedAt)}</td>
+                      <td className="capitalize">{r.trigger.toLowerCase()}</td>
+                      <td>
+                        <Badge tone={r.status === "OK" ? "success" : r.status === "FAILED" ? "danger" : "neutral"}>{r.status === "OK" ? "Uploaded" : r.status === "FAILED" ? "Failed" : "Running"}</Badge>
+                        {r.error && <span className="ml-2 text-2xs text-danger">{r.error.slice(0, 80)}</span>}
+                      </td>
+                      <td className="text-right tabular-nums">{mb(r.bytes)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </>
+        )}
+      </div>
+    </Section>
   );
 }

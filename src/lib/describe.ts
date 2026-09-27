@@ -56,6 +56,9 @@ export function describeAudit(type: string, data: Record<string, unknown>): stri
     case "admin.settings":
       if (Array.isArray(data.changed)) parts.push((data.changed as string[]).join(", "));
       break;
+    case "admin.backup":
+      parts.push(data.ok ? `to ${data.key}` : `failed: ${data.error}`);
+      break;
     case "admin.retention":
       parts.push(`${data.autosavesDeleted ?? 0} autosaves deleted, ${data.projectsArchived ?? 0} projects archived`);
       break;

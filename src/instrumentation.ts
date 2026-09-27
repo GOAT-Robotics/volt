@@ -3,7 +3,12 @@
  * project templates in the background, so a fresh deployment needs no manual seeding step.
  */
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.VOLT_SKIP_STANDARD_LIBRARY === "1") return;
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // database backups to S3 (when BACKUP_S3_BUCKET is set)
+  import("@/lib/backup")
+    .then((m) => m.startBackupSchedule())
+    .catch((e) => console.error("[volt] backup schedule failed:", e));
+  if (process.env.VOLT_SKIP_STANDARD_LIBRARY === "1") return;
   setTimeout(() => {
     import("@/lib/standard-templates")
       .then((m) => m.ensureStandardTemplatesEverywhere((msg) => console.log(`[volt] ${msg}`)))

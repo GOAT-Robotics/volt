@@ -477,3 +477,18 @@ model SearchEntry {
   @@index([versionId])
   @@index([versionId, kind])
 }
+
+/// Database backups to S3 (status: RUNNING | OK | FAILED)
+model BackupRun {
+  id         String    @id @default(cuid())
+  trigger    String // SCHEDULE | MANUAL
+  status     String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  key        String?
+  bytes      Int?
+  sha256     String?
+  error      String?
+
+  @@index([status, startedAt])
+}
