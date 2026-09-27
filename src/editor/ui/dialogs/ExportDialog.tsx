@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileText, Image as ImageIcon, FileCode2, FileDown, PenTool, Loader2 } from "lucide-react";
 import { zipSync, strToU8 } from "fflate";
 import { useEditor } from "../../store";
@@ -58,7 +58,22 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     }
     return sorted.filter((_, i) => set.has(i + 1));
   }, [range, custom, sorted, pageId]);
-  const qetReport = useMemo(() => (fmt === "qet" ? safeReport(doc) : null), [fmt, doc]);
+  // the original project file (for lossless .qet export) stays on the server until it is needed
+  const [source, setSource] = useState<string | null>(null);
+  useEffect(() => {
+    if (fmt !== "qet" || !doc.qet?.hasSource || source !== null || !v?.versionId) return;
+    let live = true;
+    fetch(`/api/versions/${v.versionId}/source`)
+      .then((r) => (r.ok ? r.text() : ""))
+      .then((t) => live && setSource(t))
+      .catch(() => live && setSource(""));
+    return () => {
+      live = false;
+    };
+  }, [fmt, doc.qet?.hasSource, source, v?.versionId]);
+  const qetDoc = useMemo(() => (doc.qet?.hasSource && source ? { ...doc, qet: { ...doc.qet, source } } : doc), [doc, source]);
+  const sourcePending = fmt === "qet" && !!doc.qet?.hasSource && source === null;
+  const qetReport = useMemo(() => (fmt === "qet" && !sourcePending ? safeReport(qetDoc) : null), [fmt, qetDoc, sourcePending]);
   const base = safe(`${v?.projectName ?? doc.meta.title}_v${v?.label ?? ""}`);
   const extraFields = meta && v ? { status: v.status, versionstatus: v.status } : undefined;
 
@@ -121,7 +136,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         if (out.length === 1) downloadBlob(new Blob([out[0][1] as BlobPart], { type: "image/png" }), `${base}_${out[0][0]}`);
         else downloadBlob(new Blob([zipSync(Object.fromEntries(out))], { type: "application/zip" }), `${base}_png.zip`);
       } else if (fmt === "qet") {
-        const { xml } = exportQet(doc);
+        const { xml } = exportQet(qetDoc);
         downloadBlob(new Blob([xml], { type: "application/xml" }), `${base}.qet`);
       } else if (fmt === "dxf") {
         const files = pages.map((p, i) => [`${String(i + 1).padStart(2, "0")}_${safe(p.title)}.dxf`, pageToDxf(doc, p)] as const);
@@ -221,7 +236,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={run} disabled={busy}>
+          <Button variant="primary" onClick={run} disabled={busy || sourcePending}>
             {busy ? <Loader2 className="animate-spin" /> : <FileDown />} Export {FORMATS.find((f) => f.id === fmt)?.label}
           </Button>
         </DialogFooter>

@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireCtx, HttpError } from "@/lib/session";
-import { loadVersion, parseDoc } from "@/lib/versioning";
+import { loadVersion } from "@/lib/versioning";
+import { preload } from "react-dom";
 import { EditorClient } from "@/editor/ui/EditorClient";
 
 export const metadata: Metadata = { title: "Editor" };
@@ -11,16 +12,17 @@ export default async function EditorPage({ params }: { params: Promise<{ project
   const ctx = await requireCtx();
   let a;
   try {
-    a = await loadVersion(ctx, versionId);
+    // the document itself is fetched by the editor (compressed JSON, without the original project file)
+    a = await loadVersion(ctx, versionId, { withDoc: false });
   } catch (e) {
     if (e instanceof HttpError && (e.status === 404 || e.status === 403)) notFound();
     throw e;
   }
   if (a.project.id !== projectId) redirect(`/projects/${a.project.id}/v/${versionId}`);
-  const doc = parseDoc(a.version.doc);
+  // start downloading the drawing while the editor code loads (the editor's fetch picks this up)
+  preload(`/api/versions/${versionId}/doc`, { as: "fetch", crossOrigin: "anonymous" });
   return (
     <EditorClient
-      doc={doc}
       version={{
         projectId: a.project.id,
         projectName: a.project.name,

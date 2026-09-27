@@ -102,3 +102,23 @@ function chunk<T>(a: T[], n: number): T[][] {
 export function parseDoc(s: string): Doc {
   return JSON.parse(s) as Doc;
 }
+
+/**
+ * Document as sent to the editor: without the original project file (often several MB), which is
+ * only needed for lossless export. The editor fetches it on demand; saves re-attach it server side.
+ */
+export function clientDoc(doc: Doc): Doc {
+  if (!doc.qet?.source) return doc;
+  const { source: _s, ...qet } = doc.qet;
+  return { ...doc, qet: { ...qet, hasSource: true } };
+}
+
+/** Put back the stored original project file into a document coming from the editor. */
+export function withStoredSource(incoming: Doc, storedDoc: string | null | undefined): Doc {
+  if (!incoming.qet?.hasSource || incoming.qet.source || !storedDoc) return incoming;
+  // the source is a plain string property: parse only what is needed
+  const stored = JSON.parse(storedDoc) as Doc;
+  const source = stored.qet?.source;
+  const { hasSource: _h, ...qet } = incoming.qet;
+  return { ...incoming, qet: { ...qet, ...(source ? { source } : {}) } };
+}

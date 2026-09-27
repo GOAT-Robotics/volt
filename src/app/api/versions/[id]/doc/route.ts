@@ -2,7 +2,8 @@ import { z } from "zod";
 import { route } from "@/lib/api";
 import { apiCtx, HttpError } from "@/lib/session";
 import { db } from "@/lib/db";
-import { assertEditable, docHash, loadVersion, parseDoc, reindexVersion } from "@/lib/versioning";
+import { assertEditable, clientDoc, docHash, loadVersion, parseDoc, reindexVersion, withStoredSource } from "@/lib/versioning";
+import { gunzipSync } from "node:zlib";
 import { audit } from "@/lib/audit";
 import type { Doc } from "@/core/model";
 
@@ -13,7 +14,7 @@ export const GET = route<{ id: string }>(async (_req, { params }) => {
   const ctx = await apiCtx();
   const { id } = await params;
   const a = await loadVersion(ctx, id);
-  return { doc: parseDoc(a.version.doc), label: a.version.label, status: a.version.status, docRev: a.version.docRev };
+  return { doc: clientDoc(parseDoc(a.version.doc)), label: a.version.label, status: a.version.status, docRev: a.version.docRev };
 });
 
 const Body = z.object({
@@ -27,12 +28,14 @@ async function save(req: Request, id: string) {
   const ctx = await apiCtx();
   const len = Number(req.headers.get("content-length") ?? 0);
   if (len > MAX) throw new HttpError(413, "Document too large");
-  const text = await req.text();
+  // the editor gzips large documents
+  const text = req.headers.get("content-encoding") === "gzip" ? gunzipSync(Buffer.from(await req.arrayBuffer()), { maxOutputLength: MAX + 1 }).toString("utf8") : await req.text();
   if (text.length > MAX) throw new HttpError(413, "Document too large");
   const body = Body.parse(JSON.parse(text));
-  const a = await loadVersion(ctx, id, { withDoc: false });
+  const incoming = body.doc as unknown as Doc;
+  const a = await loadVersion(ctx, id, { withDoc: !!incoming.qet?.hasSource });
   assertEditable(a);
-  const doc = body.doc as unknown as Doc;
+  const doc = withStoredSource(incoming, (a.version as { doc?: string }).doc);
   const res = await db.version.updateMany({
     where: { id, docRev: body.baseRev, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } },
     data: { doc: JSON.stringify(doc), docRev: { increment: 1 }, docHash: docHash(doc) },

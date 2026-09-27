@@ -2,7 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Star, Plus, Upload, Folder, FolderOpen, FolderPlus, MoreHorizontal, Clock, Layers, Archive, Search, Pencil, Trash2, ExternalLink, Tag, X, FolderKanban } from "lucide-react";
+import { Star, Plus, Upload, Folder, FolderOpen, FolderPlus, MoreHorizontal, Clock, Layers, Archive, Search, Pencil, Trash2, Info, Tag, X, FolderKanban } from "lucide-react";
 import { PageHeader } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -265,20 +265,20 @@ function ProjectList({ projects, folders }: { projects: ProjectRow[]; folders: F
   return (
     <ul className="divide-y divide-border" aria-label="Projects">
       {projects.map((p) => (
-        <li key={p.id} className="group flex items-center gap-3 px-6 py-2.5 hover:bg-panel-2">
+        <li key={p.id} className="group relative flex items-center gap-3 px-6 py-2.5 hover:bg-panel-2">
+          {/* the whole row opens the drawing; buttons inside sit above this link */}
+          <Link href={p.openVersionId ? `/projects/${p.id}/v/${p.openVersionId}` : `/projects/${p.id}`} prefetch={false} className="absolute inset-0 z-0 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent" aria-label={`Open ${p.name}`} />
           <button
             onClick={() => run(() => api(`/api/projects/${p.id}/favorite`, { method: "POST" }))}
             aria-label={p.favorite ? `Remove ${p.name} from favorites` : `Add ${p.name} to favorites`}
             aria-pressed={p.favorite}
-            className={cn("rounded p-1 hover:bg-hover", p.favorite ? "text-amber-500" : "text-subtle hover:text-fg")}
+            className={cn("relative z-10 rounded p-1 hover:bg-hover", p.favorite ? "text-amber-500" : "text-subtle hover:text-fg")}
           >
             <Star className="size-3.5" fill={p.favorite ? "currentColor" : "none"} />
           </button>
-          <div className="min-w-0 flex-1">
+          <div className="pointer-events-none min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <Link href={`/projects/${p.id}`} className="truncate text-sm font-medium hover:underline">
-                {p.name}
-              </Link>
+              <span className="truncate text-sm font-medium group-hover:underline">{p.name}</span>
               {p.number && <span className="shrink-0 font-mono text-2xs text-muted">{p.number}</span>}
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-2 text-2xs text-muted">
@@ -290,12 +290,12 @@ function ProjectList({ projects, folders }: { projects: ProjectRow[]; folders: F
               {p.description && <span className="truncate">{p.description}</span>}
             </div>
           </div>
-          <div className="hidden max-w-56 flex-wrap justify-end gap-1 lg:flex">
+          <div className="pointer-events-none hidden max-w-56 flex-wrap justify-end gap-1 lg:flex">
             {p.tags.slice(0, 4).map((t) => (
               <Badge key={t}>{t}</Badge>
             ))}
           </div>
-          <div className="w-44 shrink-0">
+          <div className="pointer-events-none w-44 shrink-0">
             {p.latest ? (
               <div className="flex items-center gap-1.5">
                 <span className="font-mono text-2xs font-semibold">v{p.latest.label}</span>
@@ -306,16 +306,14 @@ function ProjectList({ projects, folders }: { projects: ProjectRow[]; folders: F
             )}
             <p className="mt-0.5 text-2xs text-muted">{p.released ? `Released v${p.released.label}` : "Not released yet"}</p>
           </div>
-          <span className="hidden w-20 shrink-0 text-right text-2xs text-muted sm:block" title={new Date(p.updatedAt).toLocaleString()}>
+          <span className="pointer-events-none hidden w-20 shrink-0 text-right text-2xs text-muted sm:block" title={new Date(p.updatedAt).toLocaleString()}>
             {relTime(p.updatedAt)}
           </span>
-          {p.openVersionId && (
-            <Button size="xs" variant="ghost" asChild>
-              <Link href={`/projects/${p.id}/v/${p.openVersionId}`} aria-label={`Open ${p.name} in the editor`}>
-                <ExternalLink /> Open
-              </Link>
-            </Button>
-          )}
+          <Button size="xs" variant="ghost" asChild className="relative z-10 opacity-60 group-hover:opacity-100">
+            <Link href={`/projects/${p.id}`} aria-label={`${p.name}: versions, reviews and details`}>
+              <Info /> Details
+            </Link>
+          </Button>
         </li>
       ))}
     </ul>

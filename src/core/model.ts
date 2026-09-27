@@ -370,6 +370,8 @@ export type Doc = {
     version: string;
     /** original .qet XML, used to preserve unknown nodes on export */
     source?: string;
+    /** the source stays on the server; the editor receives only this marker and fetches it for export */
+    hasSource?: boolean;
     filename?: string;
   };
 };

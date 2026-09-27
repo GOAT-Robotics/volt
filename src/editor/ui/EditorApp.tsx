@@ -36,10 +36,12 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
     s.setSave("saving");
     saving.current = (async () => {
       try {
+        const json = JSON.stringify({ doc: docAtSave, baseRev: s.version!.docRev });
+        const gz = json.length > 64 * 1024 ? await gzip(json) : null;
         const res = await fetch(`/api/versions/${s.version!.versionId}/doc`, {
           method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ doc: docAtSave, baseRev: s.version!.docRev }),
+          headers: { "content-type": "application/json", ...(gz ? { "content-encoding": "gzip" } : {}) },
+          body: gz ?? json,
           keepalive: false,
         });
         const j = await res.json().catch(() => ({}));
@@ -238,3 +240,14 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
 }
 
 export { isTyping };
+
+/** gzip a request body in the browser (large drawings save ~10× smaller); null when unsupported. */
+async function gzip(text: string): Promise<Blob | null> {
+  if (typeof CompressionStream === "undefined") return null;
+  try {
+    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+    return await new Response(stream).blob();
+  } catch {
+    return null;
+  }
+}
