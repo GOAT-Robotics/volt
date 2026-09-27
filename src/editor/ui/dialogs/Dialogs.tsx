@@ -18,6 +18,7 @@ import { CompatDialog, PageDialog, ProjectPropsDialog, ConnectDialog } from "./M
 import { NewVersionDialog, SubmitDialog, CompareDialog, DiffDrawer } from "./WorkflowDialogs";
 import { BlockDialog, CreateElementDialog } from "./LibraryDialogs";
 import { WiringDialog } from "./WiringDialog";
+import { TitleBlockEditor } from "./TitleBlockEditor";
 
 export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?: unknown } | null; onClose: () => void }) {
   const open = (n: DialogName) => dialog?.name === n;
@@ -28,6 +29,7 @@ export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?:
       {open("styles") && <StylesDialog onClose={onClose} />}
       {open("numbering") && <NumberingDialog onClose={onClose} />}
       {open("wiring") && <WiringDialog onClose={onClose} />}
+      {open("titleBlock") && <TitleBlockEditor onClose={onClose} arg={dialog?.arg as { template?: string } | undefined} />}
       {open("export") && <ExportDialog onClose={onClose} />}
       {open("compat") && <CompatDialog onClose={onClose} />}
       {open("page") && <PageDialog onClose={onClose} />}

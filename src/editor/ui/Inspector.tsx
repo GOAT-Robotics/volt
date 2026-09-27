@@ -16,7 +16,8 @@ import { StylePicker } from "./StylePicker";
 import { TitleBlockLogos } from "./TitleBlockLogos";
 import { endAddress, wireEndLabel, wireInfo, wiringOf } from "@/core/wiring";
 import { ROLE_LABELS } from "@/core/styles";
-import { docStyles, wireTextAnchor } from "@/core/render/scene";
+import { docStyles, tbTemplate, wireTextAnchor } from "@/core/render/scene";
+import { templateVariables } from "@/core/titleblock-edit";
 import { symbolThumb } from "../thumb";
 import { pinDegree } from "../engine/snap";
 import { polylineLength } from "@/core/geometry";
@@ -179,6 +180,7 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
     });
   const tpl = doc.titleBlocks[page.titleBlock.template];
   const std = useStandardTitleBlocks();
+  const usedVars = useMemo(() => templateVariables(tpl ?? tbTemplate(doc, page)), [tpl, doc, page]);
   const fieldNames = useMemo(() => {
     const names = new Set<string>(["title", "author", "date", "filename", "indexrev", "version", "plant", "locmach"]);
     for (const c of tpl?.cells ?? []) if (c.type === "field") for (const m of (c.value ?? "").matchAll(/%\{?(\w+)\}?/g)) names.add(m[1]);
@@ -253,9 +255,27 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
             Use this template on all {doc.pages.length} pages
           </button>
         )}
+        <Button size="xs" variant="secondary" onClick={() => ui.openDialog("titleBlock", { template: page.titleBlock.template })}>
+          <Pencil /> Edit template layout…
+        </Button>
         <TitleBlockLogos doc={doc} templateName={page.titleBlock.template} editable={editable} />
         {fieldNames.map((f) => (
-          <Row key={f} label={TB_FIELD_LABEL[f] ?? f} hint={f === "title" ? "Empty uses the page name" : undefined}>
+          <Row
+            key={f}
+            label={TB_FIELD_LABEL[f] ?? f}
+            hint={
+              !usedVars.has(f) ? (
+                <span>
+                  Not shown by this template.{" "}
+                  <button className="text-accent hover:underline" onClick={() => ui.openDialog("titleBlock", { template: page.titleBlock.template })}>
+                    Edit template
+                  </button>
+                </span>
+              ) : f === "title" ? (
+                "Empty uses the page name"
+              ) : undefined
+            }
+          >
             <Commit
               value={page.titleBlock.fields[f] ?? page.titleBlock.fields["custom:" + f] ?? ""}
               placeholder={f === "title" ? page.title : undefined}

@@ -286,6 +286,7 @@ export const COMMANDS: Command[] = [
     },
   },
   { id: "pageSettings", label: "Page settings…", section: "Page", run: (ui) => ui.openDialog("page") },
+  { id: "titleBlockEditor", label: "Edit title block template…", section: "Page", run: (ui) => ui.openDialog("titleBlock") },
   { id: "styles", label: "Global styles…", section: "Project", keys: "⌘⇧S", run: (ui) => ui.openDialog("styles") },
   { id: "numbering", label: "Automatic numbering…", section: "Project", run: (ui) => ui.openDialog("numbering") },
   { id: "wiring", label: "Wiring & cables… (colors, cross-sections, cables)", section: "Project", run: (ui) => ui.openDialog("wiring") },
