@@ -13,6 +13,7 @@ import { emptySel } from "@/core/ops";
 import { StylesDialog } from "./StylesDialog";
 import { NumberingDialog } from "./NumberingDialog";
 import dynamic from "next/dynamic";
+const TerminalStripDialog = dynamic(() => import("./TerminalStripDialog").then((m) => m.TerminalStripDialog), { ssr: false });
 const ExportDialog = dynamic(() => import("./ExportDialog").then((m) => m.ExportDialog), { ssr: false });
 import { CompatDialog, PageDialog, ProjectPropsDialog, ConnectDialog } from "./MiscDialogs";
 import { NewVersionDialog, SubmitDialog, CompareDialog, DiffDrawer } from "./WorkflowDialogs";
@@ -31,6 +32,7 @@ export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?:
       {open("wiring") && <WiringDialog onClose={onClose} />}
       {open("titleBlock") && <TitleBlockEditor onClose={onClose} arg={dialog?.arg as { template?: string } | undefined} />}
       {open("export") && <ExportDialog onClose={onClose} arg={dialog?.arg as { format?: "bom" } | undefined} />}
+      {open("terminals") && <TerminalStripDialog onClose={onClose} arg={dialog?.arg as { tag?: string } | undefined} />}
       {open("compat") && <CompatDialog onClose={onClose} />}
       {open("page") && <PageDialog onClose={onClose} />}
       {open("projectProps") && <ProjectPropsDialog onClose={onClose} />}

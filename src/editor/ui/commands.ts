@@ -413,6 +413,7 @@ export const COMMANDS: Command[] = [
   { id: "styles", label: "Global styles…", section: "Project", keys: "⌘⇧S", run: (ui) => ui.openDialog("styles") },
   { id: "numbering", label: "Automatic numbering…", section: "Project", run: (ui) => ui.openDialog("numbering") },
   { id: "wiring", label: "Wiring & cables… (colors, cross-sections, cables)", section: "Project", run: (ui) => ui.openDialog("wiring") },
+  { id: "terminals", label: "Terminal strips… (order, numbers, bridges, terminal plan)", section: "Project", run: (ui) => ui.openDialog("terminals") },
   { id: "projectProps", label: "Project properties…", section: "Project", run: (ui) => ui.openDialog("projectProps") },
   { id: "export", label: "Export…", section: "Project", keys: "⌘E", enabled: (s) => s.version?.canExport ?? true, run: (ui) => ui.openDialog("export") },
   { id: "bom", label: "Bill of materials… (parts list, Excel / CSV / PDF)", section: "Project", enabled: (s) => s.version?.canExport ?? true, run: (ui) => ui.openDialog("export", { format: "bom" }) },

@@ -12,6 +12,7 @@
  */
 import type { Cable, Doc, ElemInst, ElementDef, Page } from "./model";
 import { buildXlsx, type XlsxSheet } from "./xlsx";
+import { terminalBomInfo, terminalTypeLabel } from "./terminals";
 
 export type BomGrouping = "part" | "location" | "component";
 
@@ -117,6 +118,23 @@ export function buildBom(doc: Doc, opts: { pages?: Page[]; grouping?: BomGroupin
     excluded++;
   }
   const comps = [...byRef.values(), ...loose];
+  // terminal strips: default part numbers per terminal, and spare terminals on the rail
+  if (doc.terminalStrips?.length && pages.length === ordered.length) {
+    const t = terminalBomInfo(doc);
+    for (const c of comps) {
+      const p = t.partByRef.get(c.ref);
+      if (!p) continue;
+      if (p.partNumber && !c.info.manufacturer_reference) c.info.manufacturer_reference = p.partNumber;
+      if (p.manufacturer && !c.info.manufacturer) c.info.manufacturer = p.manufacturer;
+    }
+    for (const sp of t.spares) {
+      const def = { id: `spare-terminal:${sp.type}`, name: "terminal", names: { en: `Terminal (${terminalTypeLabel(sp.type).toLowerCase()})` }, pins: [], info: {} } as unknown as ElementDef;
+      const info: Record<string, string> = { description: `Terminal, ${terminalTypeLabel(sp.type).toLowerCase()} (spare)` };
+      if (sp.partNumber) info.manufacturer_reference = sp.partNumber;
+      if (sp.manufacturer) info.manufacturer = sp.manufacturer;
+      comps.push({ ref: sp.ref, def, info, sheets: new Set(), qty: 1 });
+    }
+  }
 
   const symbolName = (d: ElementDef) => d.names.en ?? Object.values(d.names)[0] ?? d.name;
   const rowOf = (c: Comp): Omit<BomRow, "item"> => ({

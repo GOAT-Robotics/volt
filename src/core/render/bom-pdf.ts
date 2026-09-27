@@ -14,6 +14,7 @@ export function winAnsi(s: string): string {
     .replace(/[“”]/g, '"')
     .replace(/≤/g, "<=")
     .replace(/≥/g, ">=")
+    .replace(/[→⇒]/g, "->")
     .replace(/[^\x20-\x7e\xa0-\xff€•…]/g, "?");
 }
 
@@ -42,7 +43,8 @@ function fit(font: PDFFont, s: string, w: number): string[] {
   return out;
 }
 
-function table(pdf: PDFDocument, fonts: Fonts, heading: string, sub: string, cols: { label: string; w: number; right?: boolean }[], rows: string[][], pages: PDFPage[]) {
+/** Table pages (A4 landscape), header repeated on each page; new pages are added to `pages`. */
+export function appendTable(pdf: PDFDocument, fonts: Fonts, heading: string, sub: string, cols: { label: string; w: number; right?: boolean }[], rows: string[][], pages: PDFPage[]) {
   const total = cols.reduce((a, c) => a + c.w, 0);
   const scale = (W - 2 * M) / total;
   const widths = cols.map((c) => c.w * scale);
@@ -79,7 +81,7 @@ function table(pdf: PDFDocument, fonts: Fonts, heading: string, sub: string, col
     });
     y -= n * LINE + 1;
   });
-  if (!rows.length) pg.drawText("No parts on the selected pages.", { x: M + 3, y, size: SIZE, font: fonts.regular, color: rgb(0.4, 0.4, 0.4) });
+  if (!rows.length) pg.drawText("Nothing to list.", { x: M + 3, y, size: SIZE, font: fonts.regular, color: rgb(0.4, 0.4, 0.4) });
 }
 
 /** Append the bill of materials (and the cable list) as A4 landscape pages. */
@@ -88,7 +90,7 @@ export function appendBomPages(pdf: PDFDocument, fonts: Fonts, bom: Bom, meta: {
   const widths: Record<string, number> = { item: 4, qty: 4.5, unit: 4, refs: 16, name: 17, rating: 11, manufacturer: 10, partNumber: 12, supplier: 9, location: 8, sheets: 6 };
   const right = new Set(["item", "qty"]);
   const sub = [meta.subtitle, `${bom.rows.length} lines · ${bom.components} components${bom.missingPart ? ` · ${bom.missingPart} without part number` : ""}`].filter(Boolean).join(" · ");
-  table(
+  appendTable(
     pdf,
     fonts,
     `Bill of materials — ${meta.title}`,
@@ -99,7 +101,7 @@ export function appendBomPages(pdf: PDFDocument, fonts: Fonts, bom: Bom, meta: {
   );
   if (bom.cables.length) {
     const cw: Record<string, number> = { tag: 8, type: 24, cores: 5, section: 8, shield: 6, length: 7, note: 20 };
-    table(
+    appendTable(
       pdf,
       fonts,
       `Cables — ${meta.title}`,
@@ -109,8 +111,36 @@ export function appendBomPages(pdf: PDFDocument, fonts: Fonts, bom: Bom, meta: {
       pages,
     );
   }
+  numberPages(pages, fonts);
+}
+
+/** "Page x / y" footer on a run of table pages. */
+export function numberPages(pages: PDFPage[], fonts: Fonts) {
   pages.forEach((pg, i) => {
     const t = `Page ${i + 1} / ${pages.length}`;
     pg.drawText(t, { x: W - M - fonts.regular.widthOfTextAtSize(t, 7.5), y: M - 14, size: 7.5, font: fonts.regular, color: rgb(0.45, 0.45, 0.5) });
   });
+}
+
+/** Terminal plan: one table per strip (terminal, type, both sides, bridges, part number). */
+export function appendTerminalPlanPages(pdf: PDFDocument, fonts: Fonts, rows: string[][], meta: { title: string; subtitle?: string }) {
+  const pages: PDFPage[] = [];
+  const cols = [
+    { label: "Terminal", w: 6 },
+    { label: "Type", w: 12 },
+    { label: "Lvl", w: 3, right: true },
+    { label: "Bridge", w: 5 },
+    { label: "Side 1 (top / left)", w: 24 },
+    { label: "Side 2 (bottom / right)", w: 24 },
+    { label: "Part number", w: 11 },
+    { label: "Sheets", w: 5 },
+    { label: "Note", w: 11 },
+  ];
+  const strips = [...new Set(rows.map((r) => r[0]))];
+  for (const tag of strips) {
+    const mine = rows.filter((r) => r[0] === tag).map((r) => r.slice(1));
+    appendTable(pdf, fonts, `Terminal strip ${tag || "(no reference)"} — ${meta.title}`, [meta.subtitle, `${mine.length} terminals`].filter(Boolean).join(" · "), cols, mine, pages);
+  }
+  if (!strips.length) appendTable(pdf, fonts, `Terminal plan — ${meta.title}`, meta.subtitle ?? "", cols, [], pages);
+  numberPages(pages, fonts);
 }

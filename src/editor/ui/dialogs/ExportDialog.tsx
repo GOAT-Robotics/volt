@@ -17,7 +17,8 @@ import { drawPage, pageGeometry } from "@/core/render/scene";
 import { PathBuilder } from "@/core/render/painter";
 import { exportQet } from "@/core/qet/project";
 import { buildBom, bomToCsv, bomToXlsx, bomCell, BOM_COLUMNS, type BomGrouping } from "@/core/bom";
-import { appendBomPages } from "@/core/render/bom-pdf";
+import { appendBomPages, appendTerminalPlanPages } from "@/core/render/bom-pdf";
+import { collectStrips, terminalPlanRows } from "@/core/terminals";
 import type { Doc, Page } from "@/core/model";
 import type { Painter } from "@/core/render/painter";
 import { rasterizeSvg } from "../logoUpload";
@@ -44,6 +45,8 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
   const [bomFile, setBomFile] = useState<"xlsx" | "csv" | "pdf">("xlsx");
   const [grouping, setGrouping] = useState<BomGrouping>("part");
   const [bomInPdf, setBomInPdf] = useState(false);
+  const [termsInPdf, setTermsInPdf] = useState(false);
+  const hasTerminals = useMemo(() => fmt === "pdf" && collectStrips(doc).some((x) => x.rows.length), [fmt, doc]);
   const [range, setRange] = useState<"current" | "all" | "custom">("all");
   const [custom, setCustom] = useState("1-");
   const [paper, setPaper] = useState<keyof typeof PAPER | "fit">("A3");
@@ -138,6 +141,7 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
           rasterizeSvg,
           append: async (pdf, fonts) => {
             if (bomInPdf && bom) appendBomPages(pdf, fonts, bom, bomMeta());
+            if (termsInPdf) appendTerminalPlanPages(pdf, fonts, terminalPlanRows(doc), bomMeta());
             if (markup) await appendComments(pdf, fonts);
           },
         });
@@ -259,6 +263,11 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
             {fmt === "pdf" && (
               <label className="col-span-2 flex items-center gap-2 text-xs">
                 <Checkbox checked={bomInPdf} onCheckedChange={(x) => setBomInPdf(!!x)} /> Append the bill of materials (and cable list) after the drawings
+              </label>
+            )}
+            {hasTerminals && (
+              <label className="col-span-2 flex items-center gap-2 text-xs">
+                <Checkbox checked={termsInPdf} onCheckedChange={(x) => setTermsInPdf(!!x)} /> Append the terminal plan (one table per terminal strip)
               </label>
             )}
             {fmt === "bom" && bom && <BomPreview bom={bom} />}

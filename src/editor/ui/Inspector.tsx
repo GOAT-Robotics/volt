@@ -30,6 +30,7 @@ import { cachedXref, describe } from "@/core/xref";
 import { measureText } from "@/core/render/canvas";
 import { cn } from "@/lib/utils";
 import { isBomExcluded } from "@/core/bom";
+import { collectStrips, isTerminalDef, parseTerminalRef, terminalTypeLabel } from "@/core/terminals";
 
 /* small building blocks */
 export function Section({ title, children, actions, defaultOpen = true }: { title: string; children: React.ReactNode; actions?: React.ReactNode; defaultOpen?: boolean }) {
@@ -421,6 +422,7 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
       </div>
       <XrefSection id={e.id} />
       <MatingSection e={e} page={page} doc={doc} editable={editable} />
+      {isTerminalDef(def) && <TerminalSection e={e} doc={doc} />}
       {e.group && <BlockSection e={e} page={page} editable={editable} />}
       <Section title="Identity">
         <Row label="Reference">
@@ -756,6 +758,46 @@ function FrameRow({ e, styles, editable, upd }: { e: ElemInst; styles: ReturnTyp
         <Overridden on={!!e.frame} onReset={() => upd("Reset outline", (x) => (x.frame = undefined))} />
       </div>
     </Row>
+  );
+}
+
+/** Terminal: its strip and number, what it connects to, and a way into the strip editor. */
+function TerminalSection({ e, doc }: { e: ElemInst; doc: Doc }) {
+  const ui = useEditorUI();
+  const ref = parseTerminalRef(e.info.label ?? "");
+  const row = useMemo(() => collectStrips(doc).find((v) => v.tag === ref.tag)?.rows.find((r) => r.instances.some((x) => x.el === e.id)), [doc, ref.tag, e.id]);
+  return (
+    <Section title="Terminal">
+      <Row label="Strip">
+        <span className="text-xs">
+          {ref.tag || <span className="text-subtle">no reference</span>}
+          {ref.num ? (
+            <>
+              {" "}
+              · terminal <b>{ref.num}</b>
+            </>
+          ) : (
+            <span className="text-warning"> · not numbered</span>
+          )}
+        </span>
+      </Row>
+      {row && (
+        <>
+          <Row label="Type">
+            <span className="text-xs">{terminalTypeLabel(row.type)}{row.row?.bridge ? " · bridged to next" : ""}</span>
+          </Row>
+          <Row label="Side 1">
+            <span className="text-2xs">{row.side1.join("; ") || "—"}</span>
+          </Row>
+          <Row label="Side 2">
+            <span className="text-2xs">{row.side2.join("; ") || "—"}</span>
+          </Row>
+        </>
+      )}
+      <Button size="xs" variant="secondary" onClick={() => ui.openDialog("terminals", { tag: ref.tag })}>
+        Open terminal strip {ref.tag}…
+      </Button>
+    </Section>
   );
 }
 

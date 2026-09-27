@@ -26,7 +26,8 @@ export type DialogName =
   | "projectProps"
   | "createElement"
   | "wiring"
-  | "titleBlock";
+  | "titleBlock"
+  | "terminals";
 
 export const EditorCtx = createContext<EditorUI | null>(null);
 export function useEditorUI() {

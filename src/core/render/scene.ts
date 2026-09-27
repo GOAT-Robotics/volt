@@ -10,7 +10,7 @@ import { fitContain, LOGO_MIME, logoKey, logoSize } from "../logos";
 import { defaultTitleBlock } from "../doc";
 import { DASHES, PathBuilder, type Painter, type PathData, type StrokeStyle } from "./painter";
 import { PT, symbolFor, type CompiledSymbol } from "./symbol";
-import { cableMarks, sectionWeight, wireAnnotation, wireEndLabel, wireInfo, wiringOf } from "../wiring";
+import { cableMarks, sectionWeight, wireAnnotation, wireEndLabel, wireInfo, wiringOf, type CableMark } from "../wiring";
 
 /* ------------------------------------------------------------------ */
 /* Style cache                                                          */
@@ -542,7 +542,6 @@ export function drawPage(pt: Painter, o: DrawOpts) {
   // cables: a line crossing the bundle, labelled with tag and type; dashed ellipse when shielded
   if (lod > 0.25) {
     const cst = styles.text.cableLabel;
-    const size = cst.size * PT;
     for (const m of cableMarks(doc, page)) {
       if (o.wires && !m.wires.some((id) => o.wires!.some((w) => w.id === id))) continue;
       const tint = o.tint?.get(m.wires[0]);
@@ -553,12 +552,8 @@ export function drawPage(pt: Painter, o: DrawOpts) {
         const rx = m.horizontal ? 5 : len - 2, ry = m.horizontal ? len - 2 : 5;
         pt.stroke(new PathBuilder().E(cx, cy, rx, ry).build(), { color: tint ?? cst.color, width: 0.8, dash: [2, 1.5], minPx: 1, alpha: o.alpha });
       }
-      if (cst.visible) {
-        const tw = measure(m.label, size, cst.font, cst.weight);
-        const h = size * cst.lineHeight;
-        if (m.horizontal) drawLaidText(pt, { text: m.label, x: m.a.x - tw / 2, y: m.a.y - h - 1, rotation: 0, style: cst, w: tw, h }, o.alpha, tint);
-        else drawLaidText(pt, { text: m.label, x: m.a.x - tw - 2, y: m.a.y - h / 2 - 3, rotation: 0, style: cst, w: tw, h }, o.alpha, tint);
-      }
+      const lr = cableLabelRect(m, styles, measure);
+      if (lr) drawLaidText(pt, { text: m.label, x: lr.x, y: lr.y, rotation: 0, style: cst, w: lr.w, h: lr.h }, o.alpha, tint);
     }
   }
 
@@ -857,6 +852,16 @@ function annotationAnchor(w: Wire, textW: number, f: number): { p: Pt; horizonta
   return { p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, horizontal: Math.abs(b.y - a.y) <= Math.abs(b.x - a.x) };
 }
 
+/** Where a cable mark's label ("W1 · 4G1,5") sits: above a horizontal mark, left of a vertical one. */
+export function cableLabelRect(m: CableMark, styles: Styles, measure: Painter["measure"]): Rect | null {
+  const cst = styles.text.cableLabel;
+  if (!cst.visible) return null;
+  const size = cst.size * PT;
+  const w = measure(m.label, size, cst.font, cst.weight);
+  const h = size * cst.lineHeight;
+  return m.horizontal ? { x: m.a.x - w / 2, y: m.a.y - h - 1, w, h } : { x: m.a.x - w - 2, y: m.a.y - h / 2 - 3, w, h };
+}
+
 /**
  * Texts of each wire, laid out like common CAE practice:
  * - wire number above a horizontal run (left of a vertical one), in the middle and/or at both ends;
@@ -932,6 +937,14 @@ function layoutWireTexts(doc: Doc, page: Page, wires: Wire[], styles: Styles, me
     const def = doc.defs[e.defId];
     if (!def) continue;
     for (const t of cachedElementTexts(e, symbolFor(def), styles, measure, kind)) taken.push(textBounds(t));
+  }
+  // cable marks (the crossing line and its label) are obstacles: wire numbers and conductor specs
+  // slide along the wire instead of being drawn through the mark
+  for (const m of cableMarks(doc, page)) {
+    const x = Math.min(m.a.x, m.b.x), y = Math.min(m.a.y, m.b.y);
+    taken.push({ x: x - 2, y: y - 2, w: Math.abs(m.b.x - m.a.x) + 4, h: Math.abs(m.b.y - m.a.y) + 4 });
+    const lr = cableLabelRect(m, styles, measure);
+    if (lr) taken.push({ x: lr.x - 1, y: lr.y - 1, w: lr.w + 2, h: lr.h + 2 });
   }
   const overlaps = (r: Rect) => {
     let hit = false;

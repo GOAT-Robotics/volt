@@ -293,6 +293,35 @@ export type Cable = {
   note?: string;
 };
 
+/** Kind of terminal (drives the default colour in the plan and the BOM name). */
+export type TerminalType = "feed" | "pe" | "neutral" | "fuse" | "disconnect" | "diode" | "sensor" | "multi";
+/** One position on a terminal strip; `num` is the terminal number ("1", "03", "PE1"). */
+export type StripRow = {
+  num: string;
+  type?: TerminalType;
+  /** level of a multi-level terminal (1 = bottom) */
+  level?: number;
+  /** bridged (jumpered) to the next row */
+  bridge?: boolean;
+  partNumber?: string;
+  note?: string;
+  /** a terminal that exists on the rail but is not drawn */
+  spare?: boolean;
+};
+export type TerminalStrip = {
+  id: string;
+  /** strip designation, e.g. "X1" */
+  tag: string;
+  /** between strip and terminal number in references: "X1:3" (":"), "X1-3" ("-"), "X1.3" (".") */
+  sep: string;
+  description?: string;
+  location?: string;
+  /** default terminal part number / manufacturer for the BOM */
+  partNumber?: string;
+  manufacturer?: string;
+  rows: StripRow[];
+};
+
 export type Junction = { id: string; x: number; y: number; qetElemId?: string; group?: GroupRef };
 
 export type FreeText = {
@@ -430,6 +459,8 @@ export type Doc = {
   grid: { size: number; show: boolean };
   wiring?: WiringSettings;
   cables?: Cable[];
+  /** terminal strips: order, numbering and properties of terminals (Volt-only; labels go to .qet) */
+  terminalStrips?: TerminalStrip[];
   qet?: {
     version: string;
     /** original .qet XML, used to preserve unknown nodes on export */
