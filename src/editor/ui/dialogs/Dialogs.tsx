@@ -30,7 +30,7 @@ export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?:
       {open("numbering") && <NumberingDialog onClose={onClose} />}
       {open("wiring") && <WiringDialog onClose={onClose} />}
       {open("titleBlock") && <TitleBlockEditor onClose={onClose} arg={dialog?.arg as { template?: string } | undefined} />}
-      {open("export") && <ExportDialog onClose={onClose} />}
+      {open("export") && <ExportDialog onClose={onClose} arg={dialog?.arg as { format?: "bom" } | undefined} />}
       {open("compat") && <CompatDialog onClose={onClose} />}
       {open("page") && <PageDialog onClose={onClose} />}
       {open("projectProps") && <ProjectPropsDialog onClose={onClose} />}

@@ -8,7 +8,10 @@ import type { DocDiff } from "@/core/diff";
 enablePatches();
 setAutoFreeze(false);
 
-export type Tool = "select" | "wire" | "text" | "pan" | "comment" | "place";
+export type Tool = "select" | "wire" | "text" | "pan" | "comment" | "place" | "shape";
+/** what the shape tool draws */
+export type DrawKind = "rect" | "ellipse" | "line" | "polygon" | "polyline";
+export type DrawStyle = { color: string; width: number; dash: "solid" | "dashed" | "dotted" | "dashdot"; fill: string | null };
 
 export type HistoryEntry = { label: string; patches: Patch[]; inverse: Patch[]; pageId: string; sel: Sel; at: number };
 
@@ -67,6 +70,9 @@ type State = {
   panels: { left: "library" | "pages" | "outline" | null; right: "inspector" | "review" | "validate" | "history" | null };
   snapSettings: { pins: boolean; junctions: boolean; wires: boolean; guides: boolean; grid: boolean; order: ("pin" | "junction" | "wire" | "guide" | "grid")[] };
   gridVisible: boolean;
+  /** shape tool: kind to draw and the style new shapes get (last used) */
+  shapeKind: DrawKind;
+  shapeStyle: DrawStyle;
 };
 
 type Actions = {
@@ -112,6 +118,8 @@ export const useEditor = create<EditorStore>((set, get) => ({
   panels: { left: "library", right: "inspector" },
   snapSettings: { pins: true, junctions: true, wires: true, guides: true, grid: true, order: ["pin", "junction", "wire", "guide", "grid"] },
   gridVisible: true,
+  shapeKind: "rect",
+  shapeStyle: { color: "#111827", width: 1, dash: "solid", fill: null },
 
   init(doc, version) {
     // every reference gets its own movable / rotatable text (legacy & imported instances too)

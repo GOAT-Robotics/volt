@@ -32,6 +32,7 @@ const Styles = z.object({
     bus: z.object(Line),
     pin: z.object({ color, size: z.number().min(0).max(20), showPoint: z.boolean() }),
     outline: z.object({ color: color.nullable(), widthScale: z.number().min(0.1).max(10) }),
+    frame: z.object({ ...Line, show: z.boolean(), padding: z.number().min(0).max(100) }).optional(),
     border: z.object({ ...Line, headerColor: color, font: z.string().min(1).max(200), size: z.number().min(2).max(40) }),
     titleBlock: z.object({ ...Line, font: z.string().min(1).max(200) }),
     selection: color,

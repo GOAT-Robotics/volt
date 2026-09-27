@@ -28,10 +28,17 @@ import {
   RotateCcw,
   Eraser,
   ChevronDown,
+  Shapes,
+  Square,
+  Circle,
+  Slash,
+  Pentagon,
+  Waypoints,
 } from "lucide-react";
 import { Engine } from "../engine/Engine";
 import { toast } from "sonner";
-import { useEditor } from "../store";
+import { useEditor, type DrawKind } from "../store";
+import { NativeSelect } from "@/components/ui/input";
 import { useEditorUI } from "./context";
 import { runCommand } from "./commands";
 import { Button } from "@/components/ui/button";
@@ -137,6 +144,7 @@ function ToolRail() {
     { id: "select", icon: <MousePointer2 />, label: "Select", key: "V", on: true },
     { id: "wire", icon: <Spline />, label: "Wire", key: "W", on: editable },
     { id: "text", icon: <Type />, label: "Text", key: "T", on: editable },
+    { id: "shape", icon: <Shapes />, label: "Shapes (rectangle, ellipse, line, polygon)", key: "S", on: editable },
     { id: "pan", icon: <Hand />, label: "Pan", key: "H / Space", on: true },
     { id: "comment", icon: <MessageSquarePlus />, label: "Comment", key: "C", on: canComment },
   ] as const;
@@ -183,6 +191,7 @@ function SelectionBar() {
       </Hint>
     );
   if (tool === "comment") return <Hint>Click on an element, wire or anywhere to leave a comment</Hint>;
+  if (tool === "shape" && editable) return <ShapeBar />;
   if (!n || !editable) return null;
   const B = ({ id, icon, label }: { id: string; icon: React.ReactNode; label: string }) => (
     <Tip content={label}>
@@ -213,6 +222,75 @@ function SelectionBar() {
       {sel.elements.length > 0 && <B id="block" icon={<Boxes />} label="Create reusable block" />}
       <div className="mx-0.5 h-4 w-px bg-border" />
       <B id="delete" icon={<Trash2 className="text-danger" />} label="Delete (Del)" />
+    </div>
+  );
+}
+
+export const DRAW_KINDS: { id: DrawKind; label: string; icon: React.ReactNode; key: string }[] = [
+  { id: "rect", label: "Rectangle", icon: <Square />, key: "1" },
+  { id: "ellipse", label: "Ellipse / circle", icon: <Circle />, key: "2" },
+  { id: "line", label: "Line", icon: <Slash />, key: "3" },
+  { id: "polygon", label: "Polygon", icon: <Pentagon />, key: "4" },
+  { id: "polyline", label: "Polyline (open)", icon: <Waypoints />, key: "5" },
+];
+
+/** Shape tool options: what to draw and the style it gets (also the style of the selected shapes' next drawings). */
+function ShapeBar() {
+  const kind = useEditor((s) => s.shapeKind);
+  const st = useEditor((s) => s.shapeStyle);
+  const set = useEditor((s) => s.set);
+  const style = (p: Partial<typeof st>) => set("shapeStyle", { ...st, ...p });
+  const poly = kind === "polygon" || kind === "polyline";
+  return (
+    <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 flex-col items-center gap-1">
+      <div className="flex items-center gap-0.5 rounded-lg border border-border bg-panel/95 p-1 shadow-pop backdrop-blur" role="toolbar" aria-label="Shape options">
+        {DRAW_KINDS.map((k) => (
+          <Tip key={k.id} content={k.label} shortcut={k.key}>
+            <Button variant="tool" size="icon" active={kind === k.id} aria-pressed={kind === k.id} aria-label={k.label} onClick={() => set("shapeKind", k.id)}>
+              {k.icon}
+            </Button>
+          </Tip>
+        ))}
+        <span className="mx-1 h-5 w-px bg-border" />
+        <Tip content="Line color">
+          <input type="color" value={st.color} onChange={(e) => style({ color: e.target.value })} className="h-6 w-7 cursor-pointer rounded border border-border bg-panel p-0.5" aria-label="Line color" />
+        </Tip>
+        <Tip content="Thickness">
+          <NativeSelect value={String(st.width)} onChange={(e) => style({ width: Number(e.target.value) })} aria-label="Thickness" className="h-7 w-16 text-2xs">
+            {[0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4].map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </NativeSelect>
+        </Tip>
+        <Tip content="Line style">
+          <NativeSelect value={st.dash} onChange={(e) => style({ dash: e.target.value as typeof st.dash })} aria-label="Line style" className="h-7 w-24 text-2xs">
+            <option value="solid">Solid</option>
+            <option value="dashed">Dashed</option>
+            <option value="dotted">Dotted</option>
+            <option value="dashdot">Dash-dot</option>
+          </NativeSelect>
+        </Tip>
+        {kind !== "line" && kind !== "polyline" && (
+          <>
+            <Tip content={st.fill ? "Remove fill" : "Fill"}>
+              <Switch checked={!!st.fill} onCheckedChange={(v) => style({ fill: v ? "#e5e7eb" : null })} aria-label="Fill" />
+            </Tip>
+            {st.fill && <input type="color" value={st.fill} onChange={(e) => style({ fill: e.target.value })} className="h-6 w-7 cursor-pointer rounded border border-border bg-panel p-0.5" aria-label="Fill color" />}
+          </>
+        )}
+      </div>
+      <div className="pointer-events-none rounded-lg bg-fg/90 px-3 py-1 text-2xs text-bg shadow-pop [&_b]:font-semibold">
+        {poly ? (
+          <>
+            Click to add points · {kind === "polygon" ? "click the first point, " : ""}double-click or <b>Enter</b> to finish · <b>Backspace</b> removes a point
+          </>
+        ) : (
+          <>Drag, or click two corners</>
+        )}{" "}
+        · <b>Shift</b> {kind === "rect" ? "square" : kind === "ellipse" ? "circle" : "45° steps"} · <b>Alt</b> no snapping · <b>Esc</b> done
+      </div>
     </div>
   );
 }

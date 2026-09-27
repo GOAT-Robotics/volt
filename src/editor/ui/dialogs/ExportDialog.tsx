@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Image as ImageIcon, FileCode2, FileDown, PenTool, Loader2 } from "lucide-react";
+import { FileText, Image as ImageIcon, FileCode2, FileDown, PenTool, Loader2, ClipboardList } from "lucide-react";
 import { zipSync, strToU8 } from "fflate";
 import { useEditor } from "../../store";
 import { useEditorUI } from "../context";
@@ -16,28 +16,34 @@ import { CanvasPainter, measureText } from "@/core/render/canvas";
 import { drawPage, pageGeometry } from "@/core/render/scene";
 import { PathBuilder } from "@/core/render/painter";
 import { exportQet } from "@/core/qet/project";
+import { buildBom, bomToCsv, bomToXlsx, bomCell, BOM_COLUMNS, type BomGrouping } from "@/core/bom";
+import { appendBomPages } from "@/core/render/bom-pdf";
 import type { Doc, Page } from "@/core/model";
 import type { Painter } from "@/core/render/painter";
 import { rasterizeSvg } from "../logoUpload";
 
-type Fmt = "pdf" | "svg" | "png" | "qet" | "dxf";
+type Fmt = "pdf" | "svg" | "png" | "qet" | "dxf" | "bom";
 const FORMATS: { id: Fmt; label: string; icon: React.ReactNode; desc: string }[] = [
   { id: "pdf", label: "PDF", icon: <FileText />, desc: "Vector, multi-page, print-ready" },
   { id: "svg", label: "SVG", icon: <PenTool />, desc: "Vector, one file per page" },
   { id: "png", label: "PNG", icon: <ImageIcon />, desc: "Raster image at chosen DPI" },
   { id: "qet", label: ".qet", icon: <FileCode2 />, desc: "Editable project file" },
   { id: "dxf", label: "DXF", icon: <FileDown />, desc: "CAD exchange (R12), per page" },
+  { id: "bom", label: "BOM", icon: <ClipboardList />, desc: "Bill of materials: Excel, CSV, PDF" },
 ];
 
 const safe = (s: string) => s.replace(/[^\w.-]+/g, "_").replace(/_+/g, "_").slice(0, 80) || "export";
 
-export function ExportDialog({ onClose }: { onClose: () => void }) {
+export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { format?: "bom" } }) {
   const doc = useEditor((s) => s.doc);
   const pageId = useEditor((s) => s.pageId);
   const v = useEditor((s) => s.version);
   const comments = useEditor((s) => s.comments);
   const ui = useEditorUI();
-  const [fmt, setFmt] = useState<Fmt>("pdf");
+  const [fmt, setFmt] = useState<Fmt>(arg?.format ?? "pdf");
+  const [bomFile, setBomFile] = useState<"xlsx" | "csv" | "pdf">("xlsx");
+  const [grouping, setGrouping] = useState<BomGrouping>("part");
+  const [bomInPdf, setBomInPdf] = useState(false);
   const [range, setRange] = useState<"current" | "all" | "custom">("all");
   const [custom, setCustom] = useState("1-");
   const [paper, setPaper] = useState<keyof typeof PAPER | "fit">("A3");
@@ -59,6 +65,11 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     }
     return sorted.filter((_, i) => set.has(i + 1));
   }, [range, custom, sorted, pageId]);
+  const bom = useMemo(() => (fmt === "bom" || (fmt === "pdf" && bomInPdf) ? buildBom(doc, { pages, grouping }) : null), [fmt, bomInPdf, doc, pages, grouping]);
+  const bomMeta = () => ({
+    title: `${v?.projectName ?? doc.meta.title}${v ? ` — v${v.label}` : ""}`,
+    subtitle: [v ? `Version ${v.label} (${v.status.replace("_", " ").toLowerCase()})` : "", `${pages.length === sorted.length ? "All sheets" : `Sheets ${pages.map((p) => sorted.indexOf(p) + 1).join(", ")}`}`, new Date().toISOString().slice(0, 10)].filter(Boolean).join(" · "),
+  });
   // the original project file (for lossless .qet export) stays on the server until it is needed
   const [source, setSource] = useState<string | null>(null);
   useEffect(() => {
@@ -88,6 +99,27 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     });
   };
 
+  const appendComments = async (pdf: import("pdf-lib").PDFDocument, fonts: { regular: import("pdf-lib").PDFFont; bold: import("pdf-lib").PDFFont }) => {
+    const list = comments.filter((c) => pages.some((p) => p.id === c.pageId));
+    if (!list.length) return;
+    let pg = pdf.addPage([595.28, 841.89]);
+    let y = 800;
+    pg.drawText("Review comments", { x: 40, y, size: 14, font: fonts.bold });
+    y -= 24;
+    for (const [i, c] of list.entries()) {
+      const lines = wrap(`${i + 1}. [${c.status}] ${c.author}: ${c.body}`.replace(/[^\x20-\x7E -ÿ]/g, "?"), 95);
+      for (const l of lines) {
+        if (y < 40) {
+          pg = pdf.addPage([595.28, 841.89]);
+          y = 800;
+        }
+        pg.drawText(l, { x: 40, y, size: 9, font: fonts.regular });
+        y -= 13;
+      }
+      y -= 4;
+    }
+  };
+
   const run = async () => {
     if (!pages.length) return ui.toast("No pages selected", { tone: "error" });
     setBusy(true);
@@ -104,30 +136,25 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           drawOpts: { extraFields },
           overlay,
           rasterizeSvg,
-          append: markup
-            ? async (pdf, fonts) => {
-                const list = comments.filter((c) => pages.some((p) => p.id === c.pageId));
-                if (!list.length) return;
-                let pg = pdf.addPage([595.28, 841.89]);
-                let y = 800;
-                pg.drawText("Review comments", { x: 40, y, size: 14, font: fonts.bold });
-                y -= 24;
-                for (const [i, c] of list.entries()) {
-                  const lines = wrap(`${i + 1}. [${c.status}] ${c.author}: ${c.body}`.replace(/[^\x20-\x7E -ÿ]/g, "?"), 95);
-                  for (const l of lines) {
-                    if (y < 40) {
-                      pg = pdf.addPage([595.28, 841.89]);
-                      y = 800;
-                    }
-                    pg.drawText(l, { x: 40, y, size: 9, font: fonts.regular });
-                    y -= 13;
-                  }
-                  y -= 4;
-                }
-              }
-            : undefined,
+          append: async (pdf, fonts) => {
+            if (bomInPdf && bom) appendBomPages(pdf, fonts, bom, bomMeta());
+            if (markup) await appendComments(pdf, fonts);
+          },
         });
         downloadBlob(new Blob([bytes as BlobPart], { type: "application/pdf" }), `${base}.pdf`);
+      } else if (fmt === "bom") {
+        const b = bom ?? buildBom(doc, { pages, grouping });
+        if (bomFile === "csv") downloadBlob(new Blob([bomToCsv(b)], { type: "text/csv;charset=utf-8" }), `${base}_BOM.csv`);
+        else if (bomFile === "xlsx") downloadBlob(new Blob([bomToXlsx(b, bomMeta()) as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${base}_BOM.xlsx`);
+        else {
+          const { PDFDocument, StandardFonts } = await import("pdf-lib");
+          const pdf = await PDFDocument.create();
+          pdf.setTitle(`Bill of materials — ${bomMeta().title}`);
+          pdf.setCreator("Volt");
+          const fonts = { regular: await pdf.embedFont(StandardFonts.Helvetica), bold: await pdf.embedFont(StandardFonts.HelveticaBold) };
+          appendBomPages(pdf, fonts, b, bomMeta());
+          downloadBlob(new Blob([(await pdf.save()) as BlobPart], { type: "application/pdf" }), `${base}_BOM.pdf`);
+        }
       } else if (fmt === "svg") {
         const files = pages.map((p, i) => [`${String(i + 1).padStart(2, "0")}_${safe(p.title)}.svg`, pageToSvg(doc, p, { measure: measureText, background: "#ffffff", version: meta ? v?.label : undefined, extraFields })] as const);
         if (files.length === 1) downloadBlob(new Blob([files[0][1]], { type: "image/svg+xml" }), `${base}_${files[0][0]}`);
@@ -159,7 +186,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent title="Export" description={v ? `Version ${v.label} · ${v.status.replace("_", " ").toLowerCase()}` : undefined} wide>
-        <div className="grid grid-cols-5 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
           {FORMATS.map((f) => (
             <button
               key={f.id}
@@ -206,9 +233,35 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
                 </NativeSelect>
               </Field>
             )}
-            <label className="col-span-2 flex items-center gap-2 text-xs">
-              <Checkbox checked={meta} onCheckedChange={(x) => setMeta(!!x)} /> Include version & status in title block fields
-            </label>
+            {fmt === "bom" && (
+              <>
+                <Field label="Group">
+                  <NativeSelect value={grouping} onChange={(e) => setGrouping(e.target.value as BomGrouping)}>
+                    <option value="part">By part number (purchasing)</option>
+                    <option value="location">By location, then part</option>
+                    <option value="component">One line per component</option>
+                  </NativeSelect>
+                </Field>
+                <Field label="File">
+                  <NativeSelect value={bomFile} onChange={(e) => setBomFile(e.target.value as typeof bomFile)}>
+                    <option value="xlsx">Excel (.xlsx)</option>
+                    <option value="csv">CSV</option>
+                    <option value="pdf">PDF table</option>
+                  </NativeSelect>
+                </Field>
+              </>
+            )}
+            {fmt !== "bom" && (
+              <label className="col-span-2 flex items-center gap-2 text-xs">
+                <Checkbox checked={meta} onCheckedChange={(x) => setMeta(!!x)} /> Include version & status in title block fields
+              </label>
+            )}
+            {fmt === "pdf" && (
+              <label className="col-span-2 flex items-center gap-2 text-xs">
+                <Checkbox checked={bomInPdf} onCheckedChange={(x) => setBomInPdf(!!x)} /> Append the bill of materials (and cable list) after the drawings
+              </label>
+            )}
+            {fmt === "bom" && bom && <BomPreview bom={bom} />}
             {(fmt === "pdf" || fmt === "png") && (
               <label className="col-span-2 flex items-center gap-2 text-xs">
                 <Checkbox checked={markup} onCheckedChange={(x) => setMarkup(!!x)} /> Include review markup{fmt === "pdf" ? " and a comment summary page" : ""}
@@ -244,6 +297,54 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function BomPreview({ bom }: { bom: ReturnType<typeof buildBom> }) {
+  const cols = BOM_COLUMNS.filter((c) => c.key !== "supplier" && c.key !== "location" && c.key !== "unit");
+  return (
+    <div className="col-span-2 space-y-1.5">
+      <p className="text-2xs text-muted">
+        {bom.rows.length} line{bom.rows.length === 1 ? "" : "s"} · {bom.components} component{bom.components === 1 ? "" : "s"}
+        {bom.cables.length ? ` · ${bom.cables.length} cable${bom.cables.length === 1 ? "" : "s"}` : ""}
+        {bom.excluded ? ` · ${bom.excluded} left out (Bill of materials off)` : ""}
+        {bom.missingPart ? <span className="text-warning"> · {bom.missingPart} without part number</span> : null}
+      </p>
+      <div className="max-h-64 overflow-auto rounded-md border border-border">
+        <table className="w-full text-2xs">
+          <thead className="sticky top-0 bg-panel">
+            <tr className="border-b border-border text-left text-subtle">
+              {cols.map((c) => (
+                <th key={c.key} className="px-1.5 py-1 font-medium">
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {bom.rows.slice(0, 200).map((r) => (
+              <tr key={r.item} className="border-b border-border/60 last:border-0">
+                {cols.map((c) => (
+                  <td key={c.key} className={cn("px-1.5 py-0.5 align-top", c.key === "partNumber" && !r.partNumber && "text-warning", (c.key === "item" || c.key === "qty") && "tabular text-right")}>
+                    {c.key === "partNumber" && !r.partNumber ? "—" : bomCell(r, c.key)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {!bom.rows.length && (
+              <tr>
+                <td colSpan={cols.length} className="px-2 py-3 text-center text-subtle">
+                  No parts on the selected pages.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[10px] leading-snug text-subtle">
+        Parts come from each component&apos;s Name, Rating, Part number and Manufacturer. Instances with the same reference count once; set Quantity for multiples, or turn Bill of materials off in the inspector to leave a component out.
+      </p>
+    </div>
   );
 }
 

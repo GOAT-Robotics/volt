@@ -260,6 +260,7 @@ export const COMMANDS: Command[] = [
           if (sel.elements.includes(e.id)) {
             for (const t of e.texts) if (t.override) (t.override = undefined), n++;
             if (e.outlineOverride) (e.outlineOverride = undefined), n++;
+            if (e.frame) (e.frame = undefined), n++;
           }
         for (const w of p.wires) if (sel.wires.includes(w.id) && w.override) (w.override = undefined), n++;
         for (const t of p.texts) if (sel.texts.includes(t.id) && t.override) (t.override = undefined), n++;
@@ -269,6 +270,28 @@ export const COMMANDS: Command[] = [
   },
   { id: "tool-select", label: "Select tool", section: "Tools", keys: "V", run: (_, s) => s.setTool("select") },
   { id: "tool-wire", label: "Wire tool", section: "Tools", keys: "W", enabled: editable, run: (_, s) => s.setTool("wire") },
+  { id: "tool-shape", label: "Shape tool", section: "Tools", keys: "S", enabled: editable, run: (_, s) => s.setTool("shape") },
+  ...(
+    [
+      ["rect", "Draw rectangle", "1"],
+      ["ellipse", "Draw ellipse / circle", "2"],
+      ["line", "Draw line", "3"],
+      ["polygon", "Draw polygon", "4"],
+      ["polyline", "Draw polyline", "5"],
+    ] as const
+  ).map(
+    ([k, label, keys]): Command => ({
+      id: `draw-${k}`,
+      label,
+      section: "Tools",
+      keys: `S ${keys}`,
+      enabled: editable,
+      run: (_, s) => {
+        s.set("shapeKind", k);
+        s.setTool("shape");
+      },
+    }),
+  ),
   {
     id: "insertPicture",
     label: "Insert picture… (logo, photo, product view)",
@@ -392,6 +415,7 @@ export const COMMANDS: Command[] = [
   { id: "wiring", label: "Wiring & cables… (colors, cross-sections, cables)", section: "Project", run: (ui) => ui.openDialog("wiring") },
   { id: "projectProps", label: "Project properties…", section: "Project", run: (ui) => ui.openDialog("projectProps") },
   { id: "export", label: "Export…", section: "Project", keys: "⌘E", enabled: (s) => s.version?.canExport ?? true, run: (ui) => ui.openDialog("export") },
+  { id: "bom", label: "Bill of materials… (parts list, Excel / CSV / PDF)", section: "Project", enabled: (s) => s.version?.canExport ?? true, run: (ui) => ui.openDialog("export", { format: "bom" }) },
   { id: "compat", label: "File compatibility report", section: "Project", run: (ui) => ui.openDialog("compat") },
   { id: "save", label: "Save now", section: "Project", keys: "⌘S", enabled: editable, run: (ui) => ui.saveNow() },
   { id: "validate", label: "Run checks", section: "Review", run: (_, s) => s.set("panels", { ...s.panels, right: "validate" }) },

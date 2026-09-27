@@ -135,12 +135,17 @@ export type ComponentInfoKey = (typeof COMPONENT_INFO)[number]["key"];
 export type ComponentInfoFlags = Partial<Record<ComponentInfoKey, boolean>>;
 
 export type LineStyle = { color: string; width: number; dash: "solid" | "dashed" | "dotted" | "dashdot" };
+/** box around a component: line style + gap between the symbol and the box */
+export type ComponentFrame = LineStyle & { show: boolean; padding: number };
 
 export type GraphicStyles = {
   wire: LineStyle & { junctionRadius: number; junctionColor: string; highlight: string };
   bus: LineStyle;
   pin: { color: string; size: number; showPoint: boolean };
+  /** symbol lines: force one colour for every symbol, scale their thickness */
   outline: { color: string | null; widthScale: number };
+  /** component outline: a box drawn around each component's symbol (off by default) */
+  frame?: ComponentFrame;
   /** which component information lines are shown under the reference by default */
   componentInfo?: ComponentInfoFlags;
   /** default placement of the component info block */
@@ -199,7 +204,10 @@ export type ElemInst = {
   showInfo?: ComponentInfoFlags;
   /** placement / alignment of the info block for this component; unset = project default */
   infoLayout?: InfoLayout;
+  /** symbol line colour for this component (overrides "Symbol lines") */
   outlineOverride?: Partial<LineStyle>;
+  /** outline box around this component (overrides the project "Component outline") */
+  frame?: Partial<ComponentFrame>;
   group?: GroupRef;
   /** QElectroTech cross-reference links (folio report pairs, master ↔ slaves): ids of linked elements */
   links?: string[];

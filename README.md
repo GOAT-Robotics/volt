@@ -66,7 +66,9 @@ The standard library, blocks and title blocks install automatically when the con
   - Moving or rotating a component re-routes its wires so they stay attached.
   - Dropping a component so its pin lands on a free wire end connects them. The connection points are highlighted before you drop.
 - **Tools and panels.**
-  - Tools: select, wire (orthogonal, click to add corners, Space flips the bend), text, pan, comment.
+  - Tools: select, wire (orthogonal, click to add corners, Space flips the bend), text, shapes, pan, comment.
+  - Shapes (S): rectangle, ellipse/circle, line, polygon and open polyline, drawn on the sheet with snapping (Shift = square / circle / 45°). Colour, thickness, solid/dashed/dotted/dash-dot line and fill are set in the tool bar (the last used style is remembered) and edited later in the inspector; drag handles to reshape. Shapes export to PDF, SVG, PNG, DXF and .qet.
+  - Component outline: an optional box around a component's symbol (project default in Global styles, per component in the inspector), separate from the symbol's own line colour.
   - Left: library, pages, and find-in-drawing.
   - Right: inspector, comments & review, checks, and history & versions.
   - Command palette (⌘K), context menus, keyboard shortcuts (`?`), and undo/redo.
@@ -84,6 +86,7 @@ The standard library, blocks and title blocks install automatically when the con
 - **Blocks.** Save a selection as a reusable block with named ports. Place it as linked, derived or an independent copy, and update placed instances when the block changes.
 - **Compare.** Compare two versions by overlay (removed items shown as red ghosts) or side by side with synced views, with a structured change list.
 - **Export.** PDF (vector, multi-page, optional comment summary), SVG, PNG, DXF, and `.qet`.
+- **Bill of materials.** Parts list from each component's name, rating, part number, manufacturer, supplier, quantity and unit, grouped by part number, by location, or one line per component, for all or selected sheets. Instances with the same reference count once; slave contacts, report arrows and junctions are skipped; the inspector's *In BOM* switch leaves a component out. Download as Excel (.xlsx, with a Cables sheet), CSV or a PDF table, or append it to the drawing PDF (Export → BOM, or "Bill of materials…" in ⌘K).
 - **Accessibility.** Keyboard alternatives for the canvas (Connect pins dialog, nudging, commands) and a screen-reader live region.
 
 **Wiring and cables**

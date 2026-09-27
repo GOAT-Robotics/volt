@@ -2,7 +2,7 @@ import { COMPONENT_INFO } from "../model";
 import { layoutRich, type RichLayout } from "../richtext";
 import { drawContents, drawCoverSheet } from "./cover";
 import { mateLabel } from "../mating";
-import type { Doc, ElemInst, ElementDef, FreeText, Junction, Page, PinDef, PlacedText, Pt, Rect, Styles, TextStyle, TitleBlockTemplate, Wire } from "../model";
+import type { ComponentFrame, Doc, ElemInst, ElementDef, FreeText, Junction, Page, PinDef, PlacedText, Pt, Rect, Styles, TextStyle, TitleBlockTemplate, Wire } from "../model";
 import { effectiveText, projectStyles } from "../styles";
 import { elemMatrix, pointAlong, rotOrient, toScene, transformRect, unionRect } from "../geometry";
 import { templateLogos, titleBlockColumnWidths, titleBlockHeight } from "../qet/titleblock";
@@ -633,6 +633,14 @@ export function drawPage(pt: Painter, o: DrawOpts) {
   }
 }
 
+export const DEFAULT_FRAME: ComponentFrame = { show: false, color: "#111827", width: 0.8, dash: "dashed", padding: 4 };
+
+/** effective outline box of a component (null when not shown) */
+export function componentFrame(e: ElemInst, styles: Styles): ComponentFrame | null {
+  const f = { ...DEFAULT_FRAME, ...(styles.graphics.frame ?? {}), ...(e.frame ?? {}) } as ComponentFrame;
+  return f.show ? f : null;
+}
+
 export function drawElement(
   pt: Painter,
   e: ElemInst,
@@ -653,6 +661,12 @@ export function drawElement(
     return;
   }
   for (const f of sym.fills) pt.fill(f.path, o.tint && f.alpha === 1 && f.color !== "#ffffff" ? o.tint : f.color, (o.alpha ?? 1) * f.alpha);
+  // component outline: a box around the symbol, independent of the symbol's own line colour
+  const fr = componentFrame(e, styles);
+  if (fr) {
+    const b = sym.bbox, p = fr.padding;
+    pt.stroke(new PathBuilder().R(b.x - p, b.y - p, b.w + 2 * p, b.h + 2 * p).build(), { color: o.tint ?? fr.color, width: fr.width, dash: DASHES[fr.dash] ?? null, minPx: 1, alpha: o.alpha });
+  }
   for (const s of sym.strokes) pt.stroke(s.path, { ...s.style, color: oc ?? s.style.color, width: s.style.width * ws, alpha: o.alpha });
   pt.stroke(sym.pinStubs, { color: oc ?? "#000000", width: 1, minPx: 1, alpha: o.alpha, cap: "butt" });
   // static texts (definition)

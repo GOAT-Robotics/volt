@@ -5,6 +5,7 @@ import { X, RotateCcw, Building2, Type, Spline, Square } from "lucide-react";
 import { useEditor } from "../../store";
 import { useEditorUI } from "../context";
 import type { GraphicStyles, PartialStyles, Styles, TextRole, TextStyle, DeepPartial } from "@/core/model";
+import { DEFAULT_FRAME } from "@/core/render/scene";
 import { TEXT_ROLES, COMPONENT_INFO, type InfoPlacement } from "@/core/model";
 import { ROLE_LABELS, deepMerge, projectStyles } from "@/core/styles";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ type Sel = { kind: "text"; role: TextRole } | { kind: "graphics"; key: keyof Gra
 
 const SAMPLE: Partial<Record<TextRole, string>> = { pinNumber: "13", componentRef: "K12", wireLabel: "L1-24", componentName: "2-pole MCB", componentRating: "16 A, 400 V", componentPartNumber: "A9F74216", componentManufacturer: "Schneider Electric", wireInfo: "BK 1.5 mm²" };
 
-const GRAPHIC_LABELS: Partial<Record<keyof GraphicStyles, string>> = { componentInfo: "Component info", wire: "Wires & junctions", bus: "Buses", pin: "Pins", outline: "Component outline", border: "Page border", titleBlock: "Title block", review: "Review markup" };
+const GRAPHIC_LABELS: Partial<Record<keyof GraphicStyles, string>> = { componentInfo: "Component info", wire: "Wires & junctions", bus: "Buses", pin: "Pins", outline: "Symbol lines", frame: "Component outline", border: "Page border", titleBlock: "Title block", review: "Review markup" };
 
 export function StylesDialog({ onClose }: { onClose: () => void }) {
   const doc = useEditor((s) => s.doc);
@@ -341,6 +342,7 @@ function GraphicsEditor({ k, g, setG, editable }: { k: keyof GraphicStyles; g: G
     case "outline":
       return (
         <>
+          <p className="text-2xs text-subtle">Colour and thickness of the symbols&apos; own lines. For a box around components, use Component outline.</p>
           <Row label="Force color">
             <div className="flex items-center gap-2">
               <Switch checked={!!g.outline.color} disabled={!editable} onCheckedChange={(v) => setG("outline", { color: v ? "#111827" : null })} />
@@ -352,6 +354,34 @@ function GraphicsEditor({ k, g, setG, editable }: { k: keyof GraphicStyles; g: G
           </Row>
         </>
       );
+    case "frame": {
+      const f = { ...DEFAULT_FRAME, ...(g.frame ?? {}) };
+      return (
+        <>
+          <Row label="Show">
+            <Switch checked={f.show} disabled={!editable} onCheckedChange={(v) => setG("frame", { show: v })} />
+          </Row>
+          <Row label="Color">
+            <ColorInput value={f.color} disabled={!editable} onChange={(c) => setG("frame", { color: c })} />
+          </Row>
+          <Row label="Thickness">
+            <Commit type="number" step={0.25} value={f.width} disabled={!editable} onCommit={(x) => setG("frame", { width: Math.max(0.1, Number(x) || 0.8) })} />
+          </Row>
+          <Row label="Line style">
+            <NativeSelect value={f.dash} disabled={!editable} onChange={(e) => setG("frame", { dash: e.target.value as "solid" })}>
+              <option value="solid">Solid</option>
+              <option value="dashed">Dashed</option>
+              <option value="dotted">Dotted</option>
+              <option value="dashdot">Dash-dot</option>
+            </NativeSelect>
+          </Row>
+          <Row label="Gap">
+            <Commit type="number" step={1} value={f.padding} disabled={!editable} onCommit={(x) => setG("frame", { padding: Math.max(0, Number(x) || 0) })} />
+          </Row>
+          <p className="text-2xs text-subtle">A box around each component&apos;s symbol. The symbol keeps its own colours; turn it on or off per component in the inspector.</p>
+        </>
+      );
+    }
     case "review":
       return (
         <>

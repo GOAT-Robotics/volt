@@ -21,7 +21,7 @@ import { logoBytes, logoDataUrl, logoSize } from "@/core/logos";
 import { PICTURE_LIMITS, readLogoFile } from "./logoUpload";
 import { endAddress, wireEndLabel, wireInfo, wiringOf } from "@/core/wiring";
 import { ROLE_LABELS } from "@/core/styles";
-import { docStyles, tbTemplate, wireTextAnchor } from "@/core/render/scene";
+import { DEFAULT_FRAME, docStyles, tbTemplate, wireTextAnchor } from "@/core/render/scene";
 import { templateVariables } from "@/core/titleblock-edit";
 import { symbolThumb } from "../thumb";
 import { pinDegree } from "../engine/snap";
@@ -29,6 +29,7 @@ import { polylineLength } from "@/core/geometry";
 import { cachedXref, describe } from "@/core/xref";
 import { measureText } from "@/core/render/canvas";
 import { cn } from "@/lib/utils";
+import { isBomExcluded } from "@/core/bom";
 
 /* small building blocks */
 export function Section({ title, children, actions, defaultOpen = true }: { title: string; children: React.ReactNode; actions?: React.ReactNode; defaultOpen?: boolean }) {
@@ -383,6 +384,9 @@ const INFO_LABEL: Record<string, string> = {
   auxiliary1: "Auxiliary",
 };
 
+/** edited in Component info → Bill of materials, not in the generic field list */
+const BOM_KEYS = ["bom", "quantity", "unity", "supplier"];
+
 function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page; doc: Doc; editable: boolean }) {
   const def = doc.defs[e.defId];
   const ui = useEditorUI();
@@ -399,7 +403,7 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
   const [newKey, setNewKey] = useState("");
   if (!def) return <p className="p-3 text-xs text-danger">Definition missing.</p>;
   const infoKeys = [...new Set(["label", "comment", "function", "location", ...Object.keys(def.info), ...Object.keys(e.info)])];
-  const visibleKeys = (showAll ? [...new Set([...infoKeys, ...COMMON_INFO])] : infoKeys).filter((k) => !COMPONENT_INFO.some((c) => c.key === k));
+  const visibleKeys = (showAll ? [...new Set([...infoKeys, ...COMMON_INFO])] : infoKeys).filter((k) => !COMPONENT_INFO.some((c) => c.key === k) && !BOM_KEYS.includes(k));
   return (
     <div>
       <div className="flex items-center gap-3 border-b border-border p-3">
@@ -572,12 +576,13 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
         {e.texts.map((t) => (
           <TextStyleRow key={t.id} t={t} e={e} editable={editable} styles={styles} upd={upd} />
         ))}
-        <Row label="Outline">
+        <Row label="Symbol color">
           <div className="flex items-center gap-1">
-            <ColorInput value={e.outlineOverride?.color ?? styles.graphics.outline.color ?? "#000000"} disabled={!editable} onChange={(v) => upd("Outline color", (x) => (x.outlineOverride = { ...(x.outlineOverride ?? {}), color: v }))} />
-            <Overridden on={!!e.outlineOverride} onReset={() => upd("Reset outline", (x) => (x.outlineOverride = undefined))} />
+            <ColorInput value={e.outlineOverride?.color ?? styles.graphics.outline.color ?? "#000000"} disabled={!editable} onChange={(v) => upd("Symbol color", (x) => (x.outlineOverride = { ...(x.outlineOverride ?? {}), color: v }))} />
+            <Overridden on={!!e.outlineOverride} onReset={() => upd("Reset symbol color", (x) => (x.outlineOverride = undefined))} />
           </div>
         </Row>
+        <FrameRow e={e} styles={styles} editable={editable} upd={upd} />
       </Section>
       <Section title="Definition" defaultOpen={false}>
         <Row label="Type">
@@ -635,6 +640,7 @@ function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc
   const custom =
     (!!e.showInfo && COMPONENT_INFO.some((c) => e.showInfo![c.key] !== undefined && e.showInfo![c.key] !== (defaults[c.key] ?? false))) ||
     (!!e.infoLayout && ((e.infoLayout.at !== undefined && e.infoLayout.at !== (layoutDefault.at ?? "auto")) || (e.infoLayout.align !== undefined && e.infoLayout.align !== layoutDefault.align)));
+  const inBom = !isBomExcluded(e);
   const setLayout = (label: string, p: InfoLayout) => upd(label, (x) => (x.infoLayout = { ...(x.infoLayout ?? {}), ...p, ...(p.at && p.at !== "free" ? { pos: undefined } : {}) }));
   return (
     <Section
@@ -668,6 +674,35 @@ function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc
           </Row>
         );
       })}
+      <Row label="In BOM" hint={inBom ? undefined : "Left out of the bill of materials"}>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={inBom}
+            disabled={!editable}
+            aria-label="Include in bill of materials"
+            onCheckedChange={(on) => upd(on ? "Include in BOM" : "Leave out of BOM", (x) => (on ? delete x.info.bom : (x.info.bom = "no")))}
+          />
+          <Commit
+            value={e.info.quantity ?? ""}
+            placeholder={def?.info.quantity ?? "Qty 1"}
+            disabled={!editable || !inBom}
+            aria-label="Quantity"
+            className="w-16"
+            onCommit={(v) => upd("Edit quantity", (x) => (v.trim() ? (x.info.quantity = v.trim()) : delete x.info.quantity))}
+          />
+          <Commit
+            value={e.info.unity ?? ""}
+            placeholder={def?.info.unity ?? "pcs"}
+            disabled={!editable || !inBom}
+            aria-label="Unit"
+            className="w-14"
+            onCommit={(v) => upd("Edit unit", (x) => (v.trim() ? (x.info.unity = v.trim()) : delete x.info.unity))}
+          />
+        </div>
+      </Row>
+      <Row label="Supplier">
+        <Commit value={e.info.supplier ?? ""} placeholder={def?.info.supplier ?? ""} disabled={!editable || !inBom} aria-label="Supplier" onCommit={(v) => upd("Edit supplier", (x) => (v.trim() ? (x.info.supplier = v.trim()) : delete x.info.supplier))} />
+      </Row>
       <Row label="Placement">
         <div className="flex items-center gap-1">
           <NativeSelect value={at} disabled={!editable} onChange={(ev) => setLayout("Info placement", { at: ev.target.value as InfoPlacement })} aria-label="Info placement">
@@ -696,6 +731,31 @@ function ComponentInfoSection({ e, doc, editable, upd }: { e: ElemInst; doc: Doc
       </Row>
       <p className="text-2xs text-subtle">Drag the info on the canvas to place it anywhere (it follows the component). Font, size and color of each line are set in Global styles.</p>
     </Section>
+  );
+}
+
+/** Outline box around the component: on/off, colour, line style (solid, dashed, dotted, dash-dot). */
+function FrameRow({ e, styles, editable, upd }: { e: ElemInst; styles: ReturnType<typeof docStyles>; editable: boolean; upd: (l: string, f: (x: ElemInst) => void) => void }) {
+  const f = { ...DEFAULT_FRAME, ...(styles.graphics.frame ?? {}), ...(e.frame ?? {}) };
+  const set = (label: string, p: Partial<typeof f>) => upd(label, (x) => (x.frame = { ...(x.frame ?? {}), ...p }));
+  return (
+    <Row label="Outline" hint={f.show ? "A box around the symbol; the symbol keeps its colours" : undefined}>
+      <div className="flex items-center gap-1">
+        <Switch checked={f.show} disabled={!editable} aria-label="Show outline" onCheckedChange={(v) => set(v ? "Show outline" : "Hide outline", { show: v })} />
+        {f.show && (
+          <>
+            <ColorInput value={f.color} disabled={!editable} onChange={(v) => set("Outline color", { color: v })} />
+            <NativeSelect value={f.dash} disabled={!editable} aria-label="Outline line style" onChange={(ev) => set("Outline style", { dash: ev.target.value as typeof f.dash })}>
+              <option value="solid">Solid</option>
+              <option value="dashed">Dashed</option>
+              <option value="dotted">Dotted</option>
+              <option value="dashdot">Dash-dot</option>
+            </NativeSelect>
+          </>
+        )}
+        <Overridden on={!!e.frame} onReset={() => upd("Reset outline", (x) => (x.frame = undefined))} />
+      </div>
+    </Row>
   );
 }
 
@@ -891,7 +951,7 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
   );
 }
 
-const SHAPE_NAMES: Record<Shape["kind"], string> = { line: "Line", rect: "Rectangle", ellipse: "Ellipse", polygon: "Polyline" };
+const SHAPE_NAMES: Record<Shape["kind"], string> = { line: "Line", rect: "Rectangle", ellipse: "Ellipse", polygon: "Polygon / polyline" };
 
 function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; editable: boolean }) {
   const list = page.shapes.filter((x) => ids.includes(x.id));
@@ -904,6 +964,8 @@ function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; ed
       const set = new Set(ids);
       for (const x of getPage(d, page.id).shapes) if (set.has(x.id)) fn(x);
     });
+  // the shape tool draws the next shapes in the style last set here
+  const remember = (p: Partial<ReturnType<typeof s>["shapeStyle"]>) => s().set("shapeStyle", { ...s().shapeStyle, ...p });
   const closable = list.filter((x) => x.kind === "polygon");
   const fillable = list.some((x) => x.kind !== "line" && !(x.kind === "polygon" && x.closed === false));
   const kinds = [...new Set(list.map((x) => SHAPE_NAMES[x.kind]))];
@@ -985,13 +1047,13 @@ function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; ed
       </Section>
       <Section title="Appearance">
         <Row label="Color">
-          <ColorInput value={same("color") ?? first.color} disabled={!editable} onChange={(v) => upd("Shape color", (x) => (x.color = v))} />
+          <ColorInput value={same("color") ?? first.color} disabled={!editable} onChange={(v) => (upd("Shape color", (x) => (x.color = v)), remember({ color: v }))} />
         </Row>
         <Row label="Thickness">
-          <Commit type="number" step={0.25} value={same("width") ?? ""} disabled={!editable} onCommit={(v) => Number(v) > 0 && upd("Shape thickness", (x) => (x.width = Number(v)))} />
+          <Commit type="number" step={0.25} value={same("width") ?? ""} disabled={!editable} onCommit={(v) => Number(v) > 0 && (upd("Shape thickness", (x) => (x.width = Number(v))), remember({ width: Number(v) }))} />
         </Row>
         <Row label="Line">
-          <NativeSelect value={same("dash") ?? ""} disabled={!editable} onChange={(ev) => upd("Shape line style", (x) => (x.dash = ev.target.value as Shape["dash"]))}>
+          <NativeSelect value={same("dash") ?? ""} disabled={!editable} onChange={(ev) => (upd("Shape line style", (x) => (x.dash = ev.target.value as Shape["dash"])), remember({ dash: ev.target.value as Shape["dash"] }))}>
             {same("dash") === undefined && <option value="">Mixed</option>}
             <option value="solid">Solid</option>
             <option value="dashed">Dashed</option>

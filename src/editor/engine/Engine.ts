@@ -4,7 +4,7 @@ import { produce } from "immer";
 import type { Doc, ElemInst, ElementDef, Page, Pt, Rect, Styles, TextRole } from "@/core/model";
 import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, toLocal, eqPt, dist } from "@/core/geometry";
 import { CanvasPainter, imageLoadListeners, measureText } from "@/core/render/canvas";
-import { PathBuilder } from "@/core/render/painter";
+import { DASHES, PathBuilder } from "@/core/render/painter";
 import { contentBounds, docStyles, drawPage, elementBounds, layoutElementTexts, pageGeometry, textBounds, freeTextBounds, wireStroke, drawElement } from "@/core/render/scene";
 import { symbolFor } from "@/core/render/symbol";
 import { deepMerge } from "@/core/styles";
@@ -30,7 +30,7 @@ import { cableMarks } from "@/core/wiring";
 import { nearestSegment } from "@/core/wires";
 import { cachedXref, describe, occurrenceAt, targetsOf, type Occurrence } from "@/core/xref";
 import { uid } from "@/core/ids";
-import type { EditorStore } from "../store";
+import type { DrawKind, EditorStore } from "../store";
 import { pinDegree, snapPoint, type IndexItem, type Snap } from "./snap";
 
 type StoreApi = { getState(): EditorStore; subscribe(l: (s: EditorStore, p: EditorStore) => void): () => void };
@@ -55,7 +55,8 @@ type Mode =
   | { m: "end"; wire: string; end: "a" | "b"; snap: Snap | null }
   | { m: "wire"; from: EndTarget; fromOrient: string | null; corners: Pt[]; cur: Pt; snap: Snap | null; hFirst: boolean | undefined }
   | { m: "etext"; el: string; text: string; start: Pt; delta: Pt }
-  | { m: "spt"; shape: string; i: number; snap: Snap | null };
+  | { m: "spt"; shape: string; i: number; snap: Snap | null }
+  | { m: "draw"; kind: DrawKind; pts: Pt[]; cur: Pt; down: Pt };
 
 type Hit =
   | { k: "el"; id: string }
@@ -198,7 +199,7 @@ export class Engine {
       }
     }
     if (s.sel !== p.sel || s.highlight !== p.highlight || s.comments !== p.comments || s.activeComment !== p.activeComment) this.dirtyOverlay = true;
-    if (s.tool !== p.tool || s.place !== p.place) {
+    if (s.tool !== p.tool || s.place !== p.place || s.shapeKind !== p.shapeKind) {
       this.mode = { m: "idle" };
       this.placeGhost = null;
       this.overlay.style.cursor = s.tool === "pan" ? "grab" : s.tool === "select" ? "default" : "crosshair";
@@ -606,6 +607,10 @@ export class Engine {
       requestAnimationFrame(() => this.editFreeText(id));
       return;
     }
+    if (s.tool === "shape" && editable) {
+      this.drawDown(wp, sp, e.shiftKey);
+      return;
+    }
     if (s.tool === "wire" && editable) {
       if (this.mode.m === "wire") {
         this.wireClick(wp);
@@ -725,6 +730,11 @@ export class Engine {
         this.dirtyScene = this.dirtyOverlay = true;
         return;
       }
+      case "draw": {
+        m.cur = this.drawPoint(wp, e.shiftKey, m);
+        this.dirtyOverlay = true;
+        return;
+      }
       case "etext": {
         m.delta = { x: wp.x - m.start.x, y: wp.y - m.start.y };
         const pid = s.pageId;
@@ -738,7 +748,7 @@ export class Engine {
       this.updatePlaceGhost(wp);
       return;
     }
-    if (s.tool === "wire") {
+    if (s.tool === "wire" || (s.tool === "shape" && this.editable)) {
       this.snapInd = this.snapAt(wp);
       this.dirtyOverlay = true;
       return;
@@ -978,6 +988,16 @@ export class Engine {
         this.dirtyScene = true;
         return;
       }
+      case "draw": {
+        // press-drag-release draws a rectangle / ellipse / line in one gesture; a plain click
+        // starts it and a second click finishes it
+        const sp2 = this.local(e);
+        if ((m.kind === "rect" || m.kind === "ellipse" || m.kind === "line") && m.pts.length === 1 && Math.hypot(sp2.x - m.down.x, sp2.y - m.down.y) > 4) {
+          m.pts.push(m.cur);
+          this.commitDraw();
+        }
+        return;
+      }
       case "wire":
         // click-drag from pin: releasing away from start finishes at the release point
         if (this.dragWire && dist(wp, m.corners[0]) > 4 / this.view.s) {
@@ -1140,6 +1160,7 @@ export class Engine {
 
   finishWireAsDangling() {
     const m = this.mode;
+    if (m.m === "draw") return this.finishDraw();
     if (m.m !== "wire") return;
     const pts = this.wirePreview(m);
     this.commitWire(m.from, { k: "free", p: pts[pts.length - 1] }, pts, m.snap ?? ({ kind: "none" } as Snap));
@@ -1150,6 +1171,12 @@ export class Engine {
   /** Backspace while wiring removes the last corner. */
   undoCorner(): boolean {
     const m = this.mode;
+    if (m.m === "draw") {
+      if (m.pts.length <= 1) this.cancel();
+      else m.pts.pop();
+      this.dirtyOverlay = true;
+      return true;
+    }
     if (m.m !== "wire") return false;
     if (m.corners.length <= 1) {
       this.cancel();
@@ -1172,6 +1199,104 @@ export class Engine {
     m.fromOrient = null;
     this.dirtyOverlay = true;
     return true;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Shape tool: rectangle, ellipse, line, polygon, polyline            */
+  /* ---------------------------------------------------------------- */
+
+  /** snapped point (grid / pins / guides; Alt = free); Shift = square / circle, or 45° steps from the last point */
+  private drawPoint(wp: Pt, shift: boolean, m?: Extract<Mode, { m: "draw" }>): Pt {
+    const last = m?.pts[m.pts.length - 1];
+    const sn = this.snapAt(wp, last ? { guideFrom: [last] } : {});
+    this.snapInd = sn;
+    let p = { ...sn.p };
+    if (shift && m && last) {
+      const dx = p.x - last.x, dy = p.y - last.y;
+      if ((m.kind === "rect" || m.kind === "ellipse") && m.pts.length === 1) {
+        const d = Math.max(Math.abs(dx), Math.abs(dy));
+        p = { x: last.x + Math.sign(dx || 1) * d, y: last.y + Math.sign(dy || 1) * d };
+      } else {
+        const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+        const r = Math.hypot(dx, dy);
+        p = { x: last.x + Math.round(Math.cos(a) * r * 100) / 100, y: last.y + Math.round(Math.sin(a) * r * 100) / 100 };
+      }
+    }
+    return p;
+  }
+
+  private drawDown(wp: Pt, sp: Pt, shift: boolean) {
+    const m = this.mode;
+    if (m.m === "draw") {
+      const p = this.drawPoint(wp, shift, m);
+      if (m.kind === "polygon" || m.kind === "polyline") {
+        // clicking the first point closes a polygon
+        if (m.kind === "polygon" && m.pts.length >= 3 && dist(p, m.pts[0]) < 8 / this.view.s) return this.finishDraw();
+        if (!eqPt(p, m.pts[m.pts.length - 1])) m.pts.push(p);
+        m.cur = p;
+        this.dirtyOverlay = true;
+        return;
+      }
+      m.pts.push(p);
+      this.commitDraw();
+      return;
+    }
+    const p = this.drawPoint(wp, false);
+    this.mode = { m: "draw", kind: this.s.shapeKind, pts: [p], cur: p, down: sp };
+    this.dirtyOverlay = true;
+  }
+
+  /** Enter / double-click / click on the first point: finish a polygon or polyline */
+  finishDraw() {
+    const m = this.mode;
+    if (m.m !== "draw") return;
+    if (m.kind === "polygon" || m.kind === "polyline") {
+      // a double-click adds the same point twice
+      const pts = m.pts.filter((p, i) => i === 0 || !eqPt(p, m.pts[i - 1]));
+      m.pts = pts;
+    } else if (m.pts.length === 1 && !eqPt(m.cur, m.pts[0])) m.pts.push(m.cur);
+    this.commitDraw();
+  }
+
+  private commitDraw() {
+    const m = this.mode;
+    if (m.m !== "draw") return;
+    this.mode = { m: "idle" };
+    this.snapInd = null;
+    this.dirtyOverlay = true;
+    const s = this.s;
+    const st = s.shapeStyle;
+    let shape: import("@/core/model").Shape | null = null;
+    const id = uid();
+    const base = { id, color: st.color, width: st.width, dash: st.dash };
+    if (m.kind === "rect" || m.kind === "ellipse") {
+      if (m.pts.length < 2) return;
+      const [a, b] = m.pts;
+      if (Math.abs(a.x - b.x) < 0.5 || Math.abs(a.y - b.y) < 0.5) return;
+      shape = { ...base, kind: m.kind, pts: [{ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) }], fill: st.fill };
+    } else if (m.kind === "line") {
+      if (m.pts.length < 2 || eqPt(m.pts[0], m.pts[1])) return;
+      shape = { ...base, kind: "line", pts: m.pts.slice(0, 2), fill: null };
+    } else {
+      const closed = m.kind === "polygon";
+      if (m.pts.length < 2 || (closed && m.pts.length < 3)) {
+        this.hooks.onToast?.(closed ? "A polygon needs at least 3 points" : "A polyline needs at least 2 points");
+        return;
+      }
+      shape = { ...base, kind: "polygon", closed, pts: m.pts, fill: closed ? st.fill : null };
+    }
+    const names: Record<DrawKind, string> = { rect: "rectangle", ellipse: "ellipse", line: "line", polygon: "polygon", polyline: "polyline" };
+    const sh = shape;
+    const pid = s.pageId;
+    s.apply(`Draw ${names[m.kind]}`, (d) => void getPage(d, pid).shapes.push(sh), { sel: { ...emptySel(), shapes: [id] } });
+    this.hooks.onAnnounce?.(`${names[m.kind][0].toUpperCase()}${names[m.kind].slice(1)} drawn`);
+  }
+
+  private drawPreviewPts(m: Extract<Mode, { m: "draw" }>): { kind: "rect" | "ellipse" | "poly"; pts: Pt[]; closed: boolean } {
+    if (m.kind === "rect" || m.kind === "ellipse") return { kind: m.kind, pts: [m.pts[0], m.cur], closed: true };
+    if (m.kind === "line") return { kind: "poly", pts: [m.pts[0], m.cur], closed: false };
+    const pts = eqPt(m.cur, m.pts[m.pts.length - 1]) ? m.pts : [...m.pts, m.cur];
+    return { kind: "poly", pts, closed: m.kind === "polygon" && pts.length > 2 };
   }
 
   isBusy() {
@@ -1367,6 +1492,10 @@ export class Engine {
     const wp = this.toWorld(sp.x, sp.y);
     if (this.mode.m === "wire") {
       this.finishWireAsDangling();
+      return;
+    }
+    if (this.mode.m === "draw") {
+      this.finishDraw();
       return;
     }
     if (!this.editable) return;
@@ -1791,13 +1920,44 @@ export class Engine {
       for (const p of m.corners) cb.E(p.x, p.y, px(2.5), px(2.5));
       painter.fill(cb.build(), accent);
     }
+    // shape being drawn: in its real style, plus accent handles and a size readout
+    if (m.m === "draw") {
+      const pv = this.drawPreviewPts(m);
+      const st = s.shapeStyle;
+      const b = new PathBuilder();
+      if (pv.kind === "rect" || pv.kind === "ellipse") {
+        const r = normRect(pv.pts[0], pv.pts[1]);
+        if (pv.kind === "rect") b.R(r.x, r.y, r.w, r.h);
+        else b.E(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, r.h / 2);
+      } else b.poly(pv.closed ? [...pv.pts, pv.pts[0]] : pv.pts);
+      const path = b.build();
+      if (st.fill && (pv.kind !== "poly" || pv.closed)) painter.fill(path, st.fill, 0.6);
+      painter.stroke(path, { color: st.color, width: st.width, dash: DASHES[st.dash] ?? null, minPx: 1 });
+      painter.stroke(path, { color: accent, width: px(1), dash: [px(3), px(3)], alpha: 0.7 });
+      const hb = new PathBuilder();
+      for (const p of m.pts) hb.R(p.x - px(3), p.y - px(3), px(6), px(6));
+      painter.fill(hb.build(), accent);
+      const r = normRect(m.pts[m.pts.length - 1], m.cur);
+      const txt = m.kind === "rect" || m.kind === "ellipse" ? `${Math.round(Math.abs(m.cur.x - m.pts[0].x))} × ${Math.round(Math.abs(m.cur.y - m.pts[0].y))}` : `${Math.round(Math.hypot(r.w, r.h))}`;
+      const sp = this.toScreen(m.cur);
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      c.font = "500 11px ui-sans-serif, -apple-system, sans-serif";
+      const w = c.measureText(txt).width + 10;
+      c.fillStyle = accent;
+      roundRect(c, sp.x + 12, sp.y + 10, w, 18, 4);
+      c.fill();
+      c.fillStyle = "#fff";
+      c.textBaseline = "middle";
+      c.fillText(txt, sp.x + 17, sp.y + 19);
+      c.setTransform(...base);
+    }
     // placement ghost
     if (this.placeGhost && s.tool === "place") {
       drawElement(painter, this.placeGhost.e, this.placeGhost.def, this.styles, { lod: sc, alpha: 0.55, tint: accent, pins: true, measure: measureText });
     }
     // snap indicator
     const sn = this.snapInd;
-    if (sn && (m.m === "wire" || m.m === "end" || m.m === "spt" || s.tool === "wire") && sn.kind !== "grid" && sn.kind !== "none") {
+    if (sn && (m.m === "wire" || m.m === "end" || m.m === "spt" || m.m === "draw" || s.tool === "wire" || s.tool === "shape") && sn.kind !== "grid" && sn.kind !== "none") {
       const col = sn.kind === "pin" ? "#16a34a" : sn.kind === "junction" || sn.kind === "wireEnd" ? "#0891b2" : sn.kind === "wire" ? "#d97706" : "#ec4899";
       const b = new PathBuilder();
       if (sn.kind === "pin") b.E(sn.p.x, sn.p.y, px(6), px(6));

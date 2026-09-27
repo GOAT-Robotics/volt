@@ -61,6 +61,7 @@ export function defaultStyles(): Styles {
       bus: { color: "#111827", width: 3, dash: "solid" },
       pin: { color: "#dc2626", size: 2, showPoint: true },
       outline: { color: null, widthScale: 1 },
+      frame: { show: false, color: "#111827", width: 0.8, dash: "dashed", padding: 4 },
       componentInfo: { description: true, rating: true, manufacturer_reference: false, manufacturer: false },
       componentInfoLayout: { at: "auto" },
       border: { color: "#6b7280", width: 1, dash: "solid", headerColor: "#f3f4f6", font: "Inter, Helvetica, Arial, sans-serif", size: 8 },
