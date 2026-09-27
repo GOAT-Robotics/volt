@@ -19,8 +19,23 @@ export function ImportQetButton({ folders, currentFolder }: { folders: FolderRow
   const input = React.useRef<HTMLInputElement>(null);
   const [parsing, setParsing] = React.useState(false);
   const [parsed, setParsed] = React.useState<Parsed | null>(null);
+  /** an element (.elmt) or a .zip of them goes to the personal library instead */
+  const importElements = async (file: File) => {
+    const fd = new FormData();
+    fd.append("files", file, file.name);
+    const r = await fetch("/api/library/import", { method: "POST", body: fd });
+    const j = (await r.json().catch(() => ({}))) as { error?: string; created?: number; updated?: number; skipped?: number; errors?: string[] };
+    if (!r.ok) return void toast.error(j.error ?? "Import failed");
+    if (j.errors?.length && !j.created) return void toast.error(`Could not import ${file.name}: ${j.errors[0]}`);
+    if (!j.created && j.skipped) return void toast.info(`${file.name} is already in your library`);
+    toast.success(`${j.created ?? 0} element${j.created === 1 ? "" : "s"} added to your personal library — find ${j.created === 1 ? "it" : "them"} under Library → Mine or in the editor's library panel`);
+  };
   const onFile = async (file: File | undefined) => {
     if (!file) return;
+    if (/\.(elmt|zip)$/i.test(file.name)) {
+      if (input.current) input.current.value = "";
+      return void importElements(file);
+    }
     if (!/\.qet$/i.test(file.name)) return toast.error("Choose a project file (.qet)");
     if (file.size > 50 * 1024 * 1024) return toast.error("File exceeds the 50 MB limit");
     setParsing(true);
@@ -38,7 +53,7 @@ export function ImportQetButton({ folders, currentFolder }: { folders: FolderRow
   };
   return (
     <>
-      <input ref={input} type="file" accept=".qet,application/xml" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => onFile(e.target.files?.[0])} />
+      <input ref={input} type="file" accept=".qet,.elmt,.zip,application/xml" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => onFile(e.target.files?.[0])} />
       <Button onClick={() => input.current?.click()} disabled={parsing}>
         {parsing ? <Spinner /> : <Upload />} Import .qet
       </Button>

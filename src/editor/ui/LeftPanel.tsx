@@ -181,16 +181,31 @@ function LibraryPanel() {
     }
   };
 
-  const importFiles = async (files: FileList | null) => {
-    if (!files?.length) return;
-    const list = [...files].filter((f) => f.name.endsWith(".elmt") || f.name.endsWith(".zip"));
+  const importFiles = async (files: FileList | File[] | null) => {
+    const all = [...(files ?? [])]; // copy first: clearing the input empties its live FileList
+    if (fileRef.current) fileRef.current.value = ""; // choosing the same file again must fire onChange
+    if (!all.length) return;
+    const list = all.filter((f) => /\.(elmt|zip)$/i.test(f.name));
+    if (!list.length) return ui.toast(all.some((f) => /\.qet$/i.test(f.name)) ? "That is a project (.qet); open it from Projects → Import .qet" : "Choose QElectroTech element files (.elmt) or a .zip of them", { tone: "error" });
     const fd = new FormData();
     for (const f of list) fd.append("files", f, (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name);
     const res = await fetch("/api/library/import", { method: "POST", body: fd });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) return ui.toast(j.error ?? "Import failed", { tone: "error" });
-    ui.toast(`Imported ${j.created ?? 0} element${j.created === 1 ? "" : "s"} into your personal library`);
+    const j = (await res.json().catch(() => ({}))) as { error?: string; created?: number; updated?: number; skipped?: number; errors?: string[] };
+    if (!res.ok) return ui.toast(j.error ?? `Import failed (${res.status})`, { tone: "error" });
+    const n = (x?: number) => x ?? 0;
+    const parts = [
+      n(j.created) && `${j.created} imported`,
+      n(j.updated) && `${j.updated} updated`,
+      n(j.skipped) && `${j.skipped} already in your library`,
+      j.errors?.length && `${j.errors.length} could not be read: ${j.errors[0]}`,
+    ].filter(Boolean);
+    ui.toast(parts.join(" · ") || "Nothing imported", { tone: j.errors?.length && !n(j.created) && !n(j.updated) ? "error" : undefined });
     setScope("mine");
+    // show what arrived: a single element is searched by name
+    if (list.length === 1 && /\.elmt$/i.test(list[0].name) && !j.errors?.length) {
+      const name = /<name lang="en">([^<]+)<\/name>/.exec(await list[0].text())?.[1];
+      if (name) setQ(name);
+    }
     setReload((x) => x + 1);
   };
 
@@ -203,7 +218,17 @@ function LibraryPanel() {
   ];
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="flex h-full flex-col"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return;
+        e.preventDefault();
+        void importFiles([...e.dataTransfer.files]);
+      }}
+    >
       <div className="space-y-2 border-b border-border p-2">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-subtle" />
@@ -238,7 +263,7 @@ function LibraryPanel() {
                   <RefreshCw />
                 </Button>
               </Tip>
-              <Tip content="Import element files or a .zip into your library">
+              <Tip content="Import .elmt files or a .zip into your library (or drop them here)">
                 <Button variant="ghost" size="icon-sm" onClick={() => fileRef.current?.click()} aria-label="Import elements">
                   <Upload />
                 </Button>
