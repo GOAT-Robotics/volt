@@ -37,6 +37,13 @@ export function NewProjectDialog({ onClose, folders, templates, currentFolder, d
     api<{ templates: { id: string; name: string; isDefault: boolean }[] }>("/api/style-templates").then((j) => setStyles(j.templates)).catch(() => {});
   }, []);
   const inherited = styles.find((x) => x.id === tmpl?.styleTemplateId) ?? styles.find((x) => x.isDefault);
+  // organization title block layouts: "" = the project template's layout (or the workspace default)
+  const [layouts, setLayouts] = React.useState<{ id: string; name: string; isDefault: boolean }[]>([]);
+  const [layoutId, setLayoutId] = React.useState("");
+  React.useEffect(() => {
+    api<{ organization?: { id: string; name: string; isDefault: boolean }[] }>("/api/titleblocks").then((j) => setLayouts(j.organization ?? [])).catch(() => {});
+  }, []);
+  const inheritedLayout = layouts.find((x) => x.id === tmpl?.titleBlockLayoutId) ?? layouts.find((x) => x.isDefault);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   const missing = (tmpl?.requiredFields ?? []).filter((r) => !props[r]?.trim());
   const submit = async (e: React.FormEvent) => {
@@ -56,6 +63,7 @@ export function NewProjectDialog({ onClose, folders, templates, currentFolder, d
           customScheme: f.versionScheme === "CUSTOM" ? f.customScheme : null,
           templateId: f.templateId || null,
           styleTemplateId: styleId || null,
+          titleBlockLayoutId: layoutId || null,
           props,
         },
       });
@@ -119,6 +127,20 @@ export function NewProjectDialog({ onClose, folders, templates, currentFolder, d
               ))}
             </NativeSelect>
           </Field>
+          {layouts.length > 0 && (
+            <Field label="Title block" className="col-span-2" hint="Your organization's title block layouts (Administration → Title block layouts).">
+              <NativeSelect value={layoutId} onChange={(e) => setLayoutId(e.target.value)} aria-label="Title block">
+                <option value="">{inheritedLayout ? `${inheritedLayout.name} (${tmpl?.titleBlockLayoutId ? "from project template" : "default"})` : "Volt's default title block"}</option>
+                {layouts
+                  .filter((x) => x.id !== inheritedLayout?.id)
+                  .map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+              </NativeSelect>
+            </Field>
+          )}
           {styles.length > 0 && (
             <Field label="Drawing style" className="col-span-2" hint="Fonts, text sizes, colors and line weights. Can be changed later in the editor (Properties → Project → Drawing style).">
               <NativeSelect value={styleId} onChange={(e) => setStyleId(e.target.value)} aria-label="Drawing style">

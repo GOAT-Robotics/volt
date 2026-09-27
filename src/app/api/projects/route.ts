@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { applyLayout, layoutForNewProject } from "@/lib/titleblock-layouts";
 import { route, body } from "@/lib/api";
 import { apiCtx, assertCan, HttpError } from "@/lib/session";
 import { db, J } from "@/lib/db";
@@ -34,6 +35,7 @@ const Body = z.object({
   customScheme: z.string().trim().max(40).nullish(),
   templateId: z.string().nullish(),
   styleTemplateId: z.string().nullish(),
+  titleBlockLayoutId: z.string().nullish(),
   props: z.record(z.string(), z.string().max(500)).optional(),
 });
 
@@ -56,6 +58,14 @@ export const POST = route(async (req) => {
   const base = await baseStylesFor(ctx.workspace.id, b.styleTemplateId || tmpl?.styleTemplateId);
   const doc = docFromTemplate(b.name, tmpl, base.styles, props);
   if (base.ref) doc.baseStylesRef = base.ref;
+  // organization title block layout: chosen, from the project template, or the workspace default
+  // (a template's seed drawing keeps its own title blocks unless the template names a layout)
+  const layoutId = b.titleBlockLayoutId || tmpl?.titleBlockLayoutId || null;
+  if (layoutId || !tmpl?.doc) {
+    const tb = await layoutForNewProject(ctx.workspace.id, layoutId);
+    if (layoutId && !tb) throw new HttpError(400, "Title block layout not found or not approved");
+    if (tb) applyLayout(doc, tb);
+  }
   const { project, version } = await createProjectRecord({
     workspaceId: ctx.workspace.id,
     userId: ctx.user.id,

@@ -71,3 +71,13 @@ describe("title block logos", () => {
     expect(String(xobjs)).toContain("/Img");
   });
 });
+
+describe("renaming a template keeps its logos", () => {
+  it("serialises under a new name with logos intact", () => {
+    const t = parseTitleBlockTemplate(seed("double-logo.titleblock"));
+    const out = serializeTitleBlockTemplate({ ...t, name: "Renamed", logos: templateLogos(t) });
+    const again = parseTitleBlockTemplate(out);
+    expect(again.name).toBe("Renamed");
+    expect(Object.keys(templateLogos(again))).toEqual(["qelectrotech.svg"]);
+  });
+});

@@ -80,6 +80,7 @@ type Drag =
   | { kind: "col"; i: number; x0: number; start: T; widths: number[] }
   | { kind: "row"; i: number; y0: number; start: T };
 
+/** In the drawing editor: edits a template of this project (all pages using it, or a copy for this page). */
 export function TitleBlockEditor({ onClose, arg }: { onClose: () => void; arg?: { template?: string } }) {
   const doc = useEditor((s) => s.doc) as Doc;
   const pageId = useEditor((s) => s.pageId);
@@ -87,18 +88,87 @@ export function TitleBlockEditor({ onClose, arg }: { onClose: () => void; arg?: 
   const page = getPage(doc, pageId) as Page;
   const origName = arg?.template ?? page.titleBlock.template;
   const orig = doc.titleBlocks[origName] ?? tbTemplate(doc, page);
-  const [t, setT] = useState<T>(() => ({ ...orig, name: origName, rows: [...orig.rows], cols: orig.cols.map((c) => ({ ...c })), cells: orig.cells.filter((c) => c.type !== "empty").map((c) => ({ ...c })), logos: { ...templateLogos(orig) } }));
+  const [asCopy, setAsCopy] = useState(false);
+  const users = doc.pages.filter((p) => p.titleBlock.template === origName).length;
+  const vars = useMemo(() => titleVars({ doc, page }), [doc, page]);
+  const available = useMemo(() => {
+    const m = new Map<string, TitleBlockLogo>();
+    for (const tb of Object.values(doc.titleBlocks)) for (const [n, l] of Object.entries(templateLogos(tb))) if (!m.has(n)) m.set(n, l);
+    return m;
+  }, [doc.titleBlocks]);
+  return (
+    <TitleBlockDesigner
+      initial={{ ...orig, name: origName }}
+      width={pageGeometry(doc, page).border.w}
+      vars={vars}
+      availableLogos={available}
+      extraVariables={Object.keys(doc.meta.props ?? {})}
+      editable={editable}
+      title="Title block template"
+      description={`Changes apply to every page using “${origName}”${users > 1 ? ` (${users} pages)` : ""}. Drag cells to move them, drag the borders to resize.`}
+      footer={
+        <label className="mr-auto flex items-center gap-1.5 text-2xs text-muted">
+          <Switch checked={asCopy} onCheckedChange={setAsCopy} /> Save as a new template for this page
+        </label>
+      }
+      onClose={onClose}
+      onSave={(out) => {
+        const name = out.name;
+        const renamed = name !== origName;
+        if ((asCopy || renamed) && doc.titleBlocks[name]) return void toast.error(`A template called “${name}” already exists in this project`);
+        useEditor.getState().apply(asCopy ? "New title block template" : "Edit title block template", (d) => {
+          if (asCopy) {
+            d.titleBlocks[name] = out;
+            getPage(d, pageId).titleBlock.template = name;
+            return;
+          }
+          if (renamed) {
+            delete d.titleBlocks[origName];
+            for (const p of d.pages) if (p.titleBlock.template === origName) p.titleBlock.template = name;
+          }
+          d.titleBlocks[name] = out;
+        });
+        toast.success(asCopy ? `Saved as “${name}” for this page` : `Title block updated on ${users || 1} page${users === 1 ? "" : "s"}`);
+        onClose();
+      }}
+    />
+  );
+}
+
+export type DesignerProps = {
+  initial: TitleBlockTemplate;
+  /** frame width the template is laid out at */
+  width: number;
+  /** variable values for the preview */
+  vars: Record<string, string>;
+  /** logos that can be picked besides the template's own */
+  availableLogos?: Map<string, TitleBlockLogo>;
+  /** more %variables offered in the picker (project properties) */
+  extraVariables?: string[];
+  editable: boolean;
+  title: string;
+  description: string;
+  footer?: React.ReactNode;
+  saveLabel?: string;
+  defaultShowVars?: boolean;
+  onClose: () => void;
+  /** the edited template with its regenerated QET xml (logos inside) */
+  onSave: (t: TitleBlockTemplate) => void | Promise<void>;
+};
+
+/** The visual title block editor itself (also used in Administration → Title block layouts). */
+export function TitleBlockDesigner({ initial: orig, width: W, vars, availableLogos, extraVariables = [], editable, title, description, footer, saveLabel = "Save template", defaultShowVars = false, onClose, onSave }: DesignerProps) {
+  const [t, setT] = useState<T>(() => ({ ...orig, rows: [...orig.rows], cols: orig.cols.map((c) => ({ ...c })), cells: orig.cells.filter((c) => c.type !== "empty").map((c) => ({ ...c })), logos: { ...templateLogos(orig) } }));
   const [history, setHistory] = useState<T[]>([]);
   const [sel, setSel] = useState<number[]>([]);
   const [slot, setSlot] = useState<{ row: number; col: number } | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [showVars, setShowVars] = useState(false);
-  const [asCopy, setAsCopy] = useState(false);
+  const [showVars, setShowVars] = useState(defaultShowVars);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [saving, setSaving] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const logoInput = useRef<HTMLInputElement>(null);
 
-  const W = pageGeometry(doc, page).border.w;
   // 100 % = the whole template fits the canvas width
   const canvas = useRef<HTMLDivElement>(null);
   const [avail, setAvail] = useState(900);
@@ -118,15 +188,13 @@ export function TitleBlockEditor({ onClose, arg }: { onClose: () => void; arg?: 
   for (const h of t.rows) rowY.push(rowY[rowY.length - 1] + h);
   const H = rowY[rowY.length - 1];
   const occ = useMemo(() => occupancy(t), [t]);
-  const vars = useMemo(() => titleVars({ doc, page }), [doc, page]);
   const logos = t.logos ?? {};
   const projectLogos = useMemo(() => {
     const m = new Map<string, TitleBlockLogo>();
     for (const [n, l] of Object.entries(logos)) m.set(n, l);
-    for (const tb of Object.values(doc.titleBlocks)) for (const [n, l] of Object.entries(templateLogos(tb))) if (!m.has(n)) m.set(n, l);
+    for (const [n, l] of availableLogos ?? []) if (!m.has(n)) m.set(n, l);
     return m;
-  }, [doc.titleBlocks, logos]);
-  const users = doc.pages.filter((p) => p.titleBlock.template === origName).length;
+  }, [availableLogos, logos]);
 
   /** every change goes through here so it can be undone */
   const change = (n: T | null, keepSel = true) => {
@@ -176,11 +244,9 @@ export function TitleBlockEditor({ onClose, arg }: { onClose: () => void; arg?: 
     setDrag(null);
   };
 
-  const save = () => {
+  const save = async () => {
     const name = t.name.trim();
     if (!name) return toast.error("Give the template a name");
-    const renamed = name !== origName;
-    if ((asCopy || renamed) && doc.titleBlocks[name]) return toast.error(`A template called “${name}” already exists in this project`);
     const used = new Set(t.cells.filter((c) => c.type === "logo" && c.value).map((c) => c.value!));
     const keptLogos = Object.fromEntries(Object.entries(logos).filter(([n]) => used.has(n)));
     let xml: string;
@@ -189,21 +255,12 @@ export function TitleBlockEditor({ onClose, arg }: { onClose: () => void; arg?: 
     } catch (e) {
       return toast.error(`Could not save the template: ${(e as Error).message}`);
     }
-    const out: T = { name, rows: t.rows, cols: t.cols, cells: t.cells.filter((c) => c.type !== "empty"), xml };
-    useEditor.getState().apply(asCopy ? "New title block template" : "Edit title block template", (d) => {
-      if (asCopy) {
-        d.titleBlocks[name] = out;
-        getPage(d, pageId).titleBlock.template = name;
-        return;
-      }
-      if (renamed) {
-        delete d.titleBlocks[origName];
-        for (const p of d.pages) if (p.titleBlock.template === origName) p.titleBlock.template = name;
-      }
-      d.titleBlocks[name] = out;
-    });
-    toast.success(asCopy ? `Saved as “${name}” for this page` : `Title block updated on ${users || 1} page${users === 1 ? "" : "s"}`);
-    onClose();
+    setSaving(true);
+    try {
+      await onSave({ name, rows: t.rows, cols: t.cols, cells: t.cells.filter((c) => c.type !== "empty"), xml });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const uploadLogo = async (f: File) => {
@@ -230,7 +287,7 @@ export function TitleBlockEditor({ onClose, arg }: { onClose: () => void; arg?: 
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title="Title block template" description={`Changes apply to every page using “${origName}”${users > 1 ? ` (${users} pages)` : ""}. Drag cells to move them, drag the borders to resize.`} wide="xl" className="max-w-[min(1500px,96vw)]">
+      <DialogContent title={title} description={description} wide="xl" className="max-w-[min(1500px,96vw)]">
         <div className="space-y-2" onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
           {/* toolbar */}
           <div className="flex flex-wrap items-center gap-1">
@@ -439,7 +496,7 @@ export function TitleBlockEditor({ onClose, arg }: { onClose: () => void; arg?: 
                               %{x.v} — {x.label}
                             </option>
                           ))}
-                          {Object.keys(doc.meta.props ?? {}).map((k) => (
+                          {extraVariables.map((k) => (
                             <option key={k} value={k}>
                               %{k} — project property
                             </option>
@@ -521,14 +578,12 @@ export function TitleBlockEditor({ onClose, arg }: { onClose: () => void; arg?: 
           </div>
         </div>
         <DialogFooter>
-          <label className="mr-auto flex items-center gap-1.5 text-2xs text-muted">
-            <Switch checked={asCopy} onCheckedChange={setAsCopy} /> Save as a new template for this page
-          </label>
+          {footer ?? <span className="mr-auto" />}
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={!editable} onClick={save}>
-            Save template
+          <Button variant="primary" disabled={!editable || saving} onClick={() => void save()}>
+            {saveLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

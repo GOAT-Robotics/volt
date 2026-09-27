@@ -32,7 +32,7 @@ const ROLE_NAMES: Record<TextRole, string> = {
   revisionTable: "Revision table",
 };
 
-function TemplateList<T extends { id: string; name: string; version: number; status: string; isDefault: boolean }>({ items, selected, onSelect, icon }: { items: T[]; selected: string | null; onSelect: (id: string) => void; icon: React.ReactNode }) {
+export function TemplateList<T extends { id: string; name: string; version: number; status: string; isDefault: boolean }>({ items, selected, onSelect, icon }: { items: T[]; selected: string | null; onSelect: (id: string) => void; icon: React.ReactNode }) {
   return (
     <ul className="space-y-1" role="listbox" aria-label="Templates">
       {items.map((t) => (
@@ -57,7 +57,7 @@ function TemplateList<T extends { id: string; name: string; version: number; sta
   );
 }
 
-function HistoryList({ history }: { history: { version: number; action: string; at: string; by: string; note?: string }[] }) {
+export function HistoryList({ history }: { history: { version: number; action: string; at: string; by: string; note?: string }[] }) {
   return (
     <details className="rounded-md border border-border">
       <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-1.5 text-xs font-medium">
@@ -80,7 +80,7 @@ function HistoryList({ history }: { history: { version: number; action: string; 
   );
 }
 
-function TemplateActions({ kind, t, run, busy }: { kind: "style-templates" | "project-templates"; t: { id: string; status: string; isDefault: boolean; history: { action: string }[] }; run: ReturnType<typeof useMutation>[0]; busy: boolean }) {
+export function TemplateActions({ kind, t, run, busy }: { kind: "style-templates" | "project-templates" | "titleblock-layouts"; t: { id: string; status: string; isDefault: boolean; history: { action: string }[] }; run: ReturnType<typeof useMutation>[0]; busy: boolean }) {
   const act = (action: string, msg: string) => run(() => api(`/api/admin/${kind}/${t.id}`, { method: "PATCH", json: { action } }), msg);
   const everApproved = t.status === "APPROVED" || t.history.some((h) => h.action === "approve");
   return (
@@ -367,7 +367,7 @@ export function ProjectTemplatesTab({ data }: { data: AdminData }) {
           )}
         </div>
       </Section>
-      {t ? <ProjectTemplateEditor key={`${t.id}:${t.version}:${t.status}`} t={t} styles={data.styleTemplates} /> : <div />}
+      {t ? <ProjectTemplateEditor key={`${t.id}:${t.version}:${t.status}`} t={t} styles={data.styleTemplates} layouts={data.titleBlockLayouts} /> : <div />}
       {creating && <CreateDialog kind="project-templates" onClose={() => setCreating(false)} onCreated={setSel} versions={data.versions} />}
     </div>
   );
@@ -375,7 +375,7 @@ export function ProjectTemplatesTab({ data }: { data: AdminData }) {
 
 type Override = { minApprovals?: number; sequentialDefault?: boolean; requireCommentsResolved?: boolean; signatureRequiredForRelease?: boolean; requiredSignatories?: number; allowSelfApproval?: boolean };
 
-function ProjectTemplateEditor({ t, styles }: { t: AdminData["projectTemplates"][number]; styles: AdminData["styleTemplates"] }) {
+function ProjectTemplateEditor({ t, styles, layouts }: { t: AdminData["projectTemplates"][number]; styles: AdminData["styleTemplates"]; layouts: AdminData["titleBlockLayouts"] }) {
   const [run, busy] = useMutation();
   const init = React.useMemo(
     () => ({
@@ -384,6 +384,7 @@ function ProjectTemplateEditor({ t, styles }: { t: AdminData["projectTemplates"]
       pages: t.content.pages.map((p) => p.title),
       fields: Object.entries(t.content.titleBlockFields),
       styleTemplateId: t.content.styleTemplateId ?? "",
+      titleBlockLayoutId: t.content.titleBlockLayoutId ?? "",
       numbering: (t.content.numbering ?? []) as NumberingRule[],
       requiredFields: t.content.requiredFields,
       approval: (t.content.approval ?? {}) as Override,
@@ -399,6 +400,7 @@ function ProjectTemplateEditor({ t, styles }: { t: AdminData["projectTemplates"]
       pages: f.pages.filter((p) => p.trim()).map((title) => ({ title: title.trim() })),
       titleBlockFields: Object.fromEntries(f.fields.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v])),
       styleTemplateId: f.styleTemplateId || null,
+      titleBlockLayoutId: f.titleBlockLayoutId || null,
       numbering: f.numbering.map((r) => ({ ...r, start: Number(r.start) || 1 })),
       requiredFields: f.requiredFields,
       approval: Object.fromEntries(Object.entries(f.approval).filter(([, v]) => v !== undefined)),
@@ -448,6 +450,19 @@ function ProjectTemplateEditor({ t, styles }: { t: AdminData["projectTemplates"]
                 .map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
+                  </option>
+                ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Title block layout" hint="Put on every page of projects created from this template.">
+            <NativeSelect value={f.titleBlockLayoutId} onChange={(e) => set("titleBlockLayoutId", e.target.value)} aria-label="Title block layout">
+              <option value="">{t.seedPages > 0 ? "Keep the seed drawing's title blocks" : "Workspace default layout"}</option>
+              {layouts
+                .filter((l) => l.status !== "RETIRED")
+                .map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                    {l.status === "DRAFT" && !l.history.some((h) => h.action === "approve") ? " (not approved yet)" : ""}
                   </option>
                 ))}
             </NativeSelect>

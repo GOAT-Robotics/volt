@@ -11,6 +11,8 @@ export type ProjectTemplateContent = {
   titleBlockFields: Record<string, string>;
   /** style template to use as base styles (null = workspace default) */
   styleTemplateId?: string | null;
+  /** organization title block layout for every page (null = workspace default layout) */
+  titleBlockLayoutId?: string | null;
   /** project-level style overrides */
   styles?: PartialStyles;
   numbering?: NumberingRule[];
@@ -41,6 +43,7 @@ export function parseTemplateContent(s: string | null | undefined): ProjectTempl
     pages: Array.isArray(v.pages) ? v.pages.filter((p) => p && typeof p.title === "string") : [],
     titleBlockFields: v.titleBlockFields && typeof v.titleBlockFields === "object" ? v.titleBlockFields : {},
     styleTemplateId: v.styleTemplateId ?? null,
+    titleBlockLayoutId: v.titleBlockLayoutId ?? null,
     styles: v.styles ?? {},
     numbering: Array.isArray(v.numbering) ? v.numbering : [],
     requiredFields: Array.isArray(v.requiredFields) ? v.requiredFields.filter((x) => typeof x === "string" && x.trim()) : [],

@@ -30,7 +30,7 @@ export type ProjectRow = {
   openVersionId: string | null;
 };
 export type FolderRow = { id: string; name: string; parentId: string | null; count: number };
-export type TemplateOption = { id: string; name: string; description: string; isDefault: boolean; requiredFields: string[] ; styleTemplateId?: string | null};
+export type TemplateOption = { id: string; name: string; description: string; isDefault: boolean; requiredFields: string[]; styleTemplateId?: string | null; titleBlockLayoutId?: string | null };
 type Filters = { folder: string | null; tag: string | null; state: "ACTIVE" | "ARCHIVED"; q: string; view: "all" | "favorites" | "recent" };
 
 export function ProjectsView(p: {

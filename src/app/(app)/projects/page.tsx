@@ -82,7 +82,10 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       totals={{ all: all.length, favorites: all.filter((p) => favSet.has(p.id)).length }}
       filters={{ folder: sp.folder ?? null, tag: sp.tag ?? null, state, q, view }}
       canCreate={can(ctx, "project.create")}
-      templates={templates.map((t) => ({ id: t.id, name: t.name, description: t.description, isDefault: t.isDefault, requiredFields: parseTemplateContent(t.content).requiredFields, styleTemplateId: parseTemplateContent(t.content).styleTemplateId ?? null }))}
+      templates={templates.map((t) => {
+        const c = parseTemplateContent(t.content);
+        return { id: t.id, name: t.name, description: t.description, isDefault: t.isDefault, requiredFields: c.requiredFields, styleTemplateId: c.styleTemplateId ?? null, titleBlockLayoutId: c.titleBlockLayoutId ?? null };
+      })}
       defaultScheme={ctx.settings.versionScheme}
     />
   );

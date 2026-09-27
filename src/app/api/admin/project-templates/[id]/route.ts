@@ -21,6 +21,7 @@ const Content = z.object({
   pages: z.array(z.object({ title: z.string().trim().min(1).max(120) })).max(200),
   titleBlockFields: z.record(z.string().trim().min(1).max(60), z.string().max(500)),
   styleTemplateId: z.string().nullish(),
+  titleBlockLayoutId: z.string().nullish(),
   numbering: z.array(Rule).max(50),
   requiredFields: z.array(z.string().trim().min(1).max(60)).max(50),
   approval: z
@@ -56,6 +57,7 @@ export const PATCH = route<{ id: string }>(async (req, { params }) => {
     let content = old;
     if (b.content) {
       if (b.content.styleTemplateId && !(await db.styleTemplate.findFirst({ where: { id: b.content.styleTemplateId, workspaceId: ctx.workspace.id } }))) throw new HttpError(400, "Style template not found");
+      if (b.content.titleBlockLayoutId && !(await db.titleBlockLayout.findFirst({ where: { id: b.content.titleBlockLayoutId, workspaceId: ctx.workspace.id } }))) throw new HttpError(400, "Title block layout not found");
       const { keepSeedDoc, ...rest } = b.content;
       const seed = keepSeedDoc ? old.doc : null;
       content = { ...rest, styles: old.styles, doc: seed };

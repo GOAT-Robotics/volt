@@ -326,6 +326,8 @@ export type TitleBlockTemplate = {
   /** logo resources by name (QET <logos>): only the ones a cell uses; base64 file data */
   logos?: Record<string, TitleBlockLogo>;
   xml?: string;
+  /** copied from an organization title block layout (Administration) */
+  layout?: { id: string; version: number };
 };
 
 export type TitleBlockLogo = { type: "png" | "jpg" | "svg"; data: string };

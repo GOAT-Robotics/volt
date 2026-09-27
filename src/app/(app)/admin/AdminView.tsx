@@ -15,6 +15,7 @@ import type { Styles } from "@/core/model";
 import type { ProjectTemplateContent } from "@/lib/templates";
 import { PromptDialog, Section, useMutation } from "@/components/volt/common";
 import { StyleTemplatesTab, ProjectTemplatesTab } from "./AdminTemplates";
+import { TitleBlockLayoutsTab } from "./AdminLayouts";
 
 type Hist = { version: number; action: string; at: string; by: string; note?: string; name?: string };
 export type AdminData = {
@@ -24,13 +25,15 @@ export type AdminData = {
   members: { userId: string; name: string; email: string; roles: Role[]; source: string; disabled: boolean; isGuest: boolean; lastLoginAt: string | null }[];
   groups: { id: string; entraGroupId: string; displayName: string; roles: Role[] }[];
   styleTemplates: { id: string; name: string; version: number; status: string; isDefault: boolean; updatedAt: string; styles: Styles; history: Hist[] }[];
+  titleBlockLayouts: { id: string; name: string; version: number; status: string; isDefault: boolean; updatedAt: string; history: Hist[] }[];
+  standardTitleBlocks: string[];
   projectTemplates: { id: string; name: string; description: string; version: number; status: string; isDefault: boolean; updatedAt: string; content: ProjectTemplateContent; seedPages: number; history: Hist[] }[];
   versions: { id: string; label: string }[];
   retention: { autosavesDue: number; projectsDue: number };
   entraEnabled: boolean;
 };
 
-const TABS = ["general", "members", "groups", "styles", "templates", "retention"];
+const TABS = ["general", "members", "groups", "styles", "layouts", "templates", "retention"];
 
 export function AdminView({ data, initialTab }: { data: AdminData; initialTab: string }) {
   const [tab, setTab] = React.useState(TABS.includes(initialTab) ? initialTab : "general");
@@ -59,6 +62,7 @@ export function AdminView({ data, initialTab }: { data: AdminData; initialTab: s
           <TabsTrigger value="members">Members</TabsTrigger>
           <TabsTrigger value="groups">Entra groups</TabsTrigger>
           <TabsTrigger value="styles">Style templates</TabsTrigger>
+          <TabsTrigger value="layouts">Title block layouts</TabsTrigger>
           <TabsTrigger value="templates">Project templates</TabsTrigger>
           <TabsTrigger value="retention">Retention</TabsTrigger>
         </TabsList>
@@ -74,6 +78,9 @@ export function AdminView({ data, initialTab }: { data: AdminData; initialTab: s
           </TabsContent>
           <TabsContent value="styles">
             <StyleTemplatesTab data={data} />
+          </TabsContent>
+          <TabsContent value="layouts">
+            <TitleBlockLayoutsTab data={data} />
           </TabsContent>
           <TabsContent value="templates">
             <ProjectTemplatesTab data={data} />

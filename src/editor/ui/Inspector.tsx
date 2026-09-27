@@ -120,21 +120,23 @@ export function Inspector() {
 
 /* ------------------------------------------------------------------ */
 
-let stdCache: Promise<string[]> | null = null;
-function useStandardTitleBlocks() {
-  const [names, setNames] = useState<string[]>([]);
+type TbCatalog = { std: string[]; org: { id: string; name: string; version: number; isDefault: boolean }[] };
+let tbCache: Promise<TbCatalog> | null = null;
+/** title blocks the editor offers: organization layouts (Administration) and the standard set */
+function useTitleBlockCatalog() {
+  const [cat, setCat] = useState<TbCatalog>({ std: [], org: [] });
   useEffect(() => {
-    stdCache ??= fetch("/api/titleblocks")
-      .then((r) => (r.ok ? r.json() : { templates: [] }))
-      .then((j: { templates: { name: string }[] }) => j.templates.map((t) => t.name))
-      .catch(() => []);
+    tbCache ??= fetch("/api/titleblocks")
+      .then((r) => (r.ok ? r.json() : { templates: [], organization: [] }))
+      .then((j: { templates: { name: string }[]; organization?: TbCatalog["org"] }) => ({ std: j.templates.map((t) => t.name), org: j.organization ?? [] }))
+      .catch(() => ({ std: [], org: [] }));
     let live = true;
-    void stdCache.then((n) => live && setNames(n));
+    void tbCache.then((c) => live && setCat(c));
     return () => {
       live = false;
     };
   }, []);
-  return names;
+  return cat;
 }
 
 /** friendlier names for QElectroTech's title block variables */
@@ -179,7 +181,7 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
       fn(getPage(d, page.id));
     });
   const tpl = doc.titleBlocks[page.titleBlock.template];
-  const std = useStandardTitleBlocks();
+  const { std, org } = useTitleBlockCatalog();
   const usedVars = useMemo(() => templateVariables(tpl ?? tbTemplate(doc, page)), [tpl, doc, page]);
   const fieldNames = useMemo(() => {
     const names = new Set<string>(["title", "author", "date", "filename", "indexrev", "version", "plant", "locmach"]);
@@ -213,9 +215,9 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
             disabled={!editable}
             onChange={async (e) => {
               const v = e.target.value;
-              if (!v.startsWith("std:")) return upd("Title block template", (p) => (p.titleBlock.template = v));
+              if (!v.startsWith("std:") && !v.startsWith("org:")) return upd("Title block template", (p) => (p.titleBlock.template = v));
               const name = v.slice(4);
-              const r = await fetch(`/api/titleblocks/${encodeURIComponent(name)}`);
+              const r = await fetch(`/api/titleblocks/${encodeURIComponent(name)}${v.startsWith("org:") ? "?source=org" : ""}`);
               if (!r.ok) return void toast.error("Could not load title block");
               const { template } = (await r.json()) as { template: TitleBlockTemplate };
               s().apply("Title block template", (d) => {
@@ -230,6 +232,17 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
                 <option key={k}>{k}</option>
               ))}
             </optgroup>
+            {org.filter((l) => !doc.titleBlocks[l.name]).length > 0 && (
+              <optgroup label="Organization">
+                {org
+                  .filter((l) => !doc.titleBlocks[l.name])
+                  .map((l) => (
+                    <option key={l.id} value={`org:${l.id}`}>
+                      {l.name}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
             {std.filter((k) => !doc.titleBlocks[k]).length > 0 && (
               <optgroup label="Standard">
                 {std
@@ -255,6 +268,31 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
             Use this template on all {doc.pages.length} pages
           </button>
         )}
+        {tpl?.layout && (() => {
+          const cur = org.find((l) => l.id === tpl.layout!.id);
+          return cur && cur.version > tpl.layout!.version && editable ? (
+            <div className="flex items-center gap-2 rounded-md border border-accent/30 bg-accent-soft px-2 py-1.5 text-2xs">
+              <span className="flex-1">Version {cur.version} of this organization layout is approved.</span>
+              <button
+                className="font-medium text-accent hover:underline"
+                onClick={async () => {
+                  const r = await fetch(`/api/titleblocks/${encodeURIComponent(cur.id)}?source=org`);
+                  if (!r.ok) return void toast.error("Could not load the layout");
+                  const { template } = (await r.json()) as { template: TitleBlockTemplate };
+                  const oldName = page.titleBlock.template;
+                  s().apply("Update title block layout", (d) => {
+                    delete d.titleBlocks[oldName];
+                    d.titleBlocks[template.name] = template;
+                    for (const p of d.pages) if (p.titleBlock.template === oldName) p.titleBlock.template = template.name;
+                  });
+                  toast.success(`Title block updated to version ${cur.version}`);
+                }}
+              >
+                Update
+              </button>
+            </div>
+          ) : null;
+        })()}
         <Button size="xs" variant="secondary" onClick={() => ui.openDialog("titleBlock", { template: page.titleBlock.template })}>
           <Pencil /> Edit template layout…
         </Button>

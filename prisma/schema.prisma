@@ -35,14 +35,15 @@ model Workspace {
   settings  String   @default("{}") // JSON WorkspaceSettings
   createdAt DateTime @default(now())
 
-  memberships      Membership[]
-  groupMappings    GroupMapping[]
-  projects         Project[]
-  folders          Folder[]
-  libraries        Library[]
-  styleTemplates   StyleTemplate[]
-  projectTemplates ProjectTemplate[]
-  audit            AuditEvent[]
+  memberships       Membership[]
+  groupMappings     GroupMapping[]
+  projects          Project[]
+  folders           Folder[]
+  libraries         Library[]
+  styleTemplates    StyleTemplate[]
+  projectTemplates  ProjectTemplate[]
+  titleBlockLayouts TitleBlockLayout[]
+  audit             AuditEvent[]
 }
 
 /// roles: ADMIN, OWNER, DESIGNER, REVIEWER, APPROVER, SIGNATORY, VIEWER, GUEST (comma separated)
@@ -287,6 +288,24 @@ model StyleTemplate {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, status])
+}
+
+/// Organization title block layouts (QET <titleblocktemplate> xml, logos included).
+/// status: DRAFT | APPROVED | RETIRED; projects use the last approved snapshot.
+model TitleBlockLayout {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  xml         String
+  version     Int       @default(1)
+  status      String    @default("DRAFT")
+  isDefault   Boolean   @default(false)
+  ownerId     String
+  history     String    @default("[]")
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
 }
 
 model ProjectTemplate {
