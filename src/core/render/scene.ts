@@ -553,7 +553,13 @@ export function drawPage(pt: Painter, o: DrawOpts) {
         pt.stroke(new PathBuilder().E(cx, cy, rx, ry).build(), { color: tint ?? cst.color, width: 0.8, dash: [2, 1.5], minPx: 1, alpha: o.alpha });
       }
       const lr = cableLabelRect(m, styles, measure);
-      if (lr) drawLaidText(pt, { text: m.label, x: lr.x, y: lr.y, rotation: 0, style: cst, w: lr.w, h: lr.h }, o.alpha, tint);
+      if (lr) {
+        drawLaidText(pt, { text: m.label, x: lr.x, y: lr.y, rotation: 0, style: cst, w: lr.w, h: lr.h }, o.alpha, tint);
+        // a label dragged away from its mark keeps a thin leader to it
+        const cx = (m.a.x + m.b.x) / 2, cy = (m.a.y + m.b.y) / 2;
+        const nx = Math.min(Math.max(cx, lr.x), lr.x + lr.w), ny = Math.min(Math.max(cy, lr.y), lr.y + lr.h);
+        if (m.labelOffset && Math.hypot(cx - nx, cy - ny) > 12) pt.stroke(new PathBuilder().M(nx, ny).L(cx, cy).build(), { color: tint ?? cst.color, width: 0.5, minPx: 0.75, alpha: o.alpha });
+      }
     }
   }
 
@@ -594,16 +600,14 @@ export function drawPage(pt: Painter, o: DrawOpts) {
       degrees: deg,
     });
   }
-  // mated connectors: "⇄ counterpart" under the symbol (with its sheet when elsewhere)
+  // mated connectors: "▸ counterpart" (with its sheet when elsewhere); movable, can be hidden
   if (lod > 0.35)
     for (const e of page.elements) {
       if (!e.mate || e.hidden) continue;
       const def = doc.defs[e.defId];
-      const label = def && mateLabel(doc, e, page);
-      if (!def || !label) continue;
-      const b = elementBounds(e, def);
-      const st = styles.text.componentName;
-      pt.text({ text: `${e.mate.gender === "male" ? "▸" : "◂"} ${label}`, x: b.x, y: b.y + b.h + 2, size: st.size * PT * 0.9, font: st.font, italic: true, color: o.tint?.get(e.id) ?? "#6b7280", baseline: "top", alpha: o.alpha });
+      const ml = def && mateLabelLayout(doc, e, def, page, styles, measure);
+      if (!ml) continue;
+      pt.text({ text: ml.text, x: ml.x, y: ml.y, size: ml.size, font: ml.font, italic: true, color: o.tint?.get(e.id) ?? "#6b7280", baseline: "top", alpha: o.alpha });
     }
   pt.end?.();
 
@@ -626,6 +630,34 @@ export function drawPage(pt: Painter, o: DrawOpts) {
     }
     pt.stroke(b.build(), { color: "#ef4444", width: 1, minPx: 1.25 });
   }
+}
+
+/**
+ * The "▸ C1-F" text of a mated connector. Shown by default only when the counterpart is on another
+ * sheet or not right next to it (two halves drawn together don't need it); placed below the symbol
+ * unless dragged (`mate.labelPos`, relative to the component origin).
+ */
+export function mateLabelLayout(doc: Doc, e: ElemInst, def: ElementDef, page: Page, styles: Styles, measure: Painter["measure"]): { text: string; x: number; y: number; w: number; h: number; size: number; font: string } | null {
+  if (!e.mate || e.mate.label === "hide") return null;
+  const label = mateLabel(doc, e, page);
+  if (!label) return null;
+  const b = elementBounds(e, def);
+  if ((e.mate.label ?? "auto") === "auto") {
+    const other = page.elements.find((x) => x.id === e.mate!.id);
+    const od = other && doc.defs[other.defId];
+    if (other && od) {
+      const ob = elementBounds(other, od);
+      const gap = Math.max(ob.x - (b.x + b.w), b.x - (ob.x + ob.w), ob.y - (b.y + b.h), b.y - (ob.y + ob.h));
+      if (gap < 40) return null;
+    }
+  }
+  const st = styles.text.componentName;
+  const size = st.size * PT * 0.9;
+  const text = `${e.mate.gender === "male" ? "▸" : "◂"} ${label}`;
+  const w = measure(text, size, st.font, st.weight);
+  const h = size * st.lineHeight;
+  const p = e.mate.labelPos ? { x: e.x + e.mate.labelPos.x, y: e.y + e.mate.labelPos.y } : { x: b.x, y: b.y + b.h + 2 };
+  return { text, x: p.x, y: p.y, w, h, size, font: st.font };
 }
 
 export const DEFAULT_FRAME: ComponentFrame = { show: false, color: "#111827", width: 0.8, dash: "dashed", padding: 4 };
@@ -859,6 +891,10 @@ export function cableLabelRect(m: CableMark, styles: Styles, measure: Painter["m
   const size = cst.size * PT;
   const w = measure(m.label, size, cst.font, cst.weight);
   const h = size * cst.lineHeight;
+  if (m.labelOffset) {
+    const cx = (m.a.x + m.b.x) / 2, cy = (m.a.y + m.b.y) / 2;
+    return { x: cx + m.labelOffset.x, y: cy + m.labelOffset.y, w, h };
+  }
   return m.horizontal ? { x: m.a.x - w / 2, y: m.a.y - h - 1, w, h } : { x: m.a.x - w - 2, y: m.a.y - h / 2 - 3, w, h };
 }
 

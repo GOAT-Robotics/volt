@@ -96,6 +96,44 @@ export function MatingSection({ e, page, doc, editable }: { e: ElemInst; page: P
           )}
         </div>
       </Row>
+      {mate && e.mate && (
+        <Row label="Label" hint={`“${e.mate.gender === "male" ? "▸" : "◂"} ${mate.e.info.label || "counterpart"}” on the drawing — drag it to move it`}>
+          <div className="flex items-center gap-1">
+            <NativeSelect
+              value={e.mate.label ?? "auto"}
+              disabled={!editable}
+              aria-label="Counterpart label"
+              onChange={(ev) => {
+                const v = ev.target.value as "auto" | "show" | "hide";
+                s().apply("Counterpart label", (d) => {
+                  const x = findElement(d, e.id)?.e;
+                  if (x?.mate) x.mate.label = v === "auto" ? undefined : v;
+                });
+              }}
+            >
+              <option value="auto">Auto (other sheet / far away)</option>
+              <option value="show">Show</option>
+              <option value="hide">Hide</option>
+            </NativeSelect>
+            {e.mate.labelPos && editable && (
+              <Tip content="Put the label back under the symbol">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() =>
+                    s().apply("Reset label position", (d) => {
+                      const x = findElement(d, e.id)?.e;
+                      if (x?.mate) delete x.mate.labelPos;
+                    })
+                  }
+                >
+                  Reset
+                </Button>
+              </Tip>
+            )}
+          </div>
+        </Row>
+      )}
       {mate ? (
         <p className="flex items-start gap-1.5 text-2xs text-muted">
           <ArrowRightLeft className="mt-0.5 size-3 shrink-0" />

@@ -212,7 +212,12 @@ export type ElemInst = {
   /** QElectroTech cross-reference links (folio report pairs, master ↔ slaves): ids of linked elements */
   links?: string[];
   /** mated connector: the counterpart (plug ↔ socket) and this side's gender; pins connect by number */
-  mate?: { id: string; gender: "male" | "female" };
+  /**
+   * mated connector: the counterpart and this side's gender. `label` = the "▸ counterpart" text on the
+   * drawing: auto (only when the counterpart is on another sheet or far away), show or hide;
+   * `labelPos` = where it was dragged, relative to the component origin.
+   */
+  mate?: { id: string; gender: "male" | "female"; label?: "auto" | "show" | "hide"; labelPos?: Pt };
   qet?: { idx?: number; terminalIds?: Record<string, string> }; // original node index; pinId -> original terminal id
 };
 
@@ -291,6 +296,8 @@ export type Cable = {
   shield?: boolean;
   length?: string;
   note?: string;
+  /** per sheet: where the cable mark crosses the run (coordinate along the wires) and where its label was dragged (offset from the mark centre) */
+  marks?: Record<string, { at?: number; label?: Pt }>;
 };
 
 /** Kind of terminal (drives the default colour in the plan and the BOM name). */

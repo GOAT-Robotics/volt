@@ -25,6 +25,7 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
   const ui = useEditorUI();
   const ws = wiringOf(doc);
   const s = useEditor.getState;
+  const pageId = useEditor((st) => st.pageId);
   const ids = useMemo(() => new Set(wires.map((w) => w.id)), [wires]);
   const upd = (label: string, fn: (w: Wire, d: Doc) => void) =>
     s().apply(label, (d) => {
@@ -169,6 +170,20 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
             ))}
           </NativeSelect>
         </Row>
+      )}
+      {cableObj?.marks?.[pageId] && editable && (
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={() =>
+            s().apply("Reset cable mark", (d) => {
+              const c = (d.cables ?? []).find((x) => x.tag === cableObj.tag);
+              if (c?.marks) delete c.marks[pageId];
+            })
+          }
+        >
+          Reset cable mark and label position
+        </Button>
       )}
       {!single && cableObj && editable && (
         <Button size="xs" variant="secondary" onClick={() => setCable(cableObj.tag)}>

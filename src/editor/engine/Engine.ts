@@ -5,7 +5,7 @@ import type { Doc, ElemInst, ElementDef, Page, Pt, Rect, Styles, TextRole } from
 import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, toLocal, eqPt, dist } from "@/core/geometry";
 import { CanvasPainter, imageLoadListeners, measureText } from "@/core/render/canvas";
 import { DASHES, PathBuilder } from "@/core/render/painter";
-import { contentBounds, docStyles, drawPage, elementBounds, layoutElementTexts, pageGeometry, textBounds, freeTextBounds, wireStroke, drawElement } from "@/core/render/scene";
+import { cableLabelRect, contentBounds, docStyles, drawPage, elementBounds, layoutElementTexts, mateLabelLayout, pageGeometry, textBounds, freeTextBounds, wireStroke, drawElement } from "@/core/render/scene";
 import { symbolFor } from "@/core/render/symbol";
 import { deepMerge } from "@/core/styles";
 import {
@@ -26,7 +26,7 @@ import {
 import { moveSegment, orthoRoute } from "@/core/wires";
 import { computeNets } from "@/core/topology";
 import { shapeBounds, shapeDistance, shapeOutline } from "@/core/shapes";
-import { cableMarks } from "@/core/wiring";
+import { cableMarks, computeCableMarks } from "@/core/wiring";
 import { nearestSegment } from "@/core/wires";
 import { cachedXref, describe, occurrenceAt, targetsOf, type Occurrence } from "@/core/xref";
 import { uid } from "@/core/ids";
@@ -56,7 +56,8 @@ type Mode =
   | { m: "wire"; from: EndTarget; fromOrient: string | null; corners: Pt[]; cur: Pt; snap: Snap | null; hFirst: boolean | undefined }
   | { m: "etext"; el: string; text: string; start: Pt; delta: Pt }
   | { m: "spt"; shape: string; i: number; snap: Snap | null }
-  | { m: "draw"; kind: DrawKind; pts: Pt[]; cur: Pt; down: Pt };
+  | { m: "draw"; kind: DrawKind; pts: Pt[]; cur: Pt; down: Pt }
+  | { m: "clabel"; tag: string; start: Pt; delta: Pt };
 
 type Hit =
   | { k: "el"; id: string }
@@ -68,12 +69,15 @@ type Hit =
   | { k: "etext"; el: string; text: string }
   | { k: "shape"; id: string }
   | { k: "cable"; tag: string; wires: string[] }
+  | { k: "cableLabel"; tag: string; wires: string[] }
   | { k: "shapePt"; id: string; i: number; p: Pt }
   | { k: "comment"; id: string };
 
 const HIT_PX = 6;
 /** index "sub" id of the texts of a component's info block (dragged as one) */
 const INFO_BLOCK = "\u0000info";
+/** "sub" id of a mated connector's counterpart label */
+const MATE_LABEL = "\u0000mate";
 const SNAP_PX = 12;
 
 export class Engine {
@@ -312,7 +316,8 @@ export class Engine {
       this.indexed.set(key, { ref, items });
     };
     for (const e of page.elements) {
-      upsert("e:" + e.id, e, () => {
+      // a mated connector's label depends on its counterpart too
+      upsert("e:" + e.id, e.mate ? page.elements : e, () => {
         const def = this.doc.defs[e.defId];
         if (!def) return [];
         const r = elementBounds(e, def);
@@ -322,6 +327,8 @@ export class Engine {
           const t = lt.block ? undefined : e.texts.find((x) => x.info !== null ? (e.info[x.info] ?? def.info[x.info]) === lt.text : x.text === lt.text);
           items.push({ minX: tb.x, minY: tb.y, maxX: tb.x + tb.w, maxY: tb.y + tb.h, kind: "etext", id: e.id, sub: lt.block ? INFO_BLOCK : t?.id });
         }
+        const ml = e.mate ? mateLabelLayout(this.doc, e, def, page, styles, measureText) : null;
+        if (ml) items.push({ minX: ml.x, minY: ml.y, maxX: ml.x + ml.w, maxY: ml.y + ml.h, kind: "etext", id: e.id, sub: MATE_LABEL });
         return items;
       });
     }
@@ -438,6 +445,11 @@ export class Engine {
     const onStroke = page.shapes.length ? hits.some((h) => { if (h.kind !== "shape") return false; const sh = page.shapes.find((x) => x.id === h.id); return !!sh && shapeDistance(sh, p) <= tol * 0.35; }) : false;
     if (!onStroke) for (const h of hits) if (h.kind === "text" && p.x >= h.minX && p.x <= h.maxX && p.y >= h.minY && p.y <= h.maxY) return { k: "text", id: h.id };
     for (const h of hits) if (h.kind === "etext" && h.sub && p.x >= h.minX && p.x <= h.maxX && p.y >= h.minY && p.y <= h.maxY) return { k: "etext", el: h.id, text: h.sub };
+    // cable labels ("W1 · 4G1,5"): drag to move, click selects the cable
+    for (const m of cableMarks(this.doc, page)) {
+      const r = cableLabelRect(m, this.styles, measureText);
+      if (r && p.x >= r.x - 1 && p.x <= r.x + r.w + 1 && p.y >= r.y - 1 && p.y <= r.y + r.h + 1) return { k: "cableLabel", tag: m.tag, wires: page.wires.filter((w) => w.cable === m.tag).map((w) => w.id) };
+    }
     // wires (nearest)
     const wh = hitWire({ ...page, wires: page.wires.filter((w) => hits.some((h) => h.kind === "wire" && h.id === w.id)) }, p, tol);
     // elements: smallest bbox containing p
@@ -730,6 +742,13 @@ export class Engine {
         this.dirtyScene = this.dirtyOverlay = true;
         return;
       }
+      case "clabel": {
+        m.delta = { x: wp.x - m.start.x, y: wp.y - m.start.y };
+        const pid = s.pageId;
+        this.preview = produce(s.doc, (dr) => this.moveCableLabel(dr, pid, m.tag, m.delta));
+        this.dirtyScene = true;
+        return;
+      }
       case "draw": {
         m.cur = this.drawPoint(wp, e.shiftKey, m);
         this.dirtyOverlay = true;
@@ -805,6 +824,10 @@ export class Engine {
       this.mode = { m: "spt", shape: hit.id, i: hit.i, snap: null };
       return;
     }
+    if (hit.k === "cableLabel") {
+      this.mode = { m: "clabel", tag: hit.tag, start: m.at, delta: { x: 0, y: 0 } };
+      return;
+    }
     if (hit.k === "wire" && s.sel.wires.includes(hit.id) && s.sel.wires.length === 1 && selSize(s.sel) === 1) {
       this.mode = { m: "seg", wire: hit.id, seg: hit.seg, start: m.at, delta: { x: 0, y: 0 } };
       return;
@@ -838,7 +861,7 @@ export class Engine {
     if (h.k === "junc") return sel.junctions.includes(h.id);
     if (h.k === "text") return sel.texts.includes(h.id);
     if (h.k === "shape" || h.k === "shapePt") return (sel.shapes ?? []).includes(h.id);
-    if (h.k === "cable") return h.wires.length > 0 && h.wires.every((id) => sel.wires.includes(id));
+    if (h.k === "cable" || h.k === "cableLabel") return h.wires.length > 0 && h.wires.every((id) => sel.wires.includes(id));
     return false;
   }
   private selFor(h: Hit, base: Sel): Sel {
@@ -851,7 +874,7 @@ export class Engine {
     else if (h.k === "text") toggle(s.texts, h.id);
     else if (h.k === "pin") toggle(s.elements, h.el);
     else if (h.k === "shape") toggle(s.shapes, h.id);
-    else if (h.k === "cable") {
+    else if (h.k === "cable" || h.k === "cableLabel") {
       for (const id of h.wires) if (!s.wires.includes(id)) s.wires.push(id);
     }
     else if (h.k === "shapePt" && !s.shapes.includes(h.id)) s.shapes.push(h.id);
@@ -988,6 +1011,16 @@ export class Engine {
         this.dirtyScene = true;
         return;
       }
+      case "clabel": {
+        this.preview = null;
+        this.mode = { m: "idle" };
+        if (Math.hypot(m.delta.x, m.delta.y) > 0.5) {
+          const pid = s.pageId;
+          s.apply("Move cable label", (dr) => this.moveCableLabel(dr, pid, m.tag, m.delta));
+        }
+        this.dirtyScene = true;
+        return;
+      }
       case "draw": {
         // press-drag-release draws a rectangle / ellipse / line in one gesture; a plain click
         // starts it and a second click finishes it
@@ -1010,10 +1043,38 @@ export class Engine {
   }
   private dragWire = false;
 
+  /**
+   * Drag a cable label: the label goes where it is dropped, and the mark slides along the cable's
+   * shared run to the point nearest the label (so the label stays next to its mark).
+   */
+  private moveCableLabel(d: Doc, pid: string, tag: string, delta: Pt) {
+    const page = getPage(d, pid);
+    const cable = (d.cables ?? []).find((c) => c.tag === tag);
+    // computed directly: the cached marks are keyed on objects that do not change inside this draft
+    const cur = computeCableMarks(d, page).find((m) => m.tag === tag);
+    if (!cable || !cur) return;
+    const r = cableLabelRect(cur, docStyles(d), measureText);
+    if (!r) return;
+    const L = { x: r.x + delta.x, y: r.y + delta.y };
+    const at = cur.horizontal ? L.x + r.w / 2 : L.y + r.h / 2;
+    cable.marks = { ...(cable.marks ?? {}), [pid]: { at: Math.round(Math.min(Math.max(at, cur.lo), cur.hi)) } };
+    const next = computeCableMarks(d, page).find((m) => m.tag === tag) ?? cur;
+    const cx = (next.a.x + next.b.x) / 2, cy = (next.a.y + next.b.y) / 2;
+    cable.marks[pid] = { ...cable.marks[pid], label: { x: Math.round((L.x - cx) * 2) / 2, y: Math.round((L.y - cy) * 2) / 2 } };
+  }
+
   private moveElementText(d: Doc, pid: string, elId: string, textId: string, delta: Pt) {
     const page = getPage(d, pid);
     const e = page.elements.find((x) => x.id === elId);
     const def = e && d.defs[e.defId];
+    if (e && def && e.mate && textId === MATE_LABEL) {
+      // counterpart label: remember where it was dragged, relative to the component (it follows it)
+      const cur = mateLabelLayout(d, e, def, page, docStyles(d), measureText);
+      if (!cur) return;
+      e.mate.labelPos = { x: Math.round((cur.x + delta.x - e.x) * 2) / 2, y: Math.round((cur.y + delta.y - e.y) * 2) / 2 };
+      e.mate.label = "show";
+      return;
+    }
     if (e && def && textId === INFO_BLOCK) {
       // component info block: remember its top-left in element coordinates (it follows the component)
       const cur = layoutElementTexts(e, symbolFor(def), docStyles(d), measureText).find((t) => t.block)?.block;

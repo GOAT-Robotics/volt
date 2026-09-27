@@ -261,7 +261,7 @@ export function wireAnnotation(doc: Pick<Doc, "wiring" | "cables">, w: Wire): st
 /* Cable marks (drawn where a cable's wires run side by side)           */
 /* ------------------------------------------------------------------ */
 
-export type CableMark = { tag: string; a: { x: number; y: number }; b: { x: number; y: number }; horizontal: boolean; label: string; shield: boolean; wires: string[] };
+export type CableMark = { tag: string; a: { x: number; y: number }; b: { x: number; y: number }; horizontal: boolean; label: string; shield: boolean; wires: string[]; /** shared run along the wires where the mark can sit */ lo: number; hi: number; /** dragged label, offset from the mark centre */ labelOffset?: { x: number; y: number } };
 
 /**
  * Where to draw each cable on a page: a short line crossing the parallel run shared by most of the
@@ -275,7 +275,7 @@ export function cableMarks(doc: Pick<Doc, "cables" | "wiring">, page: Page): Cab
   markCache.set(page.wires, { cables: doc.cables, marks });
   return marks;
 }
-function computeCableMarks(doc: Pick<Doc, "cables" | "wiring">, page: Page): CableMark[] {
+export function computeCableMarks(doc: Pick<Doc, "cables" | "wiring">, page: Page): CableMark[] {
   const byTag = new Map<string, Wire[]>();
   for (const w of page.wires) if (w.cable) (byTag.get(w.cable) ?? byTag.set(w.cable, []).get(w.cable)!).push(w);
   const out: CableMark[] = [];
@@ -286,18 +286,21 @@ function computeCableMarks(doc: Pick<Doc, "cables" | "wiring">, page: Page): Cab
     // more wires first, then the longer shared straight run
     const best = !h ? v : !v ? h : v.ids.length !== h.ids.length ? (v.ids.length > h.ids.length ? v : h) : v.run > h.run ? v : h;
     if (!best) continue;
+    const ov = cable?.marks?.[page.id];
+    if (ov?.at !== undefined) best.pos = Math.min(Math.max(ov.at, best.lo), best.hi);
     const pad = 6;
     const lo = Math.min(...best.at) - pad, hi = Math.max(...best.at) + pad;
     const mark: CableMark = best.axis === "h"
-      ? { tag, a: { x: best.pos - 3, y: lo }, b: { x: best.pos + 3, y: hi }, horizontal: true, label, shield: !!cable?.shield, wires: best.ids }
-      : { tag, a: { x: lo, y: best.pos + 3 }, b: { x: hi, y: best.pos - 3 }, horizontal: false, label, shield: !!cable?.shield, wires: best.ids };
+      ? { tag, a: { x: best.pos - 3, y: lo }, b: { x: best.pos + 3, y: hi }, horizontal: true, label, shield: !!cable?.shield, wires: best.ids, lo: best.lo, hi: best.hi }
+      : { tag, a: { x: lo, y: best.pos + 3 }, b: { x: hi, y: best.pos - 3 }, horizontal: false, label, shield: !!cable?.shield, wires: best.ids, lo: best.lo, hi: best.hi };
+    if (ov?.label) mark.labelOffset = ov.label;
     out.push(mark);
   }
   return out;
 }
 
 /** Find the coordinate along `axis` ("h" = horizontal segments) crossed by the most wires of the cable. */
-function bestCrossing(wires: Wire[], axis: "h" | "v"): { axis: "h" | "v"; pos: number; at: number[]; ids: string[]; run: number } | null {
+function bestCrossing(wires: Wire[], axis: "h" | "v"): { axis: "h" | "v"; pos: number; at: number[]; ids: string[]; run: number; lo: number; hi: number } | null {
   type Seg = { id: string; lo: number; hi: number; at: number };
   const segs: Seg[] = [];
   for (const w of wires)
@@ -327,7 +330,7 @@ function bestCrossing(wires: Wire[], axis: "h" | "v"): { axis: "h" | "v"; pos: n
   const chosen = segs.filter((s) => best!.ids.includes(s.id) && best!.pos >= s.lo && best!.pos <= s.hi);
   const lo = Math.max(...chosen.map((s) => s.lo)), hi = Math.min(...chosen.map((s) => s.hi));
   const pos = lo <= hi ? Math.round(((lo + hi) / 2) / 5) * 5 : best.pos;
-  return { axis, pos: Math.min(Math.max(pos, lo), hi) || pos, at: best.at, ids: best.ids, run: Math.max(0, hi - lo) };
+  return { axis, pos: Math.min(Math.max(pos, lo), hi) || pos, at: best.at, ids: best.ids, run: Math.max(0, hi - lo), lo: Math.min(lo, hi), hi: Math.max(lo, hi) };
 }
 
 /** Auto-assign free cores of a cable to wires, in drawing order (top→bottom, then left→right). */
