@@ -13,6 +13,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const ctx = await apiCtx();
     const { id } = await params;
+    if (!ctx.settings.collaboration.live) throw new HttpError(403, "Live collaboration is turned off for this workspace", "LIVE_DISABLED");
     const a = await loadVersion(ctx, id, { withDoc: false });
     const mode = new URL(req.url).searchParams.get("mode") === "view" ? "view" : "edit";
     const stream = await join({ versionId: id, projectId: a.project.id, workspaceId: a.project.workspaceId, user: ctx.user, canEdit: a.editable, mode, signal: req.signal });
@@ -53,6 +54,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   const ctx = await apiCtx();
   const { id } = await params;
   const b = await body(req, Body, 24 * 1024 * 1024);
+  if (!ctx.settings.collaboration.live) throw new HttpError(409, "Live collaboration is turned off for this workspace", "LIVE_DISABLED");
   try {
     if (b.kind === "ops") return submitOps(id, b.clientId, ctx.user.id, b.batchId, b.ops as LiveOp[]);
     updatePresence(id, b.clientId, ctx.user.id, b.presence);

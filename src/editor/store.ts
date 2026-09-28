@@ -35,6 +35,8 @@ export type VersionInfo = {
   canExport: boolean;
   userId: string;
   userName: string;
+  /** live collaboration is on for this workspace */
+  live?: boolean;
 };
 
 export type CommentPin = {

@@ -87,12 +87,22 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
   useEffect(() => {
     const s = useEditor.getState();
     if (!s.version?.versionId || typeof EventSource === "undefined") return;
-    const c = new LiveClient(s.version.versionId, () => engine.current, (msg, tone) => (tone === "error" ? toast.error(msg) : toast(msg)), () => {
-      // the live connection never came up (proxy, network): keep working with normal saving
+    // an admin can turn live collaboration off (Admin → General → Collaboration): normal saving then
+    if (!s.version.live) return;
+    const c = new LiveClient(s.version.versionId, () => engine.current, (msg, tone) => (tone === "error" ? toast.error(msg) : toast(msg)), (off) => {
       c.stop();
       liveRef.current = null;
-      toast("Live collaboration is not available right now — your changes are saved normally.");
       const st = useEditor.getState();
+      if (off) {
+        toast(off.reason);
+        if (off.pending) {
+          st.setSave("dirty");
+          void saveNow();
+        } else if (off.rev !== null && st.save !== "readonly") st.markSaved(off.rev);
+        return;
+      }
+      // the live connection never came up (proxy, network): keep working with normal saving
+      toast("Live collaboration is not available right now — your changes are saved normally.");
       if (st.save === "dirty") void saveNow();
     });
     liveRef.current = c;

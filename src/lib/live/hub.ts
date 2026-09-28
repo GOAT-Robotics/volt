@@ -44,6 +44,8 @@ type Room = {
   saving: Promise<void> | null;
   lastEditor: string | null;
   lastAudit: Map<string, number>;
+  /** being closed (live collaboration switched off): no more changes accepted */
+  closing?: boolean;
 };
 
 const COLORS = ["#e11d48", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d", "#ea580c", "#4f46e5", "#0d9488", "#b45309"];
@@ -62,6 +64,7 @@ if (!g.__voltLiveExit) {
 
 liveHooks.flush = (id) => flushVersion(id);
 liveHooks.readonly = (id, reason) => notifyVersion(id, { type: "readonly", reason });
+liveHooks.disable = (workspaceId) => closeWorkspace(workspaceId);
 
 const sse = (msg: unknown) => `data: ${JSON.stringify(msg)}\n\n`;
 const publicPeer = (c: Client): Peer => {
@@ -120,7 +123,7 @@ export async function join(a: { versionId: string; projectId: string; workspaceI
     if (!room.clients.size) {
       // last one out: save, then forget the room
       void flush(room).finally(() => {
-        if (!room.clients.size && !room.dirty) rooms.delete(room.versionId);
+        if (!room.clients.size && !room.dirty && rooms.get(room.versionId) === room) rooms.delete(room.versionId);
       });
     }
   };
@@ -170,6 +173,7 @@ function clientOf(versionId: string, clientId: string, userId: string): { room: 
 /** A batch of changes from one client: applied in arrival order and sent to everyone. */
 export function submitOps(versionId: string, clientId: string, userId: string, batchId: string, ops: LiveOp[]): { seq: number } {
   const { room, client } = clientOf(versionId, clientId, userId);
+  if (room.closing) throw Object.assign(new Error("Live collaboration was turned off"), { status: 409 });
   if (!client.canEdit || client.mode !== "edit" || !room.editable) throw Object.assign(new Error("This version is read-only for you"), { status: 403 });
   applyOps(room.doc, ops);
   room.seq++;
@@ -277,6 +281,23 @@ export function notifyVersion(versionId: string, msg: { type: "readonly"; reason
   if (!room) return;
   room.editable = false;
   broadcast(room, msg);
+}
+
+/**
+ * Live collaboration was switched off: save every room of the workspace, tell its editors to carry
+ * on with normal saving from the saved revision, and close the rooms.
+ */
+export async function closeWorkspace(workspaceId: string) {
+  const list = [...rooms.values()].filter((r) => r.workspaceId === workspaceId);
+  await Promise.all(
+    list.map(async (room) => {
+      room.closing = true;
+      await flush(room).catch(() => {});
+      if (rooms.get(room.versionId) === room) rooms.delete(room.versionId);
+      broadcast(room, { type: "disabled", rev: room.rev, seq: room.seq, reason: "An admin turned off live collaboration — you're editing on your own now; changes save as usual." });
+      for (const c of [...room.clients.values()]) c.close();
+    }),
+  );
 }
 
 /** Who is in which project right now (one entry per person and version). */

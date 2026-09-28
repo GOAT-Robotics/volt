@@ -46,6 +46,7 @@ export default async function EditorPage({ params }: { params: Promise<{ project
         canExport: a.canExport,
         userId: ctx.user.id,
         userName: ctx.user.name,
+        live: ctx.settings.collaboration.live,
       }}
     />
   );

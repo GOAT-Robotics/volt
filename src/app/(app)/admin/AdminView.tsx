@@ -242,6 +242,17 @@ function GeneralTab({ data }: { data: AdminData }) {
           <Num value={s.retention.keepAuditYears} onChange={(n) => up("retention", { keepAuditYears: n })} min={1} label="Keep audit years" />
         </Row>
       </Section>
+      <Section title="Collaboration" description="How people work together in the drawing editor.">
+        <Row
+          label="Live collaboration"
+          hint="Several people edit the same version at once, see each other's cursors, selections and changes as they happen, and can follow or just watch. Off: one person edits a version at a time; conflicting saves are refused. Turning it off moves everyone currently editing to normal saving without losing changes."
+        >
+          <Switch checked={s.collaboration.live} onCheckedChange={(c) => up("collaboration", { live: c })} aria-label="Live collaboration" />
+        </Row>
+        <Row label="Show who is working now" hint="“Live now” avatars on project lists and project pages.">
+          <Switch checked={s.collaboration.live && s.collaboration.presence} disabled={!s.collaboration.live} onCheckedChange={(c) => up("collaboration", { presence: c })} aria-label="Show who is working now" />
+        </Row>
+      </Section>
       <Section title="Editor & compatibility">
         <Row label=".qet format version" hint="Version written into exported .qet files.">
           <Input value={s.qetBaseline} onChange={(e) => up("qetBaseline", e.target.value)} className="w-28 text-right" aria-label="QET baseline" />

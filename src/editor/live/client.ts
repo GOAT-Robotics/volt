@@ -27,6 +27,7 @@ type Msg =
   | { type: "saved"; rev: number; seq: number }
   | { type: "snapshot"; seq: number; rev: number; doc: Doc; reason: string }
   | { type: "readonly"; reason: string }
+  | { type: "disabled"; rev: number; seq: number; reason: string }
   | { type: "error"; message: string };
 
 const rid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -51,7 +52,8 @@ export class LiveClient {
     private versionId: string,
     private engine: () => Engine | null,
     private notify: (msg: string, tone?: "error") => void,
-    private fallback?: () => void,
+    /** carry on without live collaboration: it never came up, or an admin turned it off (off) */
+    private fallback?: (off?: { rev: number | null; pending: boolean; reason: string }) => void,
   ) {}
   private everConnected = false;
   /** the document as the server has it (every change in server order); mine on top = what I see */
@@ -224,6 +226,10 @@ export class LiveClient {
         this.notify(m.reason);
         return;
       }
+      case "disabled":
+        // everything the server confirmed is saved at m.rev; anything not confirmed is saved normally
+        this.turnedOff(m.rev, m.reason);
+        return;
       case "error":
         this.notify(m.message, "error");
         return;
@@ -249,7 +255,11 @@ export class LiveClient {
         if (this.posting === batch) this.unacked.push(batch);
       } else {
         const j = await res.json().catch(() => ({}));
-        if (res.status === 403) {
+        if (j.code === "LIVE_DISABLED") {
+          this.outbox.unshift(batch);
+          // the room's "disabled" notice normally arrives first; if not, stop on our own
+          setTimeout(() => !this.stopped && this.turnedOff(null, j.error ?? "Live collaboration is turned off"), 1500);
+        } else if (res.status === 403) {
           this.notify(j.error ?? "This version is read-only for you", "error");
           this.outbox = [];
         } else {
@@ -266,6 +276,17 @@ export class LiveClient {
       if (this.posting === batch) this.posting = null;
     }
     if (this.outbox.length) void this.flush();
+  }
+
+  private turnedOff(rev: number | null, reason: string) {
+    if (this.stopped) return;
+    const pending = this.pending > 0;
+    if (rev !== null) {
+      const v = useEditor.getState().version;
+      useEditor.setState({ version: v ? { ...v, docRev: rev } : v });
+    }
+    this.stop();
+    this.fallback?.({ rev, pending, reason });
   }
 
   private reconnect() {

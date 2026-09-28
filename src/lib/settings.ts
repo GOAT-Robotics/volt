@@ -28,6 +28,12 @@ export type WorkspaceSettings = {
    * title page or symbol.
    */
   linkPreviews: "off" | "name" | "picture";
+  /**
+   * Live collaboration. live: several people edit the same version at once and see each other's
+   * cursors, selections and changes (off: one editor at a time, saves are checked for conflicts).
+   * presence: project lists and pages show who is working in a project right now.
+   */
+  collaboration: { live: boolean; presence: boolean };
 };
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -57,6 +63,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   library: { requireApprovalForOrg: true },
   versionScheme: "INTEGER",
   linkPreviews: "picture",
+  collaboration: { live: true, presence: true },
 };
 
 export function parseSettings(s: string | null | undefined): WorkspaceSettings {
@@ -73,5 +80,6 @@ export function parseSettings(s: string | null | undefined): WorkspaceSettings {
     retention: { ...DEFAULT_SETTINGS.retention, ...(v.retention ?? {}) },
     notifications: { ...DEFAULT_SETTINGS.notifications, ...(v.notifications ?? {}) },
     library: { ...DEFAULT_SETTINGS.library, ...(v.library ?? {}) },
+    collaboration: { ...DEFAULT_SETTINGS.collaboration, ...(v.collaboration ?? {}) },
   };
 }

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { assertAdmin } from "@/lib/access";
 import { parseSettings } from "@/lib/settings";
+import { liveHooks } from "@/lib/live/hooks";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,7 @@ const Settings = z.object({
   library: z.object({ requireApprovalForOrg: z.boolean() }),
   versionScheme: z.enum(["INTEGER", "DECIMAL", "LETTER", "CUSTOM"]),
   linkPreviews: z.enum(["off", "name", "picture"]).default("picture"),
+  collaboration: z.object({ live: z.boolean(), presence: z.boolean() }).default({ live: true, presence: true }),
 });
 
 export const PUT = route(async (req) => {
@@ -55,6 +57,8 @@ export const PUT = route(async (req) => {
   const merged = { ...before, ...b.settings };
   await db.workspace.update({ where: { id: ws.id }, data: { settings: JSON.stringify(merged), ...(b.name ? { name: b.name } : {}) } });
   const changed = Object.keys(b.settings).filter((k) => JSON.stringify((before as Record<string, unknown>)[k]) !== JSON.stringify((merged as Record<string, unknown>)[k]));
+  // live collaboration switched off: save every open live session and move its editors to normal saving
+  if (before.collaboration.live && !merged.collaboration.live) await liveHooks.disable?.(ws.id);
   await audit({ workspaceId: ws.id, actorId: ctx.user.id, type: "admin.settings", data: { changed, ...(b.name && b.name !== ws.name ? { name: b.name } : {}) } });
   return { ok: true };
 });
