@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Box, CircleDot, Copy, FileImage, FilePlus2, Lightbulb, Loader2, ToggleLeft, Search, Cpu } from "lucide-react";
+import { ArrowLeft, Box, CircleDot, Copy, FileImage, FilePlus2, Lightbulb, Loader2, ToggleLeft, Search, Cpu, Sparkles } from "lucide-react";
+import { AiElementPanel } from "./AiElementPanel";
 import { toast } from "sonner";
 import type { ElementDef } from "@/core/model";
 import { serializeElmt } from "@/core/qet/elmt";
@@ -18,9 +19,10 @@ import { svgToPrims } from "../svg-import";
 import type { LibItem } from "../types";
 import { PreviewImg } from "../shared/common";
 
-type Start = "blank" | "box" | "coil" | "contact" | "motor" | "lamp" | "duplicate" | "svg";
+type Start = "ai" | "blank" | "box" | "coil" | "contact" | "motor" | "lamp" | "duplicate" | "svg";
 
 const STARTS: { id: Start; title: string; desc: string; icon: React.ReactNode }[] = [
+  { id: "ai", title: "Describe or sketch (AI)", desc: "Type what you need, draw it or upload a picture", icon: <Sparkles /> },
   { id: "blank", title: "Blank", desc: "Start from an empty canvas", icon: <FilePlus2 /> },
   { id: "box", title: "Box with pins", desc: "Connector, terminal strip, PLC card…", icon: <Cpu /> },
   { id: "coil", title: "Relay coil", desc: "A1 / A2, links to its contacts", icon: <Box /> },
@@ -31,8 +33,8 @@ const STARTS: { id: Start; title: string; desc: string; icon: React.ReactNode }[
   { id: "svg", title: "Import SVG drawing", desc: "Trace a vendor symbol, then add pins", icon: <FileImage /> },
 ];
 
-const DEFAULT_NAMES: Record<Start, string> = { blank: "", box: "Connector", coil: "Relay coil", contact: "Contact NO", motor: "Motor 3-phase", lamp: "Indicator lamp", duplicate: "", svg: "" };
-const DEFAULT_CAT: Record<Start, string> = { blank: "Custom", box: "Connectors", coil: "Relays & contactors/Coils", contact: "Relays & contactors/Contacts", motor: "Motors & drives", lamp: "Signalling & HMI", duplicate: "", svg: "Custom" };
+const DEFAULT_NAMES: Record<Start, string> = { ai: "", blank: "", box: "Connector", coil: "Relay coil", contact: "Contact NO", motor: "Motor 3-phase", lamp: "Indicator lamp", duplicate: "", svg: "" };
+const DEFAULT_CAT: Record<Start, string> = { ai: "Custom", blank: "Custom", box: "Connectors", coil: "Relays & contactors/Coils", contact: "Relays & contactors/Contacts", motor: "Motors & drives", lamp: "Signalling & HMI", duplicate: "", svg: "Custom" };
 
 export function NewElementWizard({ open, onClose, categories, defaultCategory }: { open: boolean; onClose: () => void; categories: string[]; defaultCategory?: string }) {
   const router = useRouter();
@@ -48,12 +50,14 @@ export function NewElementWizard({ open, onClose, categories, defaultCategory }:
   const [svgSize, setSvgSize] = useState(60);
   const svgText = useRef<string>("");
   const [dup, setDup] = useState<LibItem | null>(null);
+  const [aiDef, setAiDef] = useState<ElementDef | null>(null);
 
   useEffect(() => {
     if (!open) {
       setStart(null);
       setSvg(null);
       setDup(null);
+      setAiDef(null);
     }
   }, [open]);
 
@@ -61,13 +65,15 @@ export function NewElementWizard({ open, onClose, categories, defaultCategory }:
     setStart(s);
     setName(DEFAULT_NAMES[s]);
     setCategory(defaultCategory || DEFAULT_CAT[s]);
-    setPrefix({ box: "X", coil: "K", contact: "", motor: "M", lamp: "H", blank: "", duplicate: "", svg: "" }[s]);
+    setPrefix({ ai: "", box: "X", coil: "K", contact: "", motor: "M", lamp: "H", blank: "", duplicate: "", svg: "" }[s]);
   };
 
   const def = useMemo<ElementDef | null>(() => {
     const n = name.trim() || "New element";
     try {
       switch (start) {
+        case "ai":
+          return aiDef ? { ...aiDef, name: n, names: { ...aiDef.names, en: n } } : null;
         case "blank":
           return blankTemplate(n);
         case "box":
@@ -89,7 +95,7 @@ export function NewElementWizard({ open, onClose, categories, defaultCategory }:
     } catch {
       return null;
     }
-  }, [start, name, box, contact, motor, svg, svgSize]);
+  }, [start, name, box, contact, motor, svg, svgSize, aiDef]);
 
   const preview = useMemo(() => {
     if (!def) return null;
@@ -133,7 +139,7 @@ export function NewElementWizard({ open, onClose, categories, defaultCategory }:
         const content = serializeElmt({ ...def, prefix, category });
         const j = await api<{ id: string }>("/api/library/elements", {
           method: "POST",
-          json: { name: name.trim(), category, prefix, visibility: "PRIVATE", content, description: "", note: start === "svg" ? `Created from SVG ${svg?.file ?? ""}` : `Created from template: ${start}` },
+          json: { name: name.trim(), category, prefix, visibility: "PRIVATE", content, description: "", note: start === "svg" ? `Created from SVG ${svg?.file ?? ""}` : start === "ai" ? "Drawn with AI from a description / sketch" : `Created from template: ${start}` },
         });
         id = j.id;
       }
@@ -241,6 +247,18 @@ export function NewElementWizard({ open, onClose, categories, defaultCategory }:
                   </label>
                 </div>
               )}
+              {start === "ai" && (
+                <AiElementPanel
+                  onResult={(r) => {
+                    setAiDef(r?.def ?? null);
+                    if (r) {
+                      setName(r.symbol.name || name);
+                      if (r.symbol.category) setCategory(r.symbol.category);
+                      setPrefix(r.def.prefix);
+                    }
+                  }}
+                />
+              )}
               {start === "svg" && (
                 <div className="space-y-2 rounded-lg border border-border p-3">
                   <label className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border-strong px-4 py-6 text-center hover:bg-hover">
@@ -294,7 +312,7 @@ export function NewElementWizard({ open, onClose, categories, defaultCategory }:
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={preview} alt="Preview" className="max-h-52 max-w-full" />
                 ) : (
-                  <span className="text-2xs text-subtle">{start === "svg" ? "Choose a file" : "—"}</span>
+                  <span className="text-2xs text-subtle">{start === "svg" ? "Choose a file" : start === "ai" ? "Generate to see the element" : "—"}</span>
                 )}
               </div>
               {def && start !== "duplicate" && (

@@ -425,6 +425,8 @@ export type CoverSheet = {
   subtitle?: string;
   /** product picture shown on the right */
   image?: TitleBlockLogo & { name?: string };
+  /** company logo at the top left; unset = the built-in Example Company logo, null = no logo */
+  logo?: (TitleBlockLogo & { name?: string }) | null;
   /** project / product data (label → value; values may use %variables and project properties) */
   fields: { label: string; value: string }[];
   /** manufacturer name and address (one line per line) */

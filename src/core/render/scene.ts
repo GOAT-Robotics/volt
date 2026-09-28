@@ -2,6 +2,7 @@ import { COMPONENT_INFO } from "../model";
 import { layoutRich, type RichLayout } from "../richtext";
 import { drawContents, drawCoverSheet } from "./cover";
 import { mateLabel } from "../mating";
+import { BRAND_LOGO } from "../brand-logo";
 import type { ComponentFrame, Doc, ElemInst, ElementDef, FreeText, Junction, Page, PinDef, PlacedText, Pt, Rect, Styles, TextStyle, TitleBlockTemplate, Wire } from "../model";
 import { effectiveText, projectStyles } from "../styles";
 import { elemMatrix, pointAlong, rotOrient, toScene, transformRect, unionRect } from "../geometry";
@@ -826,7 +827,8 @@ export function drawTitleBlock(pt: Painter, o: DrawOpts, styles: Styles, r: Rect
     const x = colX[c.col], y = rowY[c.row], w = colX[c2] - x, h = rowY[r2] - y;
     grid.R(x, y, w, h);
     if (c.type === "logo") {
-      const logo = c.value ? templateLogos(tpl)[c.value] : undefined;
+      // a logo cell with nothing uploaded shows the built-in company logo
+      const logo = (c.value ? templateLogos(tpl)[c.value] : undefined) ?? BRAND_LOGO;
       const size = logo && pt.image ? logoSize(logo) : null;
       if (logo && size) pt.image!({ key: logoKey(logo), mime: LOGO_MIME[logo.type], data: logo.data, ...fitContain(size, { x, y, w, h }, 2) });
       continue;

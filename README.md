@@ -106,7 +106,10 @@ The standard library, blocks and title blocks install automatically when the con
 - **Standard library.** About 8,800 symbols (electric, logic, hydraulic, pneumatic, energy), starter circuit blocks (DOL starter, start/stop with self-holding, pilot lamp, relay, 24 V supply, terminal strip) and standard title blocks. They are installed into every workspace when the server starts, or with `npm run db:seed`, and updated in place when a newer collection ships.
 - **Sharing.** Elements and blocks can be private, shared with named people (view or edit), or published to the whole organization. Org publishing can require approval.
 - **History and provenance.** Every element keeps its revision history. Imported libraries keep their license and attribution. Import `.elmt` files, folders or `.zip` archives; export `.elmt` or `.zip`.
+- **AI element drawing.** New element → *Describe or sketch (AI)*: describe the symbol, draw it on the built-in sketch pad (pen, line, rectangle, ellipse, eraser, undo) or upload a photo / datasheet picture, and OpenAI returns a clean, grid-aligned symbol with numbered pins. Refine it with follow-up instructions, then open it in the element editor. Needs `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`, default `gpt-4.1`) in `.env`; requests go from the server, the key never reaches the browser.
 - **Element editor.** Canvas symbol editor with lines, rectangles, ellipses, arcs, polygons, text, dynamic text and pins; pin table; validation; live previews. A New-element wizard offers templates and SVG import.
+
+**Branding.** The Example Company logo is built in: it fills any title block logo cell that has no uploaded logo, and appears at the top of cover sheets (replace or hide it per cover sheet).
 
 **Document control**
 - **Versions.** "Start new version" copies the current version, which stays unchanged. Version labels can be integer, decimal, letter or custom.

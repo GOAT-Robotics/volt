@@ -89,7 +89,7 @@ describe("terminal strips", () => {
     setStrip(doc, "X1", { partNumber: "3031212", manufacturer: "Phoenix Contact" });
     const spare = addSpare(doc, "X1");
     expect(spare).toBe("4");
-    expect(collectStrips(doc)[0].rows.at(-1)).toMatchObject({ spare: true, num: "4" });
+    expect(collectStrips(doc)[0].rows.find((r) => r.spare)).toMatchObject({ spare: true, num: "4", key: "spare:4" });
     const moved = moveToStrip(doc, "X1", `@${ids.xu}`, "X2");
     expect(moved).toBe("2");
     expect(doc.pages[0].elements.find((e) => e.id === ids.xu)!.info.label).toBe("X2-2");

@@ -10,6 +10,7 @@ import { getPage } from "@/core/ops";
 import type { CoverSheet, Doc, Page, RevisionEntry } from "@/core/model";
 import { coverFromPageTexts, DEFAULT_COVER } from "@/core/render/cover";
 import { logoDataUrl } from "@/core/logos";
+import { BRAND_LOGO } from "@/core/brand-logo";
 import { Commit, Row, Section } from "./Inspector";
 import { PICTURE_LIMITS, readLogoFile } from "./logoUpload";
 
@@ -60,7 +61,7 @@ export function CoverSection({ page, doc, editable }: { page: Page; doc: Doc; ed
       p.cover ??= structuredClone(DEFAULT_COVER);
       fn(p.cover);
     });
-  const pickImage = () => {
+  const pickImage = (what: "image" | "logo" = "image") => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/png,image/jpeg,image/svg+xml,.png,.jpg,.jpeg,.svg";
@@ -69,7 +70,8 @@ export function CoverSection({ page, doc, editable }: { page: Page; doc: Doc; ed
       if (!f) return;
       try {
         const { name, logo } = await readLogoFile(f, PICTURE_LIMITS);
-        upd("Cover picture", (x) => void (x.image = { ...logo, name }));
+        if (what === "logo") upd("Company logo", (x) => void (x.logo = { ...logo, name }));
+        else upd("Cover picture", (x) => void (x.image = { ...logo, name }));
       } catch (e) {
         toast.error((e as Error).message);
       }
@@ -90,6 +92,34 @@ export function CoverSection({ page, doc, editable }: { page: Page; doc: Doc; ed
         <Row label="Subtitle">
           <Commit value={c.subtitle ?? ""} disabled={!editable} onCommit={(v) => upd("Cover subtitle", (x) => void (x.subtitle = v))} aria-label="Cover subtitle" />
         </Row>
+        <Row label="Company logo">
+          <div className="flex items-center gap-2">
+            <div className="flex h-12 w-20 items-center justify-center overflow-hidden rounded border border-border bg-white">
+              {c.logo === null ? <span className="text-2xs text-subtle">none</span> : <img src={logoDataUrl(c.logo ?? BRAND_LOGO)} alt="" className="max-h-full max-w-full object-contain" />}
+            </div>
+            {editable && (
+              <>
+                <Tip content="Your own logo (PNG, JPEG or SVG)">
+                  <Button size="icon-sm" variant="ghost" onClick={() => pickImage("logo")} aria-label="Company logo">
+                    <ImagePlus />
+                  </Button>
+                </Tip>
+                {c.logo !== undefined && (
+                  <Tip content="Use the Example Company logo">
+                    <Button size="xs" variant="ghost" onClick={() => upd("Default company logo", (x) => void delete x.logo)}>
+                      Default
+                    </Button>
+                  </Tip>
+                )}
+                {c.logo !== null && (
+                  <Button size="icon-sm" variant="ghost" onClick={() => upd("Hide company logo", (x) => void (x.logo = null))} aria-label="No logo">
+                    <X />
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </Row>
         <Row label="Picture">
           <div className="flex items-center gap-2">
             <div className="flex h-12 w-20 items-center justify-center overflow-hidden rounded border border-border bg-white">
@@ -98,7 +128,7 @@ export function CoverSection({ page, doc, editable }: { page: Page; doc: Doc; ed
             {editable && (
               <>
                 <Tip content="Product picture (PNG, JPEG or SVG)">
-                  <Button size="icon-sm" variant="ghost" onClick={pickImage} aria-label="Cover picture">
+                  <Button size="icon-sm" variant="ghost" onClick={() => pickImage()} aria-label="Cover picture">
                     <ImagePlus />
                   </Button>
                 </Tip>

@@ -17,6 +17,7 @@ import type { CoverSheet, Doc, Page, Rect, Styles } from "../model";
 import { PathBuilder, type Painter } from "./painter";
 import { fitContain, LOGO_MIME, logoKey, logoSize } from "../logos";
 import { layoutRich } from "../richtext";
+import { BRAND_LOGO } from "../brand-logo";
 
 type Vars = Record<string, string>;
 type Measure = Painter["measure"];
@@ -40,7 +41,7 @@ export const DEFAULT_COVER: CoverSheet = {
     { label: "Year of manufacture", value: "" },
     { label: "Applicable standards", value: "IEC 60204-1" },
   ],
-  manufacturer: "",
+  manufacturer: "Example Company\nSpringfield",
   notes: "",
   notice: "© This document and its contents are the property of the manufacturer. Do not copy or disclose without written permission.",
   showRevisions: true,
@@ -121,13 +122,23 @@ export function drawCoverSheet(pt: Painter, doc: Doc, page: Page, styles: Styles
   const base = 11 * u, small = 8.5 * u, label = 8 * u;
   pt.begin?.("cover");
 
-  // identification band
+  // identification band: company logo, then title and subtitle
+  const logo = c.logo === null ? null : (c.logo ?? BRAND_LOGO);
+  let tx = a.x;
+  const lnat = logo && logoSize(logo);
+  if (logo && lnat && pt.image) {
+    const lh = 44 * u, lw = Math.min(a.w * 0.2, (lnat.w / lnat.h) * lh);
+    const f = fitContain(lnat, { x: a.x, y: a.y, w: lw, h: lh }, 0);
+    pt.image({ key: logoKey(logo), mime: LOGO_MIME[logo.type], data: logo.data, ...f, x: a.x, y: a.y });
+    tx = a.x + f.w + 18 * u;
+  }
+  const tw = a.w * 0.62 - (tx - a.x);
   const title = subst(c.title || "%projecttitle", vars) || doc.meta.title;
   const tSize = 30 * u;
-  pt.text({ text: fit(title, a.w * 0.62, tSize, font, 700, measure), x: a.x, y: a.y, size: tSize, font, weight: 700, color: ink, baseline: "top" });
+  pt.text({ text: fit(title, tw, tSize, font, 700, measure), x: tx, y: a.y, size: tSize, font, weight: 700, color: ink, baseline: "top" });
   let y = a.y + tSize * 1.2;
   if (c.subtitle) {
-    pt.text({ text: fit(subst(c.subtitle, vars), a.w * 0.62, 14 * u, font, 400, measure), x: a.x, y, size: 14 * u, font, color: MUTED, baseline: "top" });
+    pt.text({ text: fit(subst(c.subtitle, vars), tw, 14 * u, font, 400, measure), x: tx, y, size: 14 * u, font, color: MUTED, baseline: "top" });
     y += 14 * u * 1.4;
   }
   // document number / revision / date boxes on the right of the band
