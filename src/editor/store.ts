@@ -1,6 +1,8 @@
 "use client";
 import { create } from "zustand";
-import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Patch } from "immer";
+import { enablePatches, produce, setAutoFreeze } from "immer";
+import { applyOps, diffOps, type LiveOp } from "@/core/live-ops";
+import type { LiveState, Peer } from "./live/types";
 import type { Doc, Page, PartialStyles, Pt } from "@/core/model";
 import { emptySel, ensureInstanceTexts, type Sel } from "@/core/ops";
 import type { DocDiff } from "@/core/diff";
@@ -13,7 +15,12 @@ export type Tool = "select" | "wire" | "text" | "pan" | "comment" | "place" | "s
 export type DrawKind = "rect" | "ellipse" | "line" | "polygon" | "polyline";
 export type DrawStyle = { color: string; width: number; dash: "solid" | "dashed" | "dotted" | "dashdot"; fill: string | null };
 
-export type HistoryEntry = { label: string; patches: Patch[]; inverse: Patch[]; pageId: string; sel: Sel; at: number };
+/** One undo step: id-addressed operations (stay valid when others edit at the same time). */
+export type HistoryEntry = { label: string; ops: LiveOp[]; inverse: LiveOp[]; pageId: string; sel: Sel; at: number };
+
+/** Where local changes go when a live session is connected (set by the live client). */
+let liveSink: ((ops: LiveOp[]) => void) | null = null;
+export const setLiveSink = (fn: ((ops: LiveOp[]) => void) | null) => void (liveSink = fn);
 
 export type VersionInfo = {
   projectId: string;
@@ -73,6 +80,15 @@ type State = {
   /** shape tool: kind to draw and the style new shapes get (last used) */
   shapeKind: DrawKind;
   shapeStyle: DrawStyle;
+  /** live collaboration */
+  live: LiveState;
+  peers: Record<string, Peer>;
+  /** clientId of the person whose view this one follows (Figma-style observation) */
+  following: string | null;
+  /** view only, even with edit rights */
+  spectator: boolean;
+  /** local drag in progress (shown to others) */
+  drag: { sel: Sel; dx: number; dy: number } | null;
 };
 
 type Actions = {
@@ -89,6 +105,12 @@ type Actions = {
   markSaved(rev: number): void;
   page(): Page;
   set<K extends keyof State>(k: K, v: State[K]): void;
+  /** changes from someone else in the live session (not in the undo history) */
+  applyRemote(ops: LiveOp[]): void;
+  /** the live session's current document (server state + my unconfirmed changes) */
+  setLiveDoc(doc: Doc): void;
+  /** the live session's document replaces the local one */
+  replaceDoc(doc: Doc, rev: number): void;
 };
 
 export type EditorStore = State & Actions;
@@ -120,6 +142,11 @@ export const useEditor = create<EditorStore>((set, get) => ({
   gridVisible: true,
   shapeKind: "rect",
   shapeStyle: { color: "#111827", width: 1, dash: "solid", fill: null },
+  live: { status: "off", clientId: null, color: null },
+  peers: {},
+  following: null,
+  spectator: false,
+  drag: null,
 
   init(doc, version) {
     // every reference gets its own movable / rotatable text (legacy & imported instances too)
@@ -144,32 +171,62 @@ export const useEditor = create<EditorStore>((set, get) => ({
   },
   apply(label, fn, opts) {
     const s = get();
-    if (s.version && !s.version.editable) return false;
+    if ((s.version && !s.version.editable) || s.spectator) return false;
     // callers often write `(d) => (d.x = v)`; the arrow's value must not reach Immer as a replacement
-    const [next, patches, inverse] = produceWithPatches(s.doc, (d: Doc) => {
+    const next = produce(s.doc, (d: Doc) => {
       fn(d);
     });
-    if (!patches.length) return false;
-    const entry: HistoryEntry = { label, patches, inverse, pageId: s.pageId, sel: s.sel, at: Date.now() };
+    if (next === s.doc) return false;
+    const ops = diffOps(s.doc, next);
+    if (!ops.length) return false;
+    const entry: HistoryEntry = { label, ops, inverse: diffOps(next, s.doc), pageId: s.pageId, sel: s.sel, at: Date.now() };
     const past = [...s.past, entry];
     if (past.length > HISTORY_LIMIT) past.shift();
     set({ doc: next, past, future: opts?.keepFuture ? s.future : [], save: "dirty", ...(opts?.sel ? { sel: opts.sel } : {}) });
+    liveSink?.(ops);
     return true;
   },
   undo() {
     const s = get();
     const e = s.past[s.past.length - 1];
-    if (!e) return;
-    const doc = applyPatches(s.doc, e.inverse);
+    if (!e || s.spectator) return;
+    // operations by id: still correct after other people's edits (theirs are kept)
+    const doc = produce(s.doc, (d: Doc) => applyOps(d, e.inverse));
     const pageExists = doc.pages.some((p) => p.id === e.pageId);
     set({ doc, past: s.past.slice(0, -1), future: [e, ...s.future], sel: e.sel, pageId: pageExists ? e.pageId : s.pageId, save: "dirty" });
+    const ops = diffOps(s.doc, doc);
+    if (ops.length) liveSink?.(ops);
   },
   redo() {
     const s = get();
     const e = s.future[0];
-    if (!e) return;
-    const doc = applyPatches(s.doc, e.patches);
+    if (!e || s.spectator) return;
+    const doc = produce(s.doc, (d: Doc) => applyOps(d, e.ops));
     set({ doc, past: [...s.past, e], future: s.future.slice(1), save: "dirty", pageId: doc.pages.some((p) => p.id === e.pageId) ? e.pageId : s.pageId });
+    const ops = diffOps(s.doc, doc);
+    if (ops.length) liveSink?.(ops);
+  },
+  applyRemote(ops) {
+    const s = get();
+    if (!ops.length) return;
+    get().setLiveDoc(produce(s.doc, (d: Doc) => applyOps(d, ops)));
+  },
+  setLiveDoc(doc) {
+    const s = get();
+    if (doc === s.doc) return;
+    // keep the selection to what still exists
+    const page = doc.pages.find((p) => p.id === s.pageId);
+    const keep = (ids: string[], list: { id: string }[] | undefined) => (list ? ids.filter((id) => list.some((x) => x.id === id)) : []);
+    const sel = page
+      ? { elements: keep(s.sel.elements, page.elements), wires: keep(s.sel.wires, page.wires), junctions: keep(s.sel.junctions, page.junctions), texts: keep(s.sel.texts, page.texts), shapes: keep(s.sel.shapes ?? [], page.shapes) }
+      : emptySel();
+    const same = sel.elements.length === s.sel.elements.length && sel.wires.length === s.sel.wires.length && sel.junctions.length === s.sel.junctions.length && sel.texts.length === s.sel.texts.length && sel.shapes.length === (s.sel.shapes ?? []).length;
+    set({ doc, ...(same ? {} : { sel }), ...(page ? {} : { pageId: [...doc.pages].sort((a, b) => a.order - b.order)[0]?.id ?? s.pageId }) });
+  },
+  replaceDoc(doc, rev) {
+    const s = get();
+    const page = doc.pages.some((p) => p.id === s.pageId) ? s.pageId : [...doc.pages].sort((a, b) => a.order - b.order)[0]?.id ?? "";
+    set({ doc, pageId: page, version: s.version ? { ...s.version, docRev: rev } : s.version, ...(page === s.pageId ? {} : { sel: emptySel() }) });
   },
   setPage(id) {
     set({ pageId: id, sel: emptySel(), highlight: null });

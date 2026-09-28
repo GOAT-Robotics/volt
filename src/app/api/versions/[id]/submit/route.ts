@@ -7,6 +7,7 @@ import { audit } from "@/lib/audit";
 import { startReview } from "@/lib/workflow";
 import { requiredFieldsFor } from "@/lib/projects";
 import { missingFields } from "@/lib/templates";
+import { liveReadonly } from "@/lib/live/hooks";
 
 export const runtime = "nodejs";
 
@@ -40,6 +41,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   // freeze: record the hash of exactly what is being reviewed
   await db.version.update({ where: { id }, data: { docHash: docHash(doc) } });
   const review = await startReview(ctx, { ...a.version, project: a.project }, { reviewers: b.reviewers, dueDate: due, instructions: b.instructions, sequential: b.sequential });
+  liveReadonly(id, `Submitted for review by ${ctx.user.name || ctx.user.email} — this version is now frozen`);
   await audit({ workspaceId: a.project.workspaceId, projectId: a.project.id, versionId: id, actorId: ctx.user.id, type: "version.submit", data: { label: a.version.label, reviewers: b.reviewers.length, sequential: b.sequential, due: b.dueDate ?? null } });
   return { reviewId: review.id };
 });

@@ -6,6 +6,7 @@ import { HttpError, loadProject, type Ctx } from "./session";
 import { stableStringify } from "@/core/stable-json";
 import type { Doc, VersionStatus } from "@/core/model";
 import { EDITABLE_STATUSES } from "@/core/model";
+import { flushLive } from "./live/hooks";
 
 export const sha256 = (s: string | Uint8Array) => createHash("sha256").update(s).digest("hex");
 export const docHash = (doc: Doc) => sha256(stableStringify(doc));
@@ -57,6 +58,8 @@ export type VersionAccess = {
 };
 
 export async function loadVersion(ctx: Ctx, versionId: string, opts: { withDoc?: boolean } = {}): Promise<VersionAccess> {
+  // a live editing session may hold changes not saved yet: readers get the current document
+  await flushLive(versionId);
   const version = await db.version.findUnique({ where: { id: versionId }, ...(opts.withDoc === false ? { omit: { doc: true } } : {}) });
   if (!version) throw new HttpError(404, "Version not found");
   const { project, can, inWorkspace } = await loadProject(ctx, version.projectId);

@@ -6,6 +6,7 @@ import { docHash, nextLabel, parseDoc, reindexVersion } from "@/lib/versioning";
 import { audit } from "@/lib/audit";
 import { applyProjectExpiry } from "@/lib/workflow";
 import { WORKING } from "@/lib/projects";
+import { flushLive } from "@/lib/live/hooks";
 
 export const runtime = "nodejs";
 
@@ -50,6 +51,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   const { project, can } = await loadProject(ctx, id);
   if (!can("project.edit") && !can("project.manage")) throw new HttpError(403, "You cannot start versions in this project");
   if (project.state !== "ACTIVE") throw new HttpError(409, "Project is archived");
+  await flushLive(b.parentId);
   const parent = await db.version.findUnique({ where: { id: b.parentId } });
   if (!parent || parent.projectId !== id) throw new HttpError(404, "Parent version not found");
   const working = await db.version.findFirst({ where: { projectId: id, status: { in: WORKING } }, orderBy: { seq: "desc" } });

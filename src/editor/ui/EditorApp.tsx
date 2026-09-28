@@ -15,12 +15,14 @@ import { RightPanel } from "./RightPanel";
 import { Dialogs } from "./dialogs/Dialogs";
 import { TooltipProvider } from "@/components/ui/misc";
 import { useBlockPlacement } from "./blocks";
+import { LiveClient } from "../live/client";
 
 export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) {
   const engine = useRef<Engine | null>(null);
   const [dialog, setDialog] = useState<{ name: DialogName; arg?: unknown } | null>(null);
   const [live, setLive] = useState("");
   const initialized = useRef(false);
+  const liveRef = useRef<LiveClient | null>(null);
 
   if (!initialized.current) {
     useEditor.getState().init(doc, version);
@@ -31,6 +33,8 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
   const saveNow = useCallback(async () => {
     const s = useEditor.getState();
     if (!s.version?.editable || s.save === "saved" || s.save === "conflict") return;
+    // in a live session the server saves; changes are already on their way
+    if (liveRef.current) return;
     if (saving.current) return saving.current;
     const docAtSave = s.doc;
     s.setSave("saving");
@@ -79,6 +83,37 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
     [saveNow],
   );
 
+  // live collaboration: everyone in this version sees changes, cursors and selections instantly
+  useEffect(() => {
+    const s = useEditor.getState();
+    if (!s.version?.versionId || typeof EventSource === "undefined") return;
+    const c = new LiveClient(s.version.versionId, () => engine.current, (msg, tone) => (tone === "error" ? toast.error(msg) : toast(msg)), () => {
+      // the live connection never came up (proxy, network): keep working with normal saving
+      c.stop();
+      liveRef.current = null;
+      toast("Live collaboration is not available right now — your changes are saved normally.");
+      const st = useEditor.getState();
+      if (st.save === "dirty") void saveNow();
+    });
+    liveRef.current = c;
+    c.start();
+    // any own navigation stops following someone
+    const stop = (e: Event) => {
+      const st = useEditor.getState();
+      if (!st.following) return;
+      const host = engine.current?.host;
+      if (host && e.target instanceof Node && host.contains(e.target)) st.set("following", null);
+    };
+    window.addEventListener("pointerdown", stop, true);
+    window.addEventListener("wheel", stop, true);
+    return () => {
+      window.removeEventListener("pointerdown", stop, true);
+      window.removeEventListener("wheel", stop, true);
+      c.stop();
+      liveRef.current = null;
+    };
+  }, []);
+
   // autosave: debounce after edits; flush on hide / unload
   const saveState = useEditor((s) => s.save);
   const docRef = useEditor((s) => s.doc);
@@ -90,6 +125,7 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
   useEffect(() => {
     const flush = () => {
       const s = useEditor.getState();
+      if (liveRef.current) return;
       if (s.save === "dirty" && s.version?.editable) {
         navigator.sendBeacon?.(`/api/versions/${s.version.versionId}/doc?beacon=1`, new Blob([JSON.stringify({ doc: s.doc, baseRev: s.version.docRev })], { type: "application/json" }));
       }
@@ -97,6 +133,11 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
     const vis = () => document.visibilityState === "hidden" && flush();
     const before = (e: BeforeUnloadEvent) => {
       const s = useEditor.getState();
+      if (liveRef.current) {
+        // live: only warn while changes are still on their way to the server
+        if (liveRef.current.pending) e.preventDefault();
+        return;
+      }
       if (s.save === "dirty" || s.save === "saving" || s.save === "error") {
         flush();
         e.preventDefault();
@@ -163,6 +204,7 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
         return run("rotateRefText");
       }
       if (e.key === "Escape") {
+        if (useEditor.getState().following) return useEditor.getState().set("following", null);
         if (eng?.cancel()) return;
         const s = useEditor.getState();
         if (s.tool !== "select") return s.setTool("select");

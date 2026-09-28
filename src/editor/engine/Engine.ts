@@ -174,14 +174,32 @@ export class Engine {
   }
   private get doc(): Doc {
     if (this.secondary) return this.s.diff?.doc ?? this.s.doc;
-    return this.preview ?? this.s.doc;
+    return this.preview ?? this.remoteDoc();
+  }
+  /** the document with other people's drags in progress applied (they see their parts move; so do we) */
+  private peerCursors = new Map<string, { x: number; y: number }>();
+  private peerCursorAt = 0;
+  private remoteCache: { doc: Doc; peers: unknown; pageId: string; out: Doc } | null = null;
+  private remoteDoc(): Doc {
+    const s = this.s;
+    const drags = Object.values(s.peers).filter((p) => p.drag?.sel && p.pageId === s.pageId && (p.drag.dx || p.drag.dy));
+    if (!drags.length) return s.doc;
+    const c = this.remoteCache;
+    if (c && c.doc === s.doc && c.peers === s.peers && c.pageId === s.pageId) return c.out;
+    const out = produce(s.doc, (d) => {
+      const pg = d.pages.find((x) => x.id === s.pageId);
+      if (!pg) return;
+      for (const p of drags) moveSelection(d, pg, { ...emptySel(), ...p.drag!.sel! }, { x: p.drag!.dx, y: p.drag!.dy });
+    });
+    this.remoteCache = { doc: s.doc, peers: s.peers, pageId: s.pageId, out };
+    return out;
   }
   private get page(): Page {
     const d = this.doc;
     return d.pages.find((p) => p.id === this.s.pageId) ?? [...d.pages].sort((a, b) => a.order - b.order)[0];
   }
   private get editable() {
-    return !this.secondary && (!this.s.version || this.s.version.editable);
+    return !this.secondary && !this.s.spectator && (!this.s.version || this.s.version.editable);
   }
   private stylesMemo: { base: Styles; pv: unknown; out: Styles } | null = null;
   private get styles(): Styles {
@@ -210,6 +228,15 @@ export class Engine {
       this.dirtyOverlay = true;
     }
     if (s.gridVisible !== p.gridVisible) this.dirtyScene = true;
+    if (s.peers !== p.peers) {
+      this.dirtyOverlay = true;
+      const drags = (x: EditorStore) => JSON.stringify(Object.values(x.peers).map((q) => (q.pageId === x.pageId ? q.drag ?? null : null)));
+      if (drags(s) !== drags(p)) this.dirtyScene = true;
+    }
+    if (s.spectator !== p.spectator) {
+      this.mode = { m: "idle" };
+      this.dirtyOverlay = true;
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -686,6 +713,7 @@ export class Engine {
           const pid = s.pageId;
           this.preview = produce(s.doc, (dr) => moveSelection(dr, getPage(dr, pid), m.sel, d));
           this.dirtyScene = true;
+          if (s.live.status === "live") s.set("drag", { sel: m.sel, dx: d.x, dy: d.y });
         }
         this.dirtyOverlay = true;
         return;
@@ -942,6 +970,7 @@ export class Engine {
         this.preview = null;
         const d = m.delta;
         this.mode = { m: "idle" };
+        if (s.drag) s.set("drag", null);
         if (d.x || d.y) {
           const pid = s.pageId;
           const els = m.sel.elements;
@@ -1365,6 +1394,7 @@ export class Engine {
   }
 
   cancel() {
+    if (this.s.drag) this.s.set("drag", null);
     if (this.mode.m !== "idle") {
       this.mode = { m: "idle" };
       this.preview = null;
@@ -2102,6 +2132,72 @@ export class Engine {
       c.fillText(String(cm.replies + 1), p.x + 9, p.y - 9);
       c.textAlign = "left";
     }
+    if (!this.secondary) this.drawPeers(c, painter, base, dpr, px);
+  }
+
+  /** Other people in the live session: their selection in their colour, their cursor with a name tag. */
+  private drawPeers(c: CanvasRenderingContext2D, painter: CanvasPainter, base: [number, number, number, number, number, number], dpr: number, px: (n: number) => number) {
+    const s = this.s;
+    const peers = Object.values(s.peers).filter((p) => p.pageId === s.pageId);
+    if (!peers.length) return;
+    const page = this.page;
+    const doc = this.doc;
+    c.setTransform(...base);
+    for (const p of peers) {
+      const sel = p.sel;
+      if (!sel) continue;
+      for (const id of sel.elements) {
+        const e = page.elements.find((x) => x.id === id);
+        const def = e && doc.defs[e.defId];
+        if (!e || !def) continue;
+        const r = inflate(elementBounds(e, def), px(5));
+        painter.stroke(new PathBuilder().RR(r.x, r.y, r.w, r.h, px(2), px(2)).build(), { color: p.color, width: px(2) });
+      }
+      for (const id of sel.wires) {
+        const w = page.wires.find((x) => x.id === id);
+        if (w) painter.stroke(new PathBuilder().poly(w.pts).build(), { color: p.color, width: px(4), cap: "round", join: "round", alpha: 0.4 });
+      }
+      for (const id of sel.shapes ?? []) {
+        const sh = page.shapes.find((x) => x.id === id);
+        if (sh) painter.stroke(new PathBuilder().poly(shapeOutline(sh)).build(), { color: p.color, width: px(3), cap: "round", join: "round", alpha: 0.45 });
+      }
+      for (const id of sel.texts) {
+        const it = this.indexed.get("t:" + id)?.items[0];
+        if (it) painter.stroke(new PathBuilder().R(it.minX - px(3), it.minY - px(3), it.maxX - it.minX + px(6), it.maxY - it.minY + px(6)).build(), { color: p.color, width: px(1.5) });
+      }
+    }
+    // cursors and name tags (screen space), eased between presence updates like Figma
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.font = "500 12px ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    c.textBaseline = "middle";
+    const now = performance.now();
+    const dt = Math.min(64, now - (this.peerCursorAt || now));
+    this.peerCursorAt = now;
+    const k = 1 - Math.pow(1 - 0.28, dt / 16.7);
+    const seen = new Set<string>();
+    for (const p of peers) {
+      if (!p.cursor) continue;
+      seen.add(p.clientId);
+      let cur = this.peerCursors.get(p.clientId);
+      if (!cur) this.peerCursors.set(p.clientId, (cur = { x: p.cursor.x, y: p.cursor.y }));
+      const ex = p.cursor.x - cur.x, ey = p.cursor.y - cur.y;
+      const gap = Math.hypot(ex, ey) * this.view.s;
+      if (gap > 600) {
+        cur.x = p.cursor.x;
+        cur.y = p.cursor.y;
+      } else if (gap > 0.3) {
+        cur.x += ex * k;
+        cur.y += ey * k;
+        this.dirtyOverlay = true;
+      } else {
+        cur.x = p.cursor.x;
+        cur.y = p.cursor.y;
+      }
+      const q = this.toScreen(cur);
+      if (q.x < -40 || q.y < -40 || q.x > this.w + 40 || q.y > this.h + 40) continue;
+      drawPeerCursor(c, q.x, q.y, p.color, (p.name.split(/\s+/)[0] || p.name) + (p.mode === "view" ? " · viewing" : ""));
+    }
+    for (const id of this.peerCursors.keys()) if (!seen.has(id)) this.peerCursors.delete(id);
   }
 
   /** Render the current page offscreen at small scale (minimap). */
@@ -2125,6 +2221,53 @@ export class Engine {
   get size() {
     return { w: this.w, h: this.h };
   }
+}
+
+const PEER_ARROW =
+  typeof Path2D === "undefined"
+    ? (null as unknown as Path2D)
+    : new Path2D(
+        "M1.9 0.6 L16.9 6.4 C18.3 7 18.2 8.3 16.8 8.6 C14.2 9.1 12 9.6 10.9 10.2 C10.4 10.5 10.2 10.7 10.0 11.2 C9.5 12.2 9.1 14.2 8.6 16.8 C8.3 18.2 7 18.3 6.4 16.9 L0.6 1.9 C0.2 0.9 0.9 0.2 1.9 0.6 Z",
+      );
+
+/** Figma-style collaborator cursor: a tilted arrowhead with a soft outline, name tag tucked under it. */
+function drawPeerCursor(c: CanvasRenderingContext2D, x: number, y: number, color: string, label: string) {
+  c.save();
+  c.translate(x, y);
+  // arrowhead: rounded tip and wings, back edges bowing in and flowing into a soft notch
+  const arrow = PEER_ARROW;
+  c.lineJoin = "round";
+  c.shadowColor = "rgba(0,0,0,0.28)";
+  c.shadowBlur = 3;
+  c.shadowOffsetY = 1;
+  c.fillStyle = color;
+  c.fill(arrow);
+  c.shadowColor = "transparent";
+  c.strokeStyle = "rgba(255,255,255,0.95)";
+  c.lineWidth = 1.25;
+  c.stroke(arrow);
+  // name tag
+  const tw = c.measureText(label).width;
+  const bx = 12, by = 18, bh = 20, bw = Math.ceil(tw) + 12;
+  c.beginPath();
+  c.roundRect(bx, by, bw, bh, 4);
+  c.fillStyle = color;
+  c.shadowColor = "rgba(0,0,0,0.22)";
+  c.shadowBlur = 4;
+  c.shadowOffsetY = 1;
+  c.fill();
+  c.shadowColor = "transparent";
+  c.fillStyle = readableOn(color);
+  c.fillText(label, bx + 6, by + bh / 2 + 0.5);
+  c.restore();
+}
+
+function readableOn(hex: string) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.72 ? "#111111" : "#ffffff";
 }
 
 function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {

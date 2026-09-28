@@ -14,6 +14,7 @@ import { cn, relTime } from "@/lib/utils";
 import { PromptDialog, useMutation } from "@/components/volt/common";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ImportQetButton } from "./ImportQet";
+import { LiveStack, useLivePeople } from "@/components/live/LiveNow";
 
 export type ProjectRow = {
   id: string;
@@ -261,6 +262,7 @@ function FolderTree({ folders, active, href, canEdit }: { folders: FolderRow[]; 
 
 function ProjectList({ projects, folders }: { projects: ProjectRow[]; folders: FolderRow[] }) {
   const [run] = useMutation();
+  const live = useLivePeople(projects.map((p) => p.id));
   const fname = (id: string | null) => (id ? folders.find((f) => f.id === id)?.name : null);
   return (
     <ul className="divide-y divide-border" aria-label="Projects">
@@ -280,6 +282,9 @@ function ProjectList({ projects, folders }: { projects: ProjectRow[]; folders: F
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-medium group-hover:underline">{p.name}</span>
               {p.number && <span className="shrink-0 font-mono text-2xs text-muted">{p.number}</span>}
+              <span className="pointer-events-auto">
+                <LiveStack people={live[p.id]} size={20} />
+              </span>
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-2 text-2xs text-muted">
               {fname(p.folderId) && (

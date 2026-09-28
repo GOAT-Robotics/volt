@@ -8,6 +8,7 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/compo
 import { cn } from "@/lib/utils";
 import { uid } from "@/core/ids";
 import type { Doc } from "@/core/model";
+import { PagePeers } from "./LivePresence";
 
 export function reorderPages(d: Doc, id: string, dir: -1 | 1) {
   const pages = [...d.pages].sort((a, b) => a.order - b.order);
@@ -107,7 +108,10 @@ export function PageTabs() {
               }}
             />
           ) : (
-            <span className="max-w-40 truncate">{p.title}</span>
+            <>
+              <span className="max-w-40 truncate">{p.title}</span>
+              <PagePeers pageId={p.id} />
+            </>
           )}
           {editable && (
             <Menu>

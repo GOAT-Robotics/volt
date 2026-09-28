@@ -10,15 +10,17 @@ import { Tip, Kbd } from "@/components/ui/misc";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, MenuLabel } from "@/components/ui/menu";
 import { StatusBadge } from "@/components/ui/status";
 import { relTime } from "@/lib/utils";
+import { LiveAvatars } from "./LivePresence";
 
 function SaveIndicator() {
   const save = useEditor((s) => s.save);
   const err = useEditor((s) => s.saveError);
   const at = useEditor((s) => s.lastSavedAt);
+  const live = useEditor((s) => s.live.status === "live");
   const ui = useEditorUI();
   const map = {
     saved: { icon: <Check className="size-3" />, text: at ? `Saved ${relTime(new Date(at))}` : "All changes saved", cls: "text-subtle" },
-    dirty: { icon: <span className="size-1.5 rounded-full bg-warning" />, text: "Unsaved changes", cls: "text-muted" },
+    dirty: live ? { icon: <Loader2 className="size-3 animate-spin" />, text: "Syncing…", cls: "text-muted" } : { icon: <span className="size-1.5 rounded-full bg-warning" />, text: "Unsaved changes", cls: "text-muted" },
     saving: { icon: <Loader2 className="size-3 animate-spin" />, text: "Saving…", cls: "text-muted" },
     error: { icon: <CloudOff className="size-3" />, text: "Save failed — retry", cls: "text-danger" },
     conflict: { icon: <AlertTriangle className="size-3" />, text: "Changed elsewhere", cls: "text-danger" },
@@ -120,6 +122,8 @@ export function Header() {
       <SaveIndicator />
 
       <div className="flex-1" />
+
+      <LiveAvatars />
 
       {diff && (
         <div className="flex items-center gap-1.5 rounded-md border border-warning/30 bg-warning-soft px-2 py-0.5 text-2xs text-warning">

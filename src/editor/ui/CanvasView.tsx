@@ -39,6 +39,7 @@ import { Engine } from "../engine/Engine";
 import { toast } from "sonner";
 import { useEditor, type DrawKind } from "../store";
 import { NativeSelect } from "@/components/ui/input";
+import { FollowBanner } from "./LivePresence";
 import { useEditorUI } from "./context";
 import { runCommand } from "./commands";
 import { Button } from "@/components/ui/button";
@@ -120,6 +121,7 @@ export function CanvasView() {
             <div className="relative min-w-0 flex-1">
               <div ref={host} className="absolute inset-0 bg-canvas data-[focus=1]:ring-2 data-[focus=1]:ring-inset data-[focus=1]:ring-accent/40" data-testid="canvas-host" />
               <ToolRail />
+              <FollowBanner />
               <SelectionBar />
               <ZoomControls fps={fps} minimap={minimap} setMinimap={setMinimap} />
               {minimap && <Minimap />}

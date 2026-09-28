@@ -17,6 +17,7 @@ import { PromptDialog, useMutation } from "@/components/volt/common";
 import type { CompatReport } from "@/core/model";
 import type { FolderRow } from "../ProjectsView";
 import { ReviewsTab, SignaturesTab, ActivityTab, MembersTab, AttachmentsTab, SettingsTab } from "./Tabs";
+import { LiveStack, useLivePeople } from "@/components/live/LiveNow";
 
 export type VersionRow = {
   id: string;
@@ -116,6 +117,8 @@ export function ProjectView({ data, initialTab }: { data: ProjectData; initialTa
   const pendingSigs = data.signatures.filter((s) => s.status === "REQUESTED").length;
   const openReviews = data.reviews.filter((r) => r.status === "OPEN").length;
   const folder = data.folders.find((f) => f.id === p.folderId);
+  const live = useLivePeople([p.id])[p.id];
+  const versionLabels = Object.fromEntries(data.versions.map((v) => [v.id, v.label]));
 
   return (
     <div>
@@ -140,6 +143,11 @@ export function ProjectView({ data, initialTab }: { data: ProjectData; initialTa
             {p.name}
             {p.number && <span className="font-mono text-xs font-normal text-muted">{p.number}</span>}
             {p.state === "ARCHIVED" && <Badge tone="warning">Archived</Badge>}
+            {live?.length ? (
+              <Link href={`/projects/${p.id}/v/${live.find((x) => x.mode === "edit")?.versionId ?? live[0].versionId}`} className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success-soft px-2 py-0.5 text-2xs font-medium text-success hover:underline">
+                <LiveStack people={live} versions={versionLabels} size={18} /> Live now — join
+              </Link>
+            ) : null}
             <button
               onClick={() => run(() => api(`/api/projects/${p.id}/favorite`, { method: "POST" }))}
               aria-label={p.favorite ? "Remove from favorites" : "Add to favorites"}

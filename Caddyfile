@@ -4,7 +4,10 @@ volt.example.com {
     request_body {
         max_size 100MB
     }
-    reverse_proxy volt:3000
+    # live collaboration streams (Server-Sent Events) must not be buffered
+    reverse_proxy volt:3000 {
+        flush_interval -1
+    }
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         -Server
