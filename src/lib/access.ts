@@ -17,7 +17,7 @@ export function assertAdmin(ctx: Ctx) {
   if (!isAdmin(ctx)) throw new HttpError(403, "Administrator access required");
 }
 
-/** May add people to a project or change their project roles (workspace setting "projectSharing"). */
+/** May add or remove project members (workspace setting "projectSharing"). */
 export function canShareProject(ctx: Ctx, canManage: boolean): boolean {
   return isAdmin(ctx) || (ctx.settings.access.projectSharing === "owners" && canManage);
 }
@@ -26,17 +26,18 @@ export const SHARE_DENIED = "Only a workspace admin can give people access to pr
 
 /** Prisma filter: projects this user may see (workspace projects for members; only invited projects for guests). */
 export function projectScope(ctx: Ctx): Prisma.ProjectWhereInput {
-  if (isGuestCtx(ctx)) return { members: { some: { userId: ctx.user.id } } };
-  return { workspaceId: ctx.workspace.id };
+  if (isAdmin(ctx)) return { workspaceId: ctx.workspace.id };
+  if (!rolesAllow(ctx.roles, "project.view") && !rolesAllow(ctx.roles, "review.comment")) return { id: "__no_project_access__" };
+  return { workspaceId: ctx.workspace.id, members: { some: { userId: ctx.user.id } } };
 }
 
-/** Effective roles of an arbitrary user for a project (workspace membership + project roles). */
+/** Workspace roles are the only permission source. Project membership only grants project scope. */
 export async function userRolesFor(userId: string, workspaceId: string, projectId?: string): Promise<Role[]> {
-  const [mem, pm] = await Promise.all([
-    db.membership.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } }),
-    projectId ? db.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } } }) : null,
-  ]);
-  return [...parseRoles(mem?.roles), ...parseRoles(pm?.roles)];
+  const mem = await db.membership.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
+  if (mem) return parseRoles(mem.roles);
+  if (!projectId) return [];
+  const invitedGuest = await db.projectMember.findFirst({ where: { projectId, userId, project: { workspaceId }, user: { isGuest: true } } });
+  return invitedGuest ? ["GUEST"] : [];
 }
 
 export async function userCan(userId: string, workspaceId: string, projectId: string | undefined, a: Action) {
@@ -65,15 +66,12 @@ export function baseUrl(req?: Request): string {
   return "";
 }
 
-/** Project managers (OWNER project role or workspace manage role) — used for notifications. */
+/** Project members whose workspace role permits project management — used for notifications. */
 export async function projectManagers(projectId: string, workspaceId: string): Promise<string[]> {
-  const [pms, mems] = await Promise.all([
-    db.projectMember.findMany({ where: { projectId } }),
-    db.membership.findMany({ where: { workspaceId }, include: { user: { select: { disabled: true } } } }),
-  ]);
+  const pms = await db.projectMember.findMany({ where: { projectId }, select: { userId: true } });
+  const mems = await db.membership.findMany({ where: { workspaceId, userId: { in: pms.map((m) => m.userId) } }, include: { user: { select: { disabled: true } } } });
   const ids = new Set<string>();
-  for (const p of pms) if (rolesAllow(parseRoles(p.roles), "project.manage")) ids.add(p.userId);
-  for (const m of mems) if (!m.user.disabled && parseRoles(m.roles).includes("OWNER")) ids.add(m.userId);
+  for (const m of mems) if (!m.user.disabled && rolesAllow(parseRoles(m.roles), "project.manage")) ids.add(m.userId);
   return [...ids];
 }
 
@@ -93,22 +91,4 @@ export function fileResponse(data: Uint8Array | Buffer, opts: { filename: string
       "cache-control": opts.cache ?? "private, no-store",
     },
   });
-}
-
-/** project roles that carry approval, signing or ownership power */
-const PRIVILEGED_PROJECT_ROLES = ["OWNER", "APPROVER", "SIGNATORY"];
-
-/**
- * Who may hand out which project roles: approval, signing and ownership only by a workspace
- * admin of the project's workspace (a project owner cannot make themselves or a friend a
- * signatory), never to guests, and nobody changes their own privileged roles.
- */
-export function assertGrantable(ctx: Ctx, project: { workspaceId: string }, target: { id: string; isGuest: boolean }, before: string[], after: string[]) {
-  const added = after.filter((r) => PRIVILEGED_PROJECT_ROLES.includes(r) && !before.includes(r));
-  const removed = before.filter((r) => PRIVILEGED_PROJECT_ROLES.includes(r) && !after.includes(r));
-  if (!added.length && !removed.length) return;
-  const admin = ctx.workspace.id === project.workspaceId && ctx.roles.includes("ADMIN");
-  if (added.length && target.isGuest) throw new HttpError(403, "Guests cannot be owners, approvers or signatories");
-  if (target.id === ctx.user.id && added.length && !admin) throw new HttpError(403, "You cannot give yourself approval, signing or owner rights");
-  if (added.some((r) => r !== "OWNER") && !admin) throw new HttpError(403, "Only a workspace admin can make someone an approver or signatory");
 }

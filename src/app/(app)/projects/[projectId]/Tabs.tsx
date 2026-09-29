@@ -7,12 +7,11 @@ import { ClipboardCheck, FileSignature, ShieldCheck, ShieldAlert, Activity, User
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
-import { Avatar, Badge, Checkbox, Empty, Spinner, Table } from "@/components/ui/misc";
+import { Avatar, Badge, Empty, Spinner, Table } from "@/components/ui/misc";
 import { StatusBadge } from "@/components/ui/status";
 import { api } from "@/lib/fetcher";
 import { cn, fmtDate, relTime } from "@/lib/utils";
-import { PROJECT_ROLES, VERSION_SCHEMES } from "@/lib/constants";
-import { ROLE_DESCRIPTION } from "@/lib/roles";
+import { VERSION_SCHEMES } from "@/lib/constants";
 import { Mono, PromptDialog, Section, TagInput, UserSearch, useMutation } from "@/components/volt/common";
 import { CompatReportView } from "../ImportQet";
 import { folderOptions } from "../NewProjectDialog";
@@ -280,29 +279,15 @@ export function ActivityTab({ data }: { data: ProjectData }) {
 /* Members                                                              */
 /* ------------------------------------------------------------------ */
 
-const ROLE_HELP: Record<string, string> = {
-  OWNER: ROLE_DESCRIPTION.OWNER,
-  DESIGNER: ROLE_DESCRIPTION.DESIGNER,
-  REVIEWER: ROLE_DESCRIPTION.REVIEWER,
-  APPROVER: ROLE_DESCRIPTION.APPROVER,
-  SIGNATORY: ROLE_DESCRIPTION.SIGNATORY,
-  VIEWER: ROLE_DESCRIPTION.VIEWER,
-  GUEST: ROLE_DESCRIPTION.GUEST,
-};
-
 export function MembersTab({ data }: { data: ProjectData }) {
   const [run, busy] = useMutation();
   const [adding, setAdding] = React.useState(false);
   const [remove, setRemove] = React.useState<{ userId: string; name: string } | null>(null);
   const pid = data.project.id;
-  const setRoles = (userId: string, roles: string[]) => {
-    if (!roles.length) return toast.error("Keep at least one role, or remove the member");
-    return run(() => api(`/api/projects/${pid}/members/${userId}`, { method: "PATCH", json: { roles } }), "Roles updated");
-  };
   return (
     <Section
       title="Project members"
-      description="Project roles add to workspace roles. People without a workspace role see only the projects they are members of."
+      description="Membership controls who belongs to this project. Permissions come only from roles assigned under Administration → Members."
       actions={
         data.perms.share && (
           <Button size="xs" variant="primary" onClick={() => setAdding(true)}>
@@ -312,18 +297,14 @@ export function MembersTab({ data }: { data: ProjectData }) {
       }
     >
       {data.members.length === 0 ? (
-        <Empty icon={<Users />} title="No project members">Workspace members can access this project through their workspace roles. Add people here to give them project-specific roles or invite guests.</Empty>
+        <Empty icon={<Users />} title="No project members">Add workspace members who should participate in this project. Their workspace roles determine what they can do.</Empty>
       ) : (
         <div className="overflow-x-auto">
           <Table>
             <thead>
               <tr>
                 <th>Member</th>
-                {PROJECT_ROLES.map((r) => (
-                  <th key={r} className="w-20 text-center" title={ROLE_HELP[r]}>
-                    {r.charAt(0) + r.slice(1).toLowerCase()}
-                  </th>
-                ))}
+                <th>Workspace roles</th>
                 <th className="w-10" />
               </tr>
             </thead>
@@ -341,17 +322,11 @@ export function MembersTab({ data }: { data: ProjectData }) {
                       </span>
                     </span>
                   </td>
-                  {PROJECT_ROLES.map((r) => (
-                    <td key={r} className="text-center">
-                      <Checkbox
-                        className="mx-auto"
-                        checked={m.roles.includes(r)}
-                        disabled={!data.perms.share || busy}
-                        aria-label={`${r} role for ${m.name}`}
-                        onCheckedChange={(c) => setRoles(m.userId, c ? [...m.roles, r] : m.roles.filter((x) => x !== r))}
-                      />
-                    </td>
-                  ))}
+                  <td>
+                    <span className="flex flex-wrap gap-1">
+                      {m.roles.length ? m.roles.map((r) => <Badge key={r}>{r.charAt(0) + r.slice(1).toLowerCase()}</Badge>) : <Badge tone="warning">No workspace role</Badge>}
+                    </span>
+                  </td>
                   <td>
                     {data.perms.share && (
                       <Button size="icon-sm" variant="danger-ghost" aria-label={`Remove ${m.name}`} onClick={() => setRemove({ userId: m.userId, name: m.name })}>
@@ -372,7 +347,7 @@ export function MembersTab({ data }: { data: ProjectData }) {
           danger
           onOpenChange={(o) => !o && setRemove(null)}
           title={`Remove ${remove.name}?`}
-          description="They keep any workspace-level access. Their comments and decisions remain in the record."
+          description="They will no longer be a project member. Their workspace role, comments and completed decisions remain in the record."
           confirmLabel="Remove"
           onConfirm={async () => {
             if (await run(() => api(`/api/projects/${pid}/members/${remove.userId}`, { method: "DELETE" }), "Member removed")) setRemove(null);
@@ -388,14 +363,13 @@ function AddMemberDialog({ projectId, exclude, onClose }: { projectId: string; e
   const [mode, setMode] = React.useState<"search" | "email">("search");
   const [user, setUser] = React.useState<{ id: string; name: string; email: string } | null>(null);
   const [email, setEmail] = React.useState("");
-  const [roles, setRoles] = React.useState<string[]>(["DESIGNER"]);
   const submit = async () => {
-    const json = mode === "search" ? { userId: user?.id, roles } : { email, roles };
+    const json = mode === "search" ? { userId: user?.id } : { email };
     if (await run(() => api(`/api/projects/${projectId}/members`, { method: "POST", json }), "Member added")) onClose();
   };
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title="Add project member" description="Pick a workspace member, or invite someone by email (guests can then sign in and see only this project).">
+      <DialogContent title="Add project member" description="Pick a workspace member, or invite someone by email. Their workspace role determines what they can do in this project.">
         <div className="space-y-3">
           <div className="flex gap-1 rounded-md border border-border bg-panel-2 p-0.5 text-2xs" role="tablist">
             {(["search", "email"] as const).map((m) => (
@@ -420,26 +394,13 @@ function AddMemberDialog({ projectId, exclude, onClose }: { projectId: string; e
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" autoFocus />
             </Field>
           )}
-          <fieldset>
-            <legend className="mb-1 text-2xs font-medium text-muted">Project roles</legend>
-            <div className="grid grid-cols-2 gap-1">
-              {PROJECT_ROLES.map((r) => (
-                <label key={r} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 hover:bg-hover">
-                  <Checkbox className="mt-0.5" checked={roles.includes(r)} onCheckedChange={(c) => setRoles((x) => (c ? [...x, r] : x.filter((y) => y !== r)))} />
-                  <span>
-                    <span className="block text-xs font-medium">{r.charAt(0) + r.slice(1).toLowerCase()}</span>
-                    <span className="block text-2xs text-muted">{ROLE_HELP[r]}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <p className="rounded-md border border-border bg-panel-2 px-3 py-2 text-2xs text-muted">To change this person’s permissions, update their role under Administration → Members.</p>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={submit} disabled={busy || !roles.length || (mode === "search" ? !user : !/^\S+@\S+\.\S+$/.test(email))}>
+          <Button variant="primary" onClick={submit} disabled={busy || (mode === "search" ? !user : !/^\S+@\S+\.\S+$/.test(email))}>
             {busy && <Spinner />} Add member
           </Button>
         </DialogFooter>

@@ -65,7 +65,7 @@ export async function createProjectRecord(input: {
         customScheme: input.customScheme ?? null,
         templateId: input.templateId ?? null,
         createdById: input.userId,
-        members: { create: { userId: input.userId, roles: "OWNER" } },
+        members: { create: { userId: input.userId, roles: "" } },
       },
     });
     const version = await tx.version.create({

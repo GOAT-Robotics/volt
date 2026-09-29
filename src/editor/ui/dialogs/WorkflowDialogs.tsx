@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Users, User, GitCompare, Loader2, ArrowRight, GripVertical, Paperclip } from "lucide-react";
+import { X, User, GitCompare, Loader2, ArrowRight, GripVertical, Paperclip } from "lucide-react";
 import { useEditor } from "../../store";
 import { useEditorUI } from "../context";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
@@ -64,10 +64,10 @@ export function NewVersionDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-type Reviewer = { kind: "user"; id: string; name: string; email?: string; roles: string[] } | { kind: "group"; id: string; name: string };
+type Reviewer = { kind: "user"; id: string; name: string; email?: string; roles: string[] };
 
 function reviewerRole(r: Reviewer) {
-  return r.kind === "user" && (r.roles.includes("APPROVER") || r.roles.includes("ADMIN")) ? "approver" : r.kind === "user" ? "reviewer" : "group";
+  return r.roles.includes("APPROVER") || r.roles.includes("ADMIN") ? "approver" : "reviewer";
 }
 
 export function SubmitDialog({ onClose }: { onClose: () => void }) {
@@ -95,11 +95,8 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const t = setTimeout(async () => {
       if (!projectId || !q.trim()) return setSugg([]);
-      const [u, g] = await Promise.all([
-        api<{ users: { id: string; name: string; email: string; roles: string[] }[] }>(`/api/users?q=${encodeURIComponent(q)}&role=review&projectId=${encodeURIComponent(projectId)}`).catch(() => ({ users: [] })),
-        api<{ groups: { id: string; name: string }[] }>(`/api/groups?q=${encodeURIComponent(q)}`).catch(() => ({ groups: [] })),
-      ]);
-      setSugg([...u.users.map((x) => ({ kind: "user" as const, ...x })), ...g.groups.map((x) => ({ kind: "group" as const, ...x }))].filter((r) => !reviewers.some((x) => x.id === r.id)).slice(0, 8));
+      const u = await api<{ users: { id: string; name: string; email: string; roles: string[] }[] }>(`/api/users?q=${encodeURIComponent(q)}&role=review&projectId=${encodeURIComponent(projectId)}`).catch(() => ({ users: [] }));
+      setSugg(u.users.map((x) => ({ kind: "user" as const, ...x })).filter((r) => !reviewers.some((x) => x.id === r.id)).slice(0, 8));
     }, 150);
     return () => clearTimeout(t);
   }, [q, reviewers, projectId]);
@@ -111,7 +108,7 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
       if (useEditor.getState().save !== "saved") throw new Error("Save the version before submitting");
       const j = await api<{ reviewId: string }>(`/api/versions/${v.versionId}/submit`, {
         method: "POST",
-        json: { reviewers: reviewers.map((r) => (r.kind === "user" ? { userId: r.id } : { groupId: r.id, groupName: r.name })), dueDate: due || null, instructions, sequential, summary: undefined },
+        json: { reviewers: reviewers.map((r) => ({ userId: r.id })), dueDate: due || null, instructions, sequential, summary: undefined },
       });
       for (const f of files) {
         const fd = new FormData();
@@ -140,7 +137,7 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
         <div className="space-y-3">
           <Field label="Reviewers & approvers" hint={policy ? `Policy: at least ${policy.minApprovals} approval${policy.minApprovals === 1 ? "" : "s"}${policy.requireCommentsResolved ? ", all comments resolved" : ""}${policy.allowSelfApproval ? "" : ", authors can’t approve their own work"}.` : undefined}>
             <div className="relative">
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search people or Entra groups…" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search project members…" />
               {sugg.length > 0 && (
                 <ul className="absolute z-20 mt-1 w-full rounded-md border border-border bg-panel p-1 shadow-pop">
                   {sugg.map((s) => (
@@ -153,9 +150,9 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
                           setSugg([]);
                         }}
                       >
-                        {s.kind === "user" ? <Avatar name={s.name} size={18} /> : <Users className="size-4 text-subtle" />}
+                        <Avatar name={s.name} size={18} />
                         <span>{s.name}</span>
-                        {s.kind === "user" && s.email && <span className="text-2xs text-subtle">{s.email}</span>}
+                        {s.email && <span className="text-2xs text-subtle">{s.email}</span>}
                         <Badge>{reviewerRole(s)}</Badge>
                       </button>
                     </li>
@@ -174,7 +171,7 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
                       <span className="w-4 text-subtle tabular">{i + 1}</span>
                     </>
                   )}
-                  {r.kind === "user" ? <User className="size-3.5 text-subtle" /> : <Users className="size-3.5 text-subtle" />}
+                  <User className="size-3.5 text-subtle" />
                   <span className="flex-1">{r.name}</span>
                   <Badge>{reviewerRole(r)}</Badge>
                   {sequential && (

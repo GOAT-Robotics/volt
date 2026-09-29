@@ -6,7 +6,7 @@ import { HttpError, type Ctx } from "./session";
 import { parseSettings, type ApprovalPolicy } from "./settings";
 import { effectivePolicy } from "./projects";
 import { usersInGroup, userCan } from "./access";
-import { parseRoles, rolesAllow, type Role } from "./roles";
+import { rolesAllow, type Role } from "./roles";
 
 type ReviewWithAssignments = NonNullable<Awaited<ReturnType<typeof loadReview>>>;
 async function loadReview(reviewId: string) {
@@ -293,35 +293,25 @@ export async function notifyAssignees(r: ReviewWithAssignments, list: ReviewWith
 export async function startReview(
   ctx: Ctx,
   v: { id: string; projectId: string; label: string; createdById: string; status: string; project: { workspaceId: string; templateId: string | null; name: string } },
-  input: { reviewers: ({ userId: string } | { groupId: string; groupName?: string })[]; dueDate: Date | null; instructions: string; sequential: boolean },
+  input: { reviewers: { userId: string }[]; dueDate: Date | null; instructions: string; sequential: boolean },
 ) {
   const policy = await policyForProject(v.project);
   const assignments: { order: number; userId?: string; groupId?: string; groupName?: string; canApprove: boolean }[] = [];
   const seen = new Set<string>();
   let order = 0;
   for (const rv of input.reviewers) {
-    if ("userId" in rv) {
-      if (seen.has(rv.userId)) continue;
-      seen.add(rv.userId);
-      const u = await db.user.findUnique({ where: { id: rv.userId } });
-      if (!u || u.disabled) throw new HttpError(400, "Unknown or disabled reviewer");
-      const canDecide = await userCan(u.id, v.project.workspaceId, v.projectId, "review.decide");
-      if (!canDecide) throw new HttpError(400, `${u.name} does not have a reviewer or approver role`);
-      const canApprove = await userCan(u.id, v.project.workspaceId, v.projectId, "review.approve");
-      assignments.push({ order: order++, userId: u.id, canApprove });
-    } else {
-      if (seen.has(rv.groupId)) continue;
-      seen.add(rv.groupId);
-      // only Entra groups mapped in this workspace; they approve when their mapped roles allow it
-      const gm = await db.groupMapping.findFirst({ where: { workspaceId: v.project.workspaceId, entraGroupId: rv.groupId } });
-      if (!gm) throw new HttpError(400, `Group ${rv.groupName ?? rv.groupId} is not set up in this workspace (Administration → Groups)`);
-      if (!rolesAllow(parseRoles(gm.roles), "review.decide")) throw new HttpError(400, `Group ${gm.displayName || rv.groupId} does not have a reviewer or approver role`);
-      assignments.push({ order: order++, groupId: rv.groupId, groupName: gm.displayName || rv.groupName || rv.groupId, canApprove: rolesAllow(parseRoles(gm.roles), "review.approve") });
-    }
+    if (seen.has(rv.userId)) continue;
+    seen.add(rv.userId);
+    const member = await db.projectMember.findUnique({ where: { projectId_userId: { projectId: v.projectId, userId: rv.userId } }, include: { user: true } });
+    if (!member || member.user.disabled) throw new HttpError(400, "Reviewer must be an active member of this project");
+    const canDecide = await userCan(member.user.id, v.project.workspaceId, v.projectId, "review.decide");
+    if (!canDecide) throw new HttpError(400, `${member.user.name} does not have a workspace Reviewer or Approver role`);
+    const canApprove = await userCan(member.user.id, v.project.workspaceId, v.projectId, "review.approve");
+    assignments.push({ order: order++, userId: member.user.id, canApprove });
   }
   const approvers = assignments.filter((a) => a.canApprove);
   if (!assignments.length) throw new HttpError(400, "Add at least one reviewer");
-  if (approvers.length < policy.minApprovals) throw new HttpError(400, `Policy requires at least ${policy.minApprovals} approver${policy.minApprovals === 1 ? "" : "s"} (users with the Approver role or Entra groups)`);
+  if (approvers.length < policy.minApprovals) throw new HttpError(400, `Policy requires at least ${policy.minApprovals} project member${policy.minApprovals === 1 ? "" : "s"} with the workspace Approver role`);
   if (!policy.allowSelfApproval) {
     const eligibleApprovers = approvers.filter((a) => a.groupId || (a.userId !== ctx.user.id && a.userId !== v.createdById));
     if (eligibleApprovers.length < policy.minApprovals) {

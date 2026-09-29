@@ -152,7 +152,7 @@ function GeneralTab({ data }: { data: AdminData }) {
             <option value="DESIGNER">Designer (sees and edits every project)</option>
           </NativeSelect>
         </Row>
-        <Row label="Who can give access to a project" hint="Add people to a project or change their project roles.">
+        <Row label="Who can manage project members" hint="Add people to or remove people from a project. Roles are managed separately under Administration → Members.">
           <NativeSelect value={s.access.projectSharing} onChange={(e) => up("access", { projectSharing: e.target.value as WorkspaceSettings["access"]["projectSharing"] })} className="w-60" aria-label="Who can share projects">
             <option value="admins">Workspace admins only</option>
             <option value="owners">Admins and project owners</option>

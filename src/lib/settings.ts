@@ -36,9 +36,9 @@ export type WorkspaceSettings = {
   collaboration: { live: boolean; presence: boolean };
   /**
    * Who sees what. newMemberRole: workspace role for people who sign in from an allowed email
-   * domain without an Entra group mapping ("none": they can sign in but see no projects until an
-   * admin gives them access). projectSharing: who may add people to a project or change their
-   * project roles ("admins": workspace admins only; "owners": project owners too).
+   * domain without an Entra group mapping ("none": they can sign in but have no project capability
+   * until an admin assigns a role). projectSharing: who may add or remove project members
+   * ("admins": workspace admins only; "owners": project owners too).
    */
   access: { newMemberRole: "none" | "VIEWER" | "DESIGNER"; projectSharing: "admins" | "owners" };
 };

@@ -1,7 +1,4 @@
 /** Client-safe shared constants for Volt pages & routes. */
-export const PROJECT_ROLES = ["OWNER", "DESIGNER", "REVIEWER", "APPROVER", "SIGNATORY", "VIEWER", "GUEST"] as const;
-export type ProjectRole = (typeof PROJECT_ROLES)[number];
-
 export const VERSION_SCHEMES = [
   { id: "INTEGER", label: "Integer (1, 2, 3)" },
   { id: "DECIMAL", label: "Decimal (0.1, 0.2)" },

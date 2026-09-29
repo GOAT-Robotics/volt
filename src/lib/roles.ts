@@ -38,7 +38,7 @@ export type Action =
   | "library.publish"
   | "library.approve";
 
-/** Role → allowed actions. Workspace roles apply to every project; project roles add on top. */
+/** Role → allowed actions. These roles are assigned once at workspace level. */
 export const ROLE_ACTIONS: Record<Role, Action[]> = {
   ADMIN: ["workspace.admin", "project.create", "project.view", "project.edit", "project.manage", "project.export", "review.comment", "review.decide", "review.approve", "sign", "library.publish", "library.approve"],
   OWNER: ["project.create", "project.view", "project.edit", "project.manage", "project.export", "review.comment", "library.publish"],

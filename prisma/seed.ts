@@ -169,7 +169,7 @@ async function main() {
         tags: JSON.stringify(["demo", "imported", "motor control"]),
         createdById: admin.id,
         createdAt: at(0),
-        members: { create: [{ userId: admin.id, roles: "OWNER" }] },
+        members: { create: [{ userId: admin.id, roles: "" }] },
       },
     });
     const h1 = docHash(doc);

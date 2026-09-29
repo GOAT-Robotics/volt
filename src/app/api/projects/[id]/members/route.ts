@@ -3,13 +3,10 @@ import { route, body } from "@/lib/api";
 import { apiCtx, HttpError, loadProject } from "@/lib/session";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { parseRoles, joinRoles } from "@/lib/roles";
-import { PROJECT_ROLES } from "@/lib/constants";
-import { assertGrantable, canShareProject, SHARE_DENIED } from "@/lib/access";
+import { parseRoles } from "@/lib/roles";
+import { canShareProject, SHARE_DENIED } from "@/lib/access";
 
 export const runtime = "nodejs";
-
-// roles: see PROJECT_ROLES in @/lib/constants
 
 export const GET = route<{ id: string }>(async (_req, { params }) => {
   const ctx = await apiCtx();
@@ -17,13 +14,15 @@ export const GET = route<{ id: string }>(async (_req, { params }) => {
   const { can } = await loadProject(ctx, id);
   if (!can("project.view") && !can("review.comment")) throw new HttpError(403, "No access");
   const rows = await db.projectMember.findMany({ where: { projectId: id }, include: { user: true } });
+  const memberships = await db.membership.findMany({ where: { workspaceId: ctx.workspace.id, userId: { in: rows.map((m) => m.userId) } } });
+  const roles = new Map(memberships.map((m) => [m.userId, parseRoles(m.roles)]));
   // comment-only guests see names, not email addresses
   const full = can("project.view");
-  return { members: rows.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, disabled: m.user.disabled, roles: parseRoles(m.roles) })) };
+  return { members: rows.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, disabled: m.user.disabled, roles: roles.get(m.userId) ?? (m.user.isGuest ? ["GUEST"] : []) })) };
 });
 
 const Body = z
-  .object({ userId: z.string().optional(), email: z.string().trim().toLowerCase().email().optional(), name: z.string().trim().max(120).optional(), roles: z.array(z.enum(PROJECT_ROLES)).min(1) })
+  .object({ userId: z.string().optional(), email: z.string().trim().toLowerCase().email().optional(), name: z.string().trim().max(120).optional() })
   .refine((b) => b.userId || b.email, "Select a user or enter an email address");
 
 export const POST = route<{ id: string }>(async (req, { params }) => {
@@ -42,9 +41,8 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   if (!user) throw new HttpError(404, "User not found");
   if (user.disabled) throw new HttpError(409, "This user is disabled");
   const existing = await db.projectMember.findUnique({ where: { projectId_userId: { projectId: id, userId: user.id } } });
-  assertGrantable(ctx, project, user, parseRoles(existing?.roles), [...parseRoles(existing?.roles), ...b.roles]);
-  const roles = joinRoles([...parseRoles(existing?.roles), ...b.roles]);
-  await db.projectMember.upsert({ where: { projectId_userId: { projectId: id, userId: user.id } }, update: { roles }, create: { projectId: id, userId: user.id, roles } });
-  await audit({ workspaceId: project.workspaceId, projectId: id, actorId: ctx.user.id, type: "project.member", data: { user: user.email, roles, action: existing ? "update" : "add" } });
+  if (existing) throw new HttpError(409, `${user.email} is already a project member`);
+  await db.projectMember.create({ data: { projectId: id, userId: user.id, roles: "" } });
+  await audit({ workspaceId: project.workspaceId, projectId: id, actorId: ctx.user.id, type: "project.member", data: { user: user.email, action: "add" } });
   return { ok: true, userId: user.id };
 });

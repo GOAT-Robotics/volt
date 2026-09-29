@@ -53,6 +53,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     db.favorite.findUnique({ where: { userId_projectId: { userId: ctx.user.id, projectId } } }),
     effectivePolicy(project, ctx.settings),
   ]);
+  const memberMemberships = await db.membership.findMany({ where: { workspaceId: project.workspaceId, userId: { in: members.map((m) => m.userId) } } });
+  const memberRoles = new Map(memberMemberships.map((m) => [m.userId, parseRoles(m.roles)]));
   const uids = new Set<string>();
   versions.forEach((v) => uids.add(v.createdById));
   reviews.forEach((r) => (uids.add(r.submittedById), r.assignments.forEach((a) => [a.userId, a.decidedById].forEach((x) => x && uids.add(x)))));
@@ -137,7 +139,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       seal: s.seal,
     })),
     activity: events.map((e) => ({ id: e.id, type: e.type, label: auditLabel(e.type), detail: describeAudit(e.type, { ...J.parse<Record<string, unknown>>(e.data, {}), ...(e.versionId && !J.parse<Record<string, unknown>>(e.data, {}).label && labelOf.get(e.versionId) ? { label: labelOf.get(e.versionId) } : {}) }), actor: e.actor?.name ?? "System", createdAt: e.createdAt.toISOString() })),
-    members: members.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, disabled: m.user.disabled, roles: parseRoles(m.roles) })),
+    members: members.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, disabled: m.user.disabled, roles: memberRoles.get(m.userId) ?? (m.user.isGuest ? ["GUEST"] : []) })),
     attachments: attachments.map((a) => ({ id: a.id, ownerType: a.ownerType, ownerId: a.ownerId, filename: a.filename, mime: a.mime, size: a.size, sha256: a.sha256, uploadedBy: nm(a.userId) ?? "", uploadedById: a.userId, createdAt: a.createdAt.toISOString(), context: a.ownerType === "REVIEW" ? `Review of v${labelOf.get(reviews.find((r) => r.id === a.ownerId)?.versionId ?? "") ?? "?"}` : a.ownerType === "RELEASE" ? `v${labelOf.get(a.ownerId) ?? "?"}` : a.ownerType === "COMMENT" ? "Comment" : "Project" })),
     imports: imports.map((i) => ({ id: i.id, filename: i.filename, sha256: i.sha256, createdAt: i.createdAt.toISOString(), versionLabel: i.versionId ? labelOf.get(i.versionId) ?? null : null, report: J.parse<CompatReport | null>(i.report, null) })),
     eligibleSignatories: canManage ? await eligibleSignatories(project.workspaceId, projectId) : [],

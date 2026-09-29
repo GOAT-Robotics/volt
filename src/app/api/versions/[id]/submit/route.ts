@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 
 const Body = z.object({
   reviewers: z
-    .array(z.union([z.object({ userId: z.string().min(1) }), z.object({ groupId: z.string().min(1).max(100), groupName: z.string().max(200).optional() })]))
+    .array(z.object({ userId: z.string().min(1) }))
     .min(1, "Add at least one reviewer")
     .max(30),
   dueDate: z.string().nullish(),

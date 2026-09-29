@@ -13,7 +13,7 @@ export type Ctx = {
   workspace: { id: string; name: string; slug: string };
   settings: WorkspaceSettings;
   roles: Role[];
-  /** member of at least one project (project roles) — people without workspace roles see only those */
+  /** Member of at least one project. Project membership scopes access; it does not grant roles. */
   projectAccess: boolean;
   authTime: number;
   workspaces: { id: string; name: string; slug: string }[];
@@ -72,27 +72,25 @@ export async function apiCtx(): Promise<Ctx> {
   return c;
 }
 
-export function can(ctx: Ctx, a: Action, projectRoles: Role[] = []): boolean {
-  return rolesAllow([...ctx.roles, ...projectRoles], a);
+export function can(ctx: Ctx, a: Action): boolean {
+  return rolesAllow(ctx.roles, a);
 }
 
-export function assertCan(ctx: Ctx, a: Action, projectRoles: Role[] = []) {
-  if (!can(ctx, a, projectRoles)) throw new HttpError(403, `Not permitted: ${a}`);
+export function assertCan(ctx: Ctx, a: Action) {
+  if (!can(ctx, a)) throw new HttpError(403, `Not permitted: ${a}`);
 }
 
 /**
- * Loads a project in the ctx workspace (or one the user is invited to) + effective roles.
- * Workspace roles only count inside their own workspace: in a project of another workspace
- * (or for guests) only the project roles the user was given apply.
+ * Loads a project using project membership as the scope boundary and workspace roles as the
+ * permission source. Workspace admins may access every project in their workspace.
  */
 export async function loadProject(ctx: Ctx, projectId: string) {
   const project = await db.project.findUnique({ where: { id: projectId }, include: { members: true } });
   if (!project) throw new HttpError(404, "Project not found");
   const pm = project.members.find((m) => m.userId === ctx.user.id);
-  const projectRoles = pm ? parseRoles(pm.roles) : [];
-  const guest = ctx.user.isGuest || ctx.roles.length === 0 || (ctx.roles.length === 1 && ctx.roles[0] === "GUEST");
-  const inWorkspace = project.workspaceId === ctx.workspace.id && !guest;
-  if (!inWorkspace && !pm) throw new HttpError(404, "Project not found");
-  const roles: Role[] = inWorkspace ? [...new Set([...ctx.roles, ...projectRoles])] : projectRoles;
+  const inWorkspace = project.workspaceId === ctx.workspace.id;
+  const admin = inWorkspace && ctx.roles.includes("ADMIN");
+  if (!inWorkspace || (!admin && !pm)) throw new HttpError(404, "Project not found");
+  const roles: Role[] = ctx.roles;
   return { project, projectRoles: roles, inWorkspace, can: (a: Action) => rolesAllow(roles, a) };
 }

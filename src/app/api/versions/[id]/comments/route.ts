@@ -50,7 +50,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
       where: {
         id: { in: ids },
         disabled: false,
-        OR: [{ memberships: { some: { workspaceId: a.project.workspaceId } } }, { projectMembers: { some: { projectId: a.project.id } } }],
+        projectMembers: { some: { projectId: a.project.id } },
       },
       select: { id: true },
     });

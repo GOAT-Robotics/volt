@@ -15,19 +15,17 @@ import { loadKeys } from "./builtin";
 export const SIGNABLE_STATUSES = ["APPROVED"];
 export const IMMUTABLE_SIGNED = ["APPROVED", "SIGNED", "RELEASED", "SUPERSEDED"];
 
-/** Users eligible to sign in a workspace: SIGNATORY or ADMIN (workspace role or project role). */
+/** Project members eligible to sign through their workspace SIGNATORY or ADMIN role. */
 export async function eligibleSignatories(workspaceId: string, projectId: string) {
-  const [mems, pms] = await Promise.all([
-    db.membership.findMany({ where: { workspaceId }, include: { user: true } }),
-    db.projectMember.findMany({ where: { projectId }, include: { user: true } }),
-  ]);
-  const out = new Map<string, { id: string; name: string; email: string }>();
-  for (const m of [...mems, ...pms]) {
+  const pms = await db.projectMember.findMany({ where: { projectId }, select: { userId: true } });
+  const mems = await db.membership.findMany({ where: { workspaceId, userId: { in: pms.map((m) => m.userId) } }, include: { user: true } });
+  const out: { id: string; name: string; email: string }[] = [];
+  for (const m of mems) {
     if (m.user.disabled) continue;
     const r = m.roles.split(",");
-    if (r.includes("SIGNATORY") || r.includes("ADMIN")) out.set(m.user.id, { id: m.user.id, name: m.user.name, email: m.user.email });
+    if (r.includes("SIGNATORY") || r.includes("ADMIN")) out.push({ id: m.user.id, name: m.user.name, email: m.user.email });
   }
-  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function requestSignatures(ctx: Ctx, versionId: string, input: { signatoryIds: string[]; purpose: string; baseUrl: string }) {
