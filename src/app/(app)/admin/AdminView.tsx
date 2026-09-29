@@ -9,7 +9,7 @@ import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Avatar, Badge, Checkbox, Empty, Spinner, Switch, Table, TabsContent, TabsList, TabsRoot, TabsTrigger } from "@/components/ui/misc";
 import { api } from "@/lib/fetcher";
 import { relTime } from "@/lib/utils";
-import { ROLES, ROLE_LABEL, type Role } from "@/lib/roles";
+import { ROLES, ROLE_DESCRIPTION, ROLE_LABEL, type Role } from "@/lib/roles";
 import type { WorkspaceSettings } from "@/lib/settings";
 import type { Styles } from "@/core/model";
 import type { ProjectTemplateContent } from "@/lib/templates";
@@ -316,7 +316,7 @@ function RoleHead() {
   return (
     <>
       {ROLES.map((r) => (
-        <th key={r} className="w-16 text-center" title={ROLE_LABEL[r]}>
+        <th key={r} className="w-16 text-center" title={`${ROLE_LABEL[r]}: ${ROLE_DESCRIPTION[r]}`}>
           {r.charAt(0) + r.slice(1).toLowerCase()}
         </th>
       ))}
@@ -446,11 +446,14 @@ function AddWorkspaceMember({ onClose }: { onClose: () => void }) {
           </Field>
           <fieldset>
             <legend className="mb-1 text-2xs font-medium text-muted">Roles</legend>
-            <div className="grid grid-cols-2 gap-1">
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
               {ROLES.map((r) => (
-                <label key={r} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-hover">
-                  <Checkbox checked={roles.includes(r)} onCheckedChange={(c) => setRoles((x) => (c ? [...x, r] : x.filter((y) => y !== r)))} />
-                  {ROLE_LABEL[r]}
+                <label key={r} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 hover:bg-hover">
+                  <Checkbox className="mt-0.5" checked={roles.includes(r)} onCheckedChange={(c) => setRoles((x) => (c ? [...x, r] : x.filter((y) => y !== r)))} />
+                  <span>
+                    <span className="block text-xs font-medium">{ROLE_LABEL[r]}</span>
+                    <span className="block text-2xs text-muted">{ROLE_DESCRIPTION[r]}</span>
+                  </span>
                 </label>
               ))}
             </div>

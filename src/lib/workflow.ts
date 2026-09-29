@@ -119,26 +119,29 @@ function eligibleAssignments(r: ReviewWithAssignments, userId: string, groups: s
 export async function reviewInfo(ctx: Ctx, versionId: string, roles: Role[]) {
   await applyExpiry(versionId);
   const r0 = await db.review.findFirst({ where: { versionId }, orderBy: { createdAt: "desc" }, select: { id: true } });
-  if (!r0) return { review: null, canDecide: false, blockers: [] as string[] };
+  if (!r0) return { review: null, canDecide: false, canApprove: false, blockers: [] as string[] };
   const r = (await loadReview(r0.id))!;
   await primeNames(r);
   const policy = await policyForProject(r.version.project);
   const submitter = await db.user.findUnique({ where: { id: r.submittedById }, select: { name: true } });
   const blockers = r.status === "OPEN" ? await reviewBlockers(r, policy) : [];
   let canDecide = false;
+  let canApprove = false;
   if (r.status === "OPEN" && r.version.status === "IN_REVIEW") {
     const { mine, now } = eligibleAssignments(r, ctx.user.id, ctx.user.groups);
     // `roles` are the effective roles from loadProject (workspace roles only count in their own workspace)
     const decide = rolesAllow(roles, "review.decide");
-    const approve = rolesAllow(roles, "review.approve");
+    const roleCanApprove = rolesAllow(roles, "review.approve");
     if (!mine.length) blockers.push("You are not assigned to this review");
     else if (!now.length) blockers.push("Sequential review — waiting for earlier reviewers");
     else if (!decide) blockers.push("Your role does not allow review decisions");
     else {
       canDecide = true;
-      if (!approve) blockers.push("You can request changes or reject; approving requires the Approver role");
       const self = ctx.user.id === r.version.createdById || ctx.user.id === r.submittedById;
-      if (self && !policy.allowSelfApproval) blockers.push("Workspace policy does not allow approving your own work");
+      const approvalAssignment = now.some((a) => a.canApprove);
+      if (!roleCanApprove || !approvalAssignment) blockers.push("You can request changes or reject; approving requires the Approver role");
+      else if (self && !policy.allowSelfApproval) blockers.push("Workspace policy does not allow approving your own work");
+      else canApprove = true;
     }
   }
   return {
@@ -162,6 +165,7 @@ export async function reviewInfo(ctx: Ctx, versionId: string, roles: Role[]) {
       })),
     },
     canDecide,
+    canApprove,
     blockers,
   };
 }
@@ -318,8 +322,11 @@ export async function startReview(
   const approvers = assignments.filter((a) => a.canApprove);
   if (!assignments.length) throw new HttpError(400, "Add at least one reviewer");
   if (approvers.length < policy.minApprovals) throw new HttpError(400, `Policy requires at least ${policy.minApprovals} approver${policy.minApprovals === 1 ? "" : "s"} (users with the Approver role or Entra groups)`);
-  if (!policy.allowSelfApproval && approvers.every((a) => a.userId === ctx.user.id || a.userId === v.createdById)) {
-    throw new HttpError(400, "Self-approval is not allowed — add another approver");
+  if (!policy.allowSelfApproval) {
+    const eligibleApprovers = approvers.filter((a) => a.groupId || (a.userId !== ctx.user.id && a.userId !== v.createdById));
+    if (eligibleApprovers.length < policy.minApprovals) {
+      throw new HttpError(400, `Policy requires ${policy.minApprovals} eligible approver${policy.minApprovals === 1 ? "" : "s"}; authors and submitters do not count when self-approval is disabled`);
+    }
   }
   const now = new Date();
   const res = await db.version.updateMany({ where: { id: v.id, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, data: { status: "IN_REVIEW", submittedAt: now } });

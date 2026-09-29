@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/ui/status";
 import { api } from "@/lib/fetcher";
 import { cn, fmtDate, relTime } from "@/lib/utils";
 import { PROJECT_ROLES, VERSION_SCHEMES } from "@/lib/constants";
+import { ROLE_DESCRIPTION } from "@/lib/roles";
 import { Mono, PromptDialog, Section, TagInput, UserSearch, useMutation } from "@/components/volt/common";
 import { CompatReportView } from "../ImportQet";
 import { folderOptions } from "../NewProjectDialog";
@@ -280,13 +281,13 @@ export function ActivityTab({ data }: { data: ProjectData }) {
 /* ------------------------------------------------------------------ */
 
 const ROLE_HELP: Record<string, string> = {
-  OWNER: "Manage settings, members, releases",
-  DESIGNER: "Edit working versions",
-  REVIEWER: "Comment, request changes, reject",
-  APPROVER: "Approve reviews",
-  SIGNATORY: "Sign approved versions",
-  VIEWER: "Read & export",
-  GUEST: "Comment on versions shared for review",
+  OWNER: ROLE_DESCRIPTION.OWNER,
+  DESIGNER: ROLE_DESCRIPTION.DESIGNER,
+  REVIEWER: ROLE_DESCRIPTION.REVIEWER,
+  APPROVER: ROLE_DESCRIPTION.APPROVER,
+  SIGNATORY: ROLE_DESCRIPTION.SIGNATORY,
+  VIEWER: ROLE_DESCRIPTION.VIEWER,
+  GUEST: ROLE_DESCRIPTION.GUEST,
 };
 
 export function MembersTab({ data }: { data: ProjectData }) {
@@ -722,4 +723,3 @@ export function SettingsTab({ data }: { data: ProjectData }) {
     </div>
   );
 }
-

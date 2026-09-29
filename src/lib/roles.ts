@@ -10,6 +10,16 @@ export const ROLE_LABEL: Record<Role, string> = {
   VIEWER: "Viewer",
   GUEST: "Guest reviewer",
 };
+export const ROLE_DESCRIPTION: Record<Role, string> = {
+  ADMIN: "Full workspace administration, including members, settings, projects, reviews, approvals and signatures.",
+  OWNER: "Creates and manages projects, members and versions; can submit work, but cannot approve or sign without another role.",
+  DESIGNER: "Creates projects and edits working versions; can comment, export and publish library content.",
+  REVIEWER: "Reviews assigned work, comments, requests changes or rejects; cannot give the formal approval.",
+  APPROVER: "Performs review decisions and gives the formal approval that counts toward the approval policy.",
+  SIGNATORY: "Applies an attributable electronic signature to an approved version before release.",
+  VIEWER: "Read-only project access with export permission; cannot comment, edit, review, approve or sign.",
+  GUEST: "External or limited reviewer who can comment only on specifically shared work.",
+};
 export const parseRoles = (s: string | null | undefined): Role[] =>
   (s ?? "").split(",").map((r) => r.trim().toUpperCase()).filter((r): r is Role => (ROLES as readonly string[]).includes(r));
 export const joinRoles = (r: Iterable<string>) => [...new Set(r)].join(",");

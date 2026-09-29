@@ -33,6 +33,7 @@ type ReviewInfo = {
     assignments: { id: string; order: number; userName: string | null; groupName: string | null; decision: string; reason: string | null; decidedAt: string | null; decidedByName: string | null }[];
   } | null;
   canDecide: boolean;
+  canApprove: boolean;
   blockers: string[];
 };
 
@@ -187,7 +188,7 @@ function ReviewBox({ info, reload }: { info: ReviewInfo; reload: () => void }) {
             </p>
           )}
           <div className="flex gap-1">
-            <Button size="xs" variant="primary" disabled={busy || info.blockers.length > 0} onClick={() => decide("APPROVED")}>
+            <Button size="xs" variant="primary" disabled={busy || !info.canApprove} onClick={() => decide("APPROVED")}>
               <ThumbsUp /> Approve
             </Button>
             <Button size="xs" variant="secondary" disabled={busy} onClick={() => decide("CHANGES_REQUESTED")}>

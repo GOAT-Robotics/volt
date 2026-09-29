@@ -64,10 +64,15 @@ export function NewVersionDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-type Reviewer = { kind: "user"; id: string; name: string; email?: string } | { kind: "group"; id: string; name: string };
+type Reviewer = { kind: "user"; id: string; name: string; email?: string; roles: string[] } | { kind: "group"; id: string; name: string };
+
+function reviewerRole(r: Reviewer) {
+  return r.kind === "user" && (r.roles.includes("APPROVER") || r.roles.includes("ADMIN")) ? "approver" : r.kind === "user" ? "reviewer" : "group";
+}
 
 export function SubmitDialog({ onClose }: { onClose: () => void }) {
   const v = useEditor((s) => s.version);
+  const projectId = v?.projectId;
   const ui = useEditorUI();
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [q, setQ] = useState("");
@@ -79,24 +84,25 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [policy, setPolicy] = useState<{ minApprovals: number; sequentialDefault: boolean; requireCommentsResolved: boolean; allowSelfApproval: boolean } | null>(null);
   useEffect(() => {
-    api<{ approval: typeof policy }>("/api/workspace/policy")
+    if (!projectId) return;
+    api<{ approval: typeof policy }>(`/api/workspace/policy?projectId=${encodeURIComponent(projectId)}`)
       .then((j) => {
         setPolicy(j.approval);
         if (j.approval) setSequential(j.approval.sequentialDefault);
       })
       .catch(() => {});
-  }, []);
+  }, [projectId]);
   useEffect(() => {
     const t = setTimeout(async () => {
-      if (!q.trim()) return setSugg([]);
+      if (!projectId || !q.trim()) return setSugg([]);
       const [u, g] = await Promise.all([
-        api<{ users: { id: string; name: string; email: string }[] }>(`/api/users?q=${encodeURIComponent(q)}&role=review`).catch(() => ({ users: [] })),
+        api<{ users: { id: string; name: string; email: string; roles: string[] }[] }>(`/api/users?q=${encodeURIComponent(q)}&role=review&projectId=${encodeURIComponent(projectId)}`).catch(() => ({ users: [] })),
         api<{ groups: { id: string; name: string }[] }>(`/api/groups?q=${encodeURIComponent(q)}`).catch(() => ({ groups: [] })),
       ]);
       setSugg([...u.users.map((x) => ({ kind: "user" as const, ...x })), ...g.groups.map((x) => ({ kind: "group" as const, ...x }))].filter((r) => !reviewers.some((x) => x.id === r.id)).slice(0, 8));
     }, 150);
     return () => clearTimeout(t);
-  }, [q, reviewers]);
+  }, [q, reviewers, projectId]);
   if (!v) return null;
   const submit = async () => {
     setBusy(true);
@@ -150,7 +156,7 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
                         {s.kind === "user" ? <Avatar name={s.name} size={18} /> : <Users className="size-4 text-subtle" />}
                         <span>{s.name}</span>
                         {s.kind === "user" && s.email && <span className="text-2xs text-subtle">{s.email}</span>}
-                        {s.kind === "group" && <Badge>group</Badge>}
+                        <Badge>{reviewerRole(s)}</Badge>
                       </button>
                     </li>
                   ))}
@@ -170,6 +176,7 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
                   )}
                   {r.kind === "user" ? <User className="size-3.5 text-subtle" /> : <Users className="size-3.5 text-subtle" />}
                   <span className="flex-1">{r.name}</span>
+                  <Badge>{reviewerRole(r)}</Badge>
                   {sequential && (
                     <>
                       <button className="text-subtle hover:text-fg" onClick={() => move(i, -1)} aria-label="Move up">

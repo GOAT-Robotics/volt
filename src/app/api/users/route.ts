@@ -37,6 +37,11 @@ export const GET = route(async (req) => {
       return rolesAllow(roles, need);
     })
     .slice(0, limit)
-    .map((u) => ({ id: u.id, name: u.name, email: u.email, roles: u.memberships.flatMap((m) => parseRoles(m.roles)) }));
+    .map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      roles: [...new Set([...u.memberships.flatMap((m) => parseRoles(m.roles)), ...((u.projectMembers as { roles: string }[] | undefined) ?? []).flatMap((m) => parseRoles(m.roles))])],
+    }));
   return { users: out };
 });
