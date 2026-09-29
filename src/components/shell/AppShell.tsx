@@ -11,13 +11,13 @@ import { Toaster } from "sonner";
 import { LogoMark } from "@/components/brand/Logo";
 import { signOutAction } from "@/app/actions/auth";
 
-export type ShellUser = { name: string; email: string; roles: string[]; isAdmin: boolean; workspace: string; workspaces: { id: string; name: string }[]; workspaceId: string };
+export type ShellUser = { name: string; email: string; roles: string[]; library?: boolean; isAdmin: boolean; workspace: string; workspaces: { id: string; name: string }[]; workspaceId: string };
 
 export function AppShell({ user, children, inboxCount }: { user: ShellUser; children: React.ReactNode; inboxCount: number }) {
   const path = usePathname();
   const nav = [
     { href: "/projects", label: "Projects", icon: <FolderKanban /> },
-    { href: "/library", label: "Library", icon: <Library /> },
+    ...(user.library === false ? [] : [{ href: "/library", label: "Library", icon: <Library /> }]),
     { href: "/reviews", label: "My reviews", icon: <Inbox />, badge: inboxCount },
     { href: "/search", label: "Search", icon: <Search /> },
     ...(user.isAdmin ? [{ href: "/admin", label: "Administration", icon: <Settings /> }, { href: "/admin/audit", label: "Audit log", icon: <ScrollText /> }] : []),
@@ -114,7 +114,7 @@ function UserMenu({ user }: { user: ShellUser }) {
           <Avatar name={user.name} size={24} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-xs font-medium">{user.name}</span>
-            <span className="block truncate text-2xs text-subtle">{user.roles.join(", ").toLowerCase()}</span>
+            <span className="block truncate text-2xs text-subtle">{user.roles.length ? user.roles.join(", ").toLowerCase() : "no workspace role"}</span>
           </span>
         </button>
       </MenuTrigger>

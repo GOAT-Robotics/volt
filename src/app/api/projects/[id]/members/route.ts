@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { parseRoles, joinRoles } from "@/lib/roles";
 import { PROJECT_ROLES } from "@/lib/constants";
-import { assertGrantable } from "@/lib/access";
+import { assertGrantable, canShareProject, SHARE_DENIED } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -31,7 +31,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   const { id } = await params;
   const b = await body(req, Body);
   const { project, can } = await loadProject(ctx, id);
-  if (!can("project.manage")) throw new HttpError(403, "Only project owners can manage members");
+  if (!canShareProject(ctx, can("project.manage"))) throw new HttpError(403, SHARE_DENIED);
   let user = b.userId ? await db.user.findUnique({ where: { id: b.userId } }) : await db.user.findUnique({ where: { email: b.email! } });
   if (!user && b.email) {
     // pre-create the account so the invitee can sign in (Entra or guest) and find the project

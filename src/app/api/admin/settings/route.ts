@@ -46,6 +46,7 @@ const Settings = z.object({
   versionScheme: z.enum(["INTEGER", "DECIMAL", "LETTER", "CUSTOM"]),
   linkPreviews: z.enum(["off", "name", "picture"]).default("picture"),
   collaboration: z.object({ live: z.boolean(), presence: z.boolean() }).default({ live: true, presence: true }),
+  access: z.object({ newMemberRole: z.enum(["none", "VIEWER", "DESIGNER"]), projectSharing: z.enum(["admins", "owners"]) }).default({ newMemberRole: "none", projectSharing: "admins" }),
 });
 
 export const PUT = route(async (req) => {

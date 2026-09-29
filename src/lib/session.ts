@@ -13,6 +13,8 @@ export type Ctx = {
   workspace: { id: string; name: string; slug: string };
   settings: WorkspaceSettings;
   roles: Role[];
+  /** member of at least one project (project roles) — people without workspace roles see only those */
+  projectAccess: boolean;
   authTime: number;
   workspaces: { id: string; name: string; slug: string }[];
 };
@@ -34,6 +36,7 @@ export const getCtx = cache(async (): Promise<Ctx | null> => {
   const jar = await cookies();
   const wanted = jar.get("volt_ws")?.value;
   let mem = mems.find((m) => m.workspaceId === wanted) ?? mems[0];
+  const projectAccess = (await db.projectMember.count({ where: { userId: user.id } })) > 0;
   let workspace = mem?.workspace;
   if (!workspace) {
     // guest with project-level invites only
@@ -46,6 +49,7 @@ export const getCtx = cache(async (): Promise<Ctx | null> => {
     workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
     settings: parseSettings(workspace.settings),
     roles: mem ? parseRoles(mem.roles) : ["GUEST"],
+    projectAccess,
     authTime: s.authTime,
     workspaces: mems.map((m) => ({ id: m.workspace.id, name: m.workspace.name, slug: m.workspace.slug })),
   };

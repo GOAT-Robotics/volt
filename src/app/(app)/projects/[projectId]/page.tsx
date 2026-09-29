@@ -6,7 +6,7 @@ import { applyProjectExpiry } from "@/lib/workflow";
 import { effectivePolicy } from "@/lib/projects";
 import { eligibleSignatories } from "@/lib/signing/service";
 import { auditLabel, describeAudit } from "@/lib/describe";
-import { isAdmin, isGuestCtx } from "@/lib/access";
+import { isAdmin, isGuestCtx, canShareProject } from "@/lib/access";
 import { parseRoles } from "@/lib/roles";
 import type { CompatReport } from "@/core/model";
 import { projectPreview } from "@/lib/og/preview";
@@ -66,7 +66,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
 
   const data: ProjectData = {
     me: { id: ctx.user.id, isAdmin: isAdmin(ctx) && project.workspaceId === ctx.workspace.id },
-    perms: { manage: canManage, edit: can("project.edit"), export: canExport, view: can("project.view") },
+    perms: { manage: canManage, share: canShareProject(ctx, canManage), edit: can("project.edit"), export: canExport, view: can("project.view") },
     project: {
       id: project.id,
       name: project.name,

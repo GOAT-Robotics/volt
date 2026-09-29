@@ -35,7 +35,7 @@ npm run entra -- --url https://volt.example.com   # also adds the production red
 Then set `AUTH_DEV_LOGIN="false"`. To give people access:
 
 - `ADMIN_EMAILS` always get the Admin role.
-- Users from `ALLOWED_EMAIL_DOMAINS` are added with `DEFAULT_ROLE`.
+- Users from `ALLOWED_EMAIL_DOMAINS` can sign in but see no projects until an admin gives them access (a workspace role under **Administration → Members**, or a project role on the project). The role for new people is set in **Administration → General → Access**; **Remove Viewer access** in Members revokes access from people who were added automatically before.
 - Entra security groups can be mapped to roles under **Administration → Entra groups**. The app registration emits the `groups` claim.
 
 Guests (B2B) follow the guest policy you set in Administration.

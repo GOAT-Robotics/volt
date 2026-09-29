@@ -301,9 +301,9 @@ export function MembersTab({ data }: { data: ProjectData }) {
   return (
     <Section
       title="Project members"
-      description="Project roles add to workspace roles. Guests only see projects they are members of."
+      description="Project roles add to workspace roles. People without a workspace role see only the projects they are members of."
       actions={
-        data.perms.manage && (
+        data.perms.share && (
           <Button size="xs" variant="primary" onClick={() => setAdding(true)}>
             <UserPlus /> Add member
           </Button>
@@ -345,14 +345,14 @@ export function MembersTab({ data }: { data: ProjectData }) {
                       <Checkbox
                         className="mx-auto"
                         checked={m.roles.includes(r)}
-                        disabled={!data.perms.manage || busy}
+                        disabled={!data.perms.share || busy}
                         aria-label={`${r} role for ${m.name}`}
                         onCheckedChange={(c) => setRoles(m.userId, c ? [...m.roles, r] : m.roles.filter((x) => x !== r))}
                       />
                     </td>
                   ))}
                   <td>
-                    {data.perms.manage && (
+                    {data.perms.share && (
                       <Button size="icon-sm" variant="danger-ghost" aria-label={`Remove ${m.name}`} onClick={() => setRemove({ userId: m.userId, name: m.name })}>
                         <Trash2 />
                       </Button>

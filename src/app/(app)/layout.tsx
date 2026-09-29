@@ -15,6 +15,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         name: ctx.user.name,
         email: ctx.user.email,
         roles: ctx.roles,
+        // no workspace role and no project yet: nothing to browse (library included)
+        library: !ctx.user.isGuest && (ctx.roles.some((r) => r !== "GUEST") || ctx.projectAccess),
         isAdmin: ctx.roles.includes("ADMIN"),
         workspace: ctx.workspace.name,
         workspaceId: ctx.workspace.id,

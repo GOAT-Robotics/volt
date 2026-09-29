@@ -143,7 +143,7 @@ export function ProjectsView(p: {
             ) : (
               <Empty
                 icon={<FolderKanban />}
-                title="Create your first project"
+                title={p.canCreate ? "Create your first project" : "No projects shared with you yet"}
                 action={
                   p.canCreate ? (
                     <div className="flex gap-2">
@@ -155,7 +155,7 @@ export function ProjectsView(p: {
                   ) : undefined
                 }
               >
-                {p.canCreate ? "Start from a blank drawing or a project template, or import an existing .qet file." : "You haven’t been added to any project yet. Ask a project owner to invite you."}
+                {p.canCreate ? "Start from a blank drawing or a project template, or import an existing .qet file." : "You can see a project once a workspace admin gives you access. Ask your Volt admin to add you."}
               </Empty>
             )
           ) : (

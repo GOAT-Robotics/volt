@@ -145,6 +145,19 @@ function GeneralTab({ data }: { data: AdminData }) {
         </Row>
       </Section>
       <Section title="Access & sessions">
+        <Row label="New people from your domain" hint="Workspace role for someone who signs in with a company account for the first time (and no Entra group mapping applies). With “No access” they can sign in but see no projects until an admin adds them to a project or gives them a role under Members.">
+          <NativeSelect value={s.access.newMemberRole} onChange={(e) => up("access", { newMemberRole: e.target.value as WorkspaceSettings["access"]["newMemberRole"] })} className="w-60" aria-label="Role for new people">
+            <option value="none">No access until an admin grants it</option>
+            <option value="VIEWER">Viewer (sees every project)</option>
+            <option value="DESIGNER">Designer (sees and edits every project)</option>
+          </NativeSelect>
+        </Row>
+        <Row label="Who can give access to a project" hint="Add people to a project or change their project roles.">
+          <NativeSelect value={s.access.projectSharing} onChange={(e) => up("access", { projectSharing: e.target.value as WorkspaceSettings["access"]["projectSharing"] })} className="w-60" aria-label="Who can share projects">
+            <option value="admins">Workspace admins only</option>
+            <option value="owners">Admins and project owners</option>
+          </NativeSelect>
+        </Row>
         <Row label="Guest accounts" hint="External (B2B guest) users signing in with Entra ID.">
           <NativeSelect value={s.guestPolicy} onChange={(e) => up("guestPolicy", e.target.value as WorkspaceSettings["guestPolicy"])} className="w-60" aria-label="Guest policy">
             <option value="deny">Deny sign-in</option>
@@ -316,14 +329,21 @@ function MembersTab({ data }: { data: AdminData }) {
   const [adding, setAdding] = React.useState(false);
   const [q, setQ] = React.useState("");
   const [toggle, setToggle] = React.useState<AdminData["members"][number] | null>(null);
+  const [revoke, setRevoke] = React.useState(false);
   const list = data.members.filter((m) => !q || `${m.name} ${m.email}`.toLowerCase().includes(q.toLowerCase()));
+  const viewerOnly = data.members.filter((m) => m.source !== "GROUP" && m.roles.length === 1 && m.roles[0] === "VIEWER").length;
   return (
     <Section
       title="Members"
-      description="Roles apply to every project in the workspace. GROUP memberships come from Entra group mappings and are recomputed at sign-in; editing roles here makes them manual."
+      description="Workspace roles apply to every project. People without a role (“No access”) can sign in but only see projects they were added to. GROUP memberships come from Entra group mappings and are recomputed at sign-in; editing roles here makes them manual."
       actions={
         <>
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter…" className="w-44" aria-label="Filter members" />
+          {viewerOnly > 0 && (
+            <Button size="xs" variant="danger-ghost" onClick={() => setRevoke(true)}>
+              <UserX /> Remove Viewer access ({viewerOnly})
+            </Button>
+          )}
           <Button size="xs" variant="primary" onClick={() => setAdding(true)}>
             <UserPlus /> Add member
           </Button>
@@ -349,16 +369,16 @@ function MembersTab({ data }: { data: AdminData }) {
                     <Avatar name={m.name} size={20} />
                     <span className="min-w-0">
                       <span className="block truncate text-xs font-medium">
-                        {m.name} {m.userId === data.meId && <Badge>You</Badge>} {m.isGuest && <Badge tone="warning">Guest</Badge>} {m.disabled && <Badge tone="danger">Disabled</Badge>}
+                        {m.name} {m.userId === data.meId && <Badge>You</Badge>} {!m.roles.length && !m.disabled && <Badge tone="warning">No access</Badge>} {m.isGuest && <Badge tone="warning">Guest</Badge>} {m.disabled && <Badge tone="danger">Disabled</Badge>}
                       </span>
                       <span className="block truncate text-2xs text-muted">{m.email}</span>
                     </span>
                   </span>
                 </td>
                 <td>
-                  <Badge tone={m.source === "GROUP" ? "accent" : "neutral"}>{m.source === "GROUP" ? "Group" : "Manual"}</Badge>
+                  <Badge tone={m.source === "GROUP" ? "accent" : "neutral"}>{m.source === "GROUP" ? "Group" : m.source === "DOMAIN" ? "Sign-in" : "Manual"}</Badge>
                 </td>
-                <RoleChecks roles={m.roles} who={m.name} disabled={busy} onChange={(roles) => (roles.length ? run(() => api(`/api/admin/members/${m.userId}`, { method: "PATCH", json: { roles } }), "Roles updated") : undefined)} />
+                <RoleChecks roles={m.roles} who={m.name} disabled={busy} onChange={(roles) => run(() => api(`/api/admin/members/${m.userId}`, { method: "PATCH", json: { roles } }), roles.length ? "Roles updated" : `${m.name} has no access now`)} />
                 <td className="text-2xs text-muted">{m.lastLoginAt ? relTime(m.lastLoginAt) : "Never"}</td>
                 <td className="text-right">
                   {m.userId !== data.meId && (
@@ -373,6 +393,19 @@ function MembersTab({ data }: { data: AdminData }) {
         </Table>
       </div>
       {adding && <AddWorkspaceMember onClose={() => setAdding(false)} />}
+      {revoke && (
+        <PromptDialog
+          open
+          danger
+          onOpenChange={(o) => !o && setRevoke(false)}
+          title={`Remove Viewer access from ${viewerOnly} ${viewerOnly === 1 ? "person" : "people"}?`}
+          description="Everyone whose only workspace role is Viewer (typically people added automatically when they first signed in) stops seeing all projects. They can still sign in and keep the projects they were added to. Group-mapped members are not changed."
+          confirmLabel="Remove access"
+          onConfirm={async () => {
+            if (await run(() => api("/api/admin/members/revoke-viewers", { method: "POST" }), "Viewer access removed")) setRevoke(false);
+          }}
+        />
+      )}
       {toggle && (
         <PromptDialog
           open

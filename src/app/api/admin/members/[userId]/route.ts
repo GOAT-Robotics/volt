@@ -24,11 +24,10 @@ export const PATCH = route<{ userId: string }>(async (req, { params }) => {
   if (!m) throw new HttpError(404, "Member not found");
   const wasAdmin = parseRoles(m.roles).includes("ADMIN");
   if (b.roles) {
-    if (!b.roles.length) throw new HttpError(400, "Select at least one role (or disable the user)");
     if (wasAdmin && !b.roles.includes("ADMIN") && !(await adminsLeft(ctx.workspace.id, userId))) throw new HttpError(409, "The workspace needs at least one active administrator");
     // manual edit makes the membership MANUAL so the next sign-in does not overwrite it
     await db.membership.update({ where: { id: m.id }, data: { roles: joinRoles(b.roles), source: "MANUAL" } });
-    await audit({ workspaceId: ctx.workspace.id, actorId: ctx.user.id, type: "admin.member", data: { action: "roles", user: m.user.email, from: m.roles, to: joinRoles(b.roles) } });
+    await audit({ workspaceId: ctx.workspace.id, actorId: ctx.user.id, type: "admin.member", data: { action: b.roles.length ? "roles" : "revoke", user: m.user.email, from: m.roles, to: joinRoles(b.roles) } });
   }
   if (b.disabled !== undefined && b.disabled !== m.user.disabled) {
     if (userId === ctx.user.id) throw new HttpError(409, "You cannot disable your own account");

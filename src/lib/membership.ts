@@ -83,7 +83,7 @@ export async function syncUserOnSignIn(i: { email: string; name: string; oid: st
         update: { roles: joinRoles(roles), source: "GROUP" },
         create: { workspaceId: w.id, userId: user.id, roles: joinRoles(roles), source: "GROUP" },
       });
-    } else if (mem) {
+    } else if (mem && mem.source !== "DOMAIN") {
       await db.membership.delete({ where: { id: mem.id } });
     }
   }
@@ -96,7 +96,9 @@ export async function syncUserOnSignIn(i: { email: string; name: string; oid: st
     const domainOk = allowedDomains().length > 0 && allowedDomains().includes(i.email.split("@")[1] ?? "");
     const has = await db.membership.findUnique({ where: { workspaceId_userId: { workspaceId: ws.id, userId: user.id } } });
     if (!has && domainOk && !i.isGuest) {
-      await db.membership.create({ data: { workspaceId: ws.id, userId: user.id, roles: process.env.DEFAULT_ROLE ?? "VIEWER", source: "MANUAL" } });
+      // signs in, but sees only what an admin gives them (Admin → General → Access)
+      const role = settings.access.newMemberRole;
+      await db.membership.create({ data: { workspaceId: ws.id, userId: user.id, roles: role === "none" ? "" : role, source: "DOMAIN" } });
     }
   }
   const any = await db.membership.count({ where: { userId: user.id } });

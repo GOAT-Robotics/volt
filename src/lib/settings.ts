@@ -34,6 +34,13 @@ export type WorkspaceSettings = {
    * presence: project lists and pages show who is working in a project right now.
    */
   collaboration: { live: boolean; presence: boolean };
+  /**
+   * Who sees what. newMemberRole: workspace role for people who sign in from an allowed email
+   * domain without an Entra group mapping ("none": they can sign in but see no projects until an
+   * admin gives them access). projectSharing: who may add people to a project or change their
+   * project roles ("admins": workspace admins only; "owners": project owners too).
+   */
+  access: { newMemberRole: "none" | "VIEWER" | "DESIGNER"; projectSharing: "admins" | "owners" };
 };
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -64,6 +71,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   versionScheme: "INTEGER",
   linkPreviews: "picture",
   collaboration: { live: true, presence: true },
+  access: { newMemberRole: "none", projectSharing: "admins" },
 };
 
 export function parseSettings(s: string | null | undefined): WorkspaceSettings {
@@ -81,5 +89,6 @@ export function parseSettings(s: string | null | undefined): WorkspaceSettings {
     notifications: { ...DEFAULT_SETTINGS.notifications, ...(v.notifications ?? {}) },
     library: { ...DEFAULT_SETTINGS.library, ...(v.library ?? {}) },
     collaboration: { ...DEFAULT_SETTINGS.collaboration, ...(v.collaboration ?? {}) },
+    access: { ...DEFAULT_SETTINGS.access, ...(v.access ?? {}) },
   };
 }

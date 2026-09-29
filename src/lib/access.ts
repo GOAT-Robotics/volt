@@ -17,6 +17,13 @@ export function assertAdmin(ctx: Ctx) {
   if (!isAdmin(ctx)) throw new HttpError(403, "Administrator access required");
 }
 
+/** May add people to a project or change their project roles (workspace setting "projectSharing"). */
+export function canShareProject(ctx: Ctx, canManage: boolean): boolean {
+  return isAdmin(ctx) || (ctx.settings.access.projectSharing === "owners" && canManage);
+}
+
+export const SHARE_DENIED = "Only a workspace admin can give people access to projects";
+
 /** Prisma filter: projects this user may see (workspace projects for members; only invited projects for guests). */
 export function projectScope(ctx: Ctx): Prisma.ProjectWhereInput {
   if (isGuestCtx(ctx)) return { members: { some: { userId: ctx.user.id } } };

@@ -17,10 +17,11 @@ export const REJECT_KEY = "__rejectReason";
 export const isAdmin = (ctx: Ctx) => ctx.roles.includes("ADMIN");
 export const isApprover = (ctx: Ctx) => can(ctx, "library.approve");
 export const canPublish = (ctx: Ctx) => can(ctx, "library.publish");
-export const isGuestCtx = (ctx: Ctx) => ctx.user.isGuest || (ctx.roles.length === 1 && ctx.roles[0] === "GUEST") || !ctx.roles.length;
+/** No library: guests, and people without a workspace role who were not given any project either. */
+export const isGuestCtx = (ctx: Ctx) => ctx.user.isGuest || (ctx.roles.length === 1 && ctx.roles[0] === "GUEST") || (!ctx.roles.length && !ctx.projectAccess);
 
 export function assertMember(ctx: Ctx) {
-  if (isGuestCtx(ctx)) throw new HttpError(403, "Guests cannot use the component library");
+  if (isGuestCtx(ctx)) throw new HttpError(403, ctx.user.isGuest ? "Guests cannot use the component library" : "You don't have access yet — ask a workspace admin");
 }
 
 /** Statuses in which an ORG element is visible to everyone. */

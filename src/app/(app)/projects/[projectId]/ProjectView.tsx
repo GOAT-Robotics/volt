@@ -73,7 +73,7 @@ export type SignatureRow = {
 };
 export type ProjectData = {
   me: { id: string; isAdmin: boolean };
-  perms: { manage: boolean; edit: boolean; export: boolean; view: boolean };
+  perms: { manage: boolean; share: boolean; edit: boolean; export: boolean; view: boolean };
   project: { id: string; name: string; number: string | null; description: string; tags: string[]; folderId: string | null; state: string; versionScheme: string; customScheme: string | null; createdAt: string; favorite: boolean; hasRelease: boolean };
   policy: { signatureRequiredForRelease: boolean; requiredSignatories: number; minApprovals: number };
   folders: FolderRow[];
