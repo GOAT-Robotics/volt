@@ -2,7 +2,7 @@ export const ROLES = ["ADMIN", "OWNER", "DESIGNER", "REVIEWER", "APPROVER", "SIG
 export type Role = (typeof ROLES)[number];
 export const ROLE_LABEL: Record<Role, string> = {
   ADMIN: "Workspace admin",
-  OWNER: "Project owner",
+  OWNER: "Owner",
   DESIGNER: "Designer",
   REVIEWER: "Reviewer",
   APPROVER: "Approver",
@@ -12,8 +12,8 @@ export const ROLE_LABEL: Record<Role, string> = {
 };
 export const ROLE_DESCRIPTION: Record<Role, string> = {
   ADMIN: "Full workspace administration, including members, settings, projects, reviews, approvals and signatures.",
-  OWNER: "Creates and manages projects, members and versions; can submit work, but cannot approve or sign without another role.",
-  DESIGNER: "Creates projects and edits working versions; can comment, export and publish library content.",
+  OWNER: "Creates and manages projects they belong to, including members, versions, submission and signature requests; cannot approve or sign without another role.",
+  DESIGNER: "Creates and edits projects they belong to; can submit for review and approval, request signatures, comment, export and publish library content.",
   REVIEWER: "Reviews assigned work, comments, requests changes or rejects; cannot give the formal approval.",
   APPROVER: "Performs review decisions and gives the formal approval that counts toward the approval policy.",
   SIGNATORY: "Applies an attributable electronic signature to an approved version before release.",
@@ -34,15 +34,16 @@ export type Action =
   | "review.comment"
   | "review.decide"
   | "review.approve"
+  | "signature.request"
   | "sign"
   | "library.publish"
   | "library.approve";
 
 /** Role → allowed actions. These roles are assigned once at workspace level. */
 export const ROLE_ACTIONS: Record<Role, Action[]> = {
-  ADMIN: ["workspace.admin", "project.create", "project.view", "project.edit", "project.manage", "project.export", "review.comment", "review.decide", "review.approve", "sign", "library.publish", "library.approve"],
-  OWNER: ["project.create", "project.view", "project.edit", "project.manage", "project.export", "review.comment", "library.publish"],
-  DESIGNER: ["project.create", "project.view", "project.edit", "project.export", "review.comment", "library.publish"],
+  ADMIN: ["workspace.admin", "project.create", "project.view", "project.edit", "project.manage", "project.export", "review.comment", "review.decide", "review.approve", "signature.request", "sign", "library.publish", "library.approve"],
+  OWNER: ["project.create", "project.view", "project.edit", "project.manage", "project.export", "review.comment", "signature.request", "library.publish"],
+  DESIGNER: ["project.create", "project.view", "project.edit", "project.export", "review.comment", "signature.request", "library.publish"],
   REVIEWER: ["project.view", "project.export", "review.comment", "review.decide"],
   APPROVER: ["project.view", "project.export", "review.comment", "review.decide", "review.approve"],
   SIGNATORY: ["project.view", "project.export", "review.comment", "sign"],

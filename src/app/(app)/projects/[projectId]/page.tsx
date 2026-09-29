@@ -64,11 +64,12 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const nm = (id: string | null | undefined) => (id ? users.get(id)?.name ?? "Unknown" : null);
   const labelOf = new Map(versions.map((v) => [v.id, v.label]));
   const canManage = can("project.manage");
+  const canRequestSignatures = can("signature.request");
   const canExport = isGuestCtx(ctx) ? ctx.settings.exports.guestCanExport : can("project.export") && (can("project.edit") || ctx.settings.exports.viewerCanExport);
 
   const data: ProjectData = {
     me: { id: ctx.user.id, isAdmin: isAdmin(ctx) && project.workspaceId === ctx.workspace.id },
-    perms: { manage: canManage, share: canShareProject(ctx, canManage), edit: can("project.edit"), export: canExport, view: can("project.view") },
+    perms: { manage: canManage, requestSignatures: canRequestSignatures, share: canShareProject(ctx, canManage), edit: can("project.edit"), export: canExport, view: can("project.view") },
     project: {
       id: project.id,
       name: project.name,
@@ -142,7 +143,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     members: members.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, disabled: m.user.disabled, roles: memberRoles.get(m.userId) ?? (m.user.isGuest ? ["GUEST"] : []) })),
     attachments: attachments.map((a) => ({ id: a.id, ownerType: a.ownerType, ownerId: a.ownerId, filename: a.filename, mime: a.mime, size: a.size, sha256: a.sha256, uploadedBy: nm(a.userId) ?? "", uploadedById: a.userId, createdAt: a.createdAt.toISOString(), context: a.ownerType === "REVIEW" ? `Review of v${labelOf.get(reviews.find((r) => r.id === a.ownerId)?.versionId ?? "") ?? "?"}` : a.ownerType === "RELEASE" ? `v${labelOf.get(a.ownerId) ?? "?"}` : a.ownerType === "COMMENT" ? "Comment" : "Project" })),
     imports: imports.map((i) => ({ id: i.id, filename: i.filename, sha256: i.sha256, createdAt: i.createdAt.toISOString(), versionLabel: i.versionId ? labelOf.get(i.versionId) ?? null : null, report: J.parse<CompatReport | null>(i.report, null) })),
-    eligibleSignatories: canManage ? await eligibleSignatories(project.workspaceId, projectId) : [],
+    eligibleSignatories: canRequestSignatures ? await eligibleSignatories(project.workspaceId, projectId) : [],
   };
   return <ProjectView data={data} initialTab={tab ?? "versions"} />;
 }

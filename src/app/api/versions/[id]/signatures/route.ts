@@ -35,7 +35,7 @@ export const GET = route<{ id: string }>(async (_req, { params }) => {
       evidence: a.can("project.manage") || s.signatoryId === ctx.user.id ? J.parse(s.evidence, null) : null,
       seal: s.seal,
     })),
-    eligible: a.can("project.manage") ? await eligibleSignatories(a.project.workspaceId, a.project.id) : [],
+    eligible: a.can("signature.request") ? await eligibleSignatories(a.project.workspaceId, a.project.id) : [],
   };
 });
 
@@ -46,7 +46,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   const { id } = await params;
   const b = await body(req, Body);
   const a = await loadVersion(ctx, id, { withDoc: false });
-  if (!a.can("project.manage")) throw new HttpError(403, "Only project owners can request signatures");
+  if (!a.can("signature.request")) throw new HttpError(403, "Requesting signatures requires the workspace Designer, Owner or Admin role");
   const ids = await requestSignatures(ctx, id, { signatoryIds: b.signatoryIds, purpose: b.purpose, baseUrl: baseUrl(req) });
   return { ids };
 });

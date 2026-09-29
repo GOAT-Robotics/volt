@@ -113,7 +113,7 @@ export function SignaturesTab({ data }: { data: ProjectData }) {
   if (!data.signatures.length)
     return (
       <Empty icon={<FileSignature />} title="No signatures requested">
-        {data.policy.signatureRequiredForRelease ? "This workspace requires signatures before release. " : ""}Once a version is approved, a project owner can request signatures from the Versions tab (⋯ → Request signatures).
+        {data.policy.signatureRequiredForRelease ? "This workspace requires signatures before release. " : ""}Once a version is approved, a project member with the workspace Designer or Owner role—or a workspace Admin—can request signatures from the Versions tab (⋯ → Request signatures).
       </Empty>
     );
   const byVersion = [...new Set(data.signatures.map((s) => s.versionId))];
