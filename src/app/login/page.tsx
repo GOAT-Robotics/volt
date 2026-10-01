@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { libraryPreview, projectPreview, SITE_DESCRIPTION } from "@/lib/og/preview";
-import { COMPANY, previewMetadata } from "@/lib/og/meta";
+import { previewMetadata } from "@/lib/og/meta";
+import { orgBranding } from "@/lib/brand";
 import { signIn, DEV_LOGIN, ENTRA_ENABLED } from "@/auth";
 import { getCtx } from "@/lib/session";
 import { AuthShell } from "@/components/brand/AuthLayout";
@@ -35,7 +36,7 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
   };
 }
 
-const jsonLd = {
+const jsonLd = (org: { name: string; url: string }) => ({
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   name: "Volt",
@@ -51,13 +52,13 @@ const jsonLd = {
     "Reviews, approvals and electronically signed releases",
     "PDF, SVG, PNG, DXF and QElectroTech export",
   ],
-  publisher: {
-    "@type": "Organization",
-    name: COMPANY,
-    url: "https://www.example.com",
-    address: { "@type": "PostalAddress", addressLocality: "Springfield", addressRegion: "State", addressCountry: "IN" },
-  },
-};
+  license: "https://www.gnu.org/licenses/gpl-3.0.html",
+  ...(org.name ? { publisher: { "@type": "Organization", name: org.name, ...(org.url ? { url: org.url } : {}) } } : {}),
+});
+
+/** prefill of the development login: the first ADMIN_EMAILS address (the seeded admin) */
+const DEV_EMAIL = (process.env.ADMIN_EMAILS ?? "").split(",").map((s) => s.trim()).filter(Boolean)[0] ?? "admin@example.com";
+const DEV_NAME = DEV_EMAIL.split("@")[0].split(/[._-]+/).filter(Boolean).map((p) => p[0].toUpperCase() + p.slice(1)).join(" ");
 
 export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string; callbackUrl?: string; reauth?: string; signedOut?: string }> }) {
   const sp = await searchParams;
@@ -68,9 +69,10 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   const reauth = !!sp.reauth;
   const cb = safeCallback(sp.callbackUrl);
   const nonce = (await headers()).get("x-nonce") ?? undefined;
+  const org = await orgBranding();
   return (
     <AuthShell>
-          <script type="application/ld+json" nonce={nonce} dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
+          <script type="application/ld+json" nonce={nonce} dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd(org)).replace(/</g, "\\u003c") }} />
           <h1 className="text-sm font-semibold">Sign in</h1>
           <p className="mt-1 text-xs text-muted">Use your organization account.</p>
           {sp.signedOut && !sp.error && !reauth && (
@@ -112,8 +114,8 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
               }}
             >
               <p className="text-2xs font-medium uppercase tracking-wide text-warning">Development login (disabled in production)</p>
-              <input name="email" type="email" required placeholder="email" defaultValue="admin@example.com" className="h-8 w-full rounded-md border border-border bg-panel px-2 text-xs" />
-              <input name="name" placeholder="name" defaultValue="Admin" className="h-8 w-full rounded-md border border-border bg-panel px-2 text-xs" />
+              <input name="email" type="email" required placeholder="email" defaultValue={DEV_EMAIL} className="h-8 w-full rounded-md border border-border bg-panel px-2 text-xs" />
+              <input name="name" placeholder="name" defaultValue={DEV_NAME} className="h-8 w-full rounded-md border border-border bg-panel px-2 text-xs" />
               <button className="h-8 w-full rounded-md bg-accent text-xs font-medium text-white">Sign in (dev)</button>
             </form>
           )}

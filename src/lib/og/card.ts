@@ -21,7 +21,7 @@ export type Card = {
   picture?: string | null;
   /** white "sheet" frame around the picture (drawings) or plain (symbols) */
   frame?: boolean;
-  /** Example Company logo as a PNG data URI, bottom right */
+  /** organization logo as a data URI, bottom right */
   brandLogo?: string | null;
   seed?: number;
 };
@@ -152,7 +152,7 @@ export function cardSvg(c: Card): string {
     y += 34;
   }
 
-  // footer: Volt on the left of the text column, Example Company on the right
+  // footer: Volt on the left of the text column, the organization logo on the right
   const fy = OG_H - 56;
   out.push(VOLT_MARK(textX, fy - 34, 40));
   out.push(`<text x="${textX + 52}" y="${fy - 5}" font-family="${HEAD}" font-weight="700" font-size="28" letter-spacing="-0.5" fill="#09090b">Volt</text>`);

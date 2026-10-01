@@ -2,7 +2,8 @@
   "name": "volt",
   "version": "1.0.0",
   "private": true,
-  "description": "Volt — QElectroTech-compatible web electrical diagram editor with document control",
+  "license": "GPL-3.0-or-later",
+  "description": "Volt — open-source, QElectroTech-compatible web electrical diagram editor with document control",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",

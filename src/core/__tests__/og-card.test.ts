@@ -4,7 +4,7 @@ import { schematicArt } from "@/lib/brand/schematic";
 
 describe("link preview cards", () => {
   it("wrap long titles and end with an ellipsis", () => {
-    const lines = wrap("Automatic transfer switch panel for the CP two thousand autonomous mobile robot fleet charging bay", 44, 400, 3);
+    const lines = wrap("Automatic transfer switch panel for the conveyor line two thousand packaging and palletising cell", 44, 400, 3);
     expect(lines).toHaveLength(3);
     expect(lines[2].endsWith("…")).toBe(true);
     expect(wrap("Short", 44, 400, 3)).toEqual(["Short"]);

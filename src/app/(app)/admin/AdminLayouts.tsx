@@ -224,7 +224,7 @@ function CreateLayoutDialog({ data, onClose, onCreated }: { data: AdminData; onC
           }}
         >
           <Field label="Name *">
-            <Input autoFocus required value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="e.g. Example Company A3" />
+            <Input autoFocus required value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="e.g. Company A3" />
           </Field>
           <Field label="Start from">
             <NativeSelect value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Start from">

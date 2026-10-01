@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { enablePatches, produce, setAutoFreeze } from "immer";
 import { applyOps, diffOps, type LiveOp } from "@/core/live-ops";
 import type { LiveState, Peer } from "./live/types";
-import type { Doc, Page, PartialStyles, Pt } from "@/core/model";
+import type { Doc, Page, PartialStyles, Pt, TitleBlockLogo } from "@/core/model";
 import { emptySel, ensureInstanceTexts, type Sel } from "@/core/ops";
 import type { DocDiff } from "@/core/diff";
 
@@ -37,6 +37,8 @@ export type VersionInfo = {
   userName: string;
   /** live collaboration is on for this workspace */
   live?: boolean;
+  /** organization branding: default logo of title blocks and cover sheets, cover manufacturer */
+  brand?: { name: string; address: string; logo: TitleBlockLogo | null };
 };
 
 export type CommentPin = {

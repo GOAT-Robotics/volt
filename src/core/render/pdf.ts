@@ -40,7 +40,7 @@ import type { Doc, Page, Rect } from "../model";
 import type { ImageDraw, Painter, PathData, StrokeStyle, TextDraw } from "./painter";
 import { ellipsePt } from "./painter";
 import { drawPage, pageGeometry, tbTemplate, type DrawOpts } from "./scene";
-import { BRAND_LOGO } from "../brand-logo";
+import { brandLogo } from "../brand";
 
 function rgb(color: string, alpha = 1): [number, number, number] | null {
   if (!color || color === "transparent" || color === "none") return null;
@@ -271,7 +271,9 @@ export type PdfExportOptions = {
 async function embedLogos(pdf: PDFDocument, doc: Doc, pages: Page[], raster: PdfExportOptions["rasterizeSvg"]) {
   const out = new Map<string, PDFImage>();
   for (const page of pages) {
-    const imgs = [...(page.titleBlock.show ? [...Object.values(templateLogos(tbTemplate(doc, page))), BRAND_LOGO] : []), ...(page.kind === "cover" && page.cover?.logo !== null ? [page.cover?.logo ?? BRAND_LOGO] : []), ...page.shapes.flatMap((sh) => (sh.image ? [sh.image] : [])), ...(page.kind === "cover" && page.cover?.image ? [page.cover.image] : [])];
+    const org = brandLogo();
+    const coverLogo = page.kind === "cover" && page.cover?.logo !== null ? (page.cover?.logo ?? org) : null;
+    const imgs = [...(page.titleBlock.show ? [...Object.values(templateLogos(tbTemplate(doc, page))), ...(org ? [org] : [])] : []), ...(coverLogo ? [coverLogo] : []), ...page.shapes.flatMap((sh) => (sh.image ? [sh.image] : [])), ...(page.kind === "cover" && page.cover?.image ? [page.cover.image] : [])];
     for (const logo of imgs) {
       const key = logoKey(logo);
       if (out.has(key)) continue;

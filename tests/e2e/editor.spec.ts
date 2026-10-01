@@ -3,8 +3,8 @@ import { test, expect, type Page } from "@playwright/test";
 // Requires AUTH_DEV_LOGIN=true and a seeded database (npm run setup).
 async function login(page: Page) {
   await page.goto("/login");
-  await page.fill("input[name=email]", "admin@example.com");
-  await page.fill("input[name=name]", "Admin");
+  await page.fill("input[name=email]", process.env.E2E_EMAIL ?? "admin@example.com");
+  await page.fill("input[name=name]", process.env.E2E_NAME ?? "Admin");
   await page.click("text=Sign in (dev)");
   await page.waitForURL(/projects/);
 }

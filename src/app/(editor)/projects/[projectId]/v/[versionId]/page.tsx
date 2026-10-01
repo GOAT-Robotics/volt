@@ -47,6 +47,7 @@ export default async function EditorPage({ params }: { params: Promise<{ project
         userId: ctx.user.id,
         userName: ctx.user.name,
         live: ctx.settings.collaboration.live,
+        brand: { name: ctx.settings.branding.name, address: ctx.settings.branding.address, logo: ctx.settings.branding.logo },
       }}
     />
   );

@@ -15,7 +15,7 @@ import {
   type Clip,
 } from "@/core/ops";
 import { newPage } from "@/core/doc";
-import { DEFAULT_COVER } from "@/core/render/cover";
+import { newCover } from "@/core/render/cover";
 import { convertShapesToWires, isOpenPath } from "@/core/shapes";
 import { uid } from "@/core/ids";
 
@@ -394,7 +394,7 @@ export const COMMANDS: Command[] = [
           const p = newPage(0, title);
           p.id = id;
           p.kind = kind;
-          if (kind === "cover") p.cover = structuredClone(DEFAULT_COVER);
+          if (kind === "cover") p.cover = newCover();
           const ref = [...d.pages].sort((a, b) => a.order - b.order)[0];
           if (ref) (p.border = { ...ref.border }), (p.titleBlock = { ...ref.titleBlock, fields: { ...ref.titleBlock.fields, title } });
           // cover first, contents right after the cover

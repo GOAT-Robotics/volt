@@ -1,6 +1,4 @@
 import "server-only";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db, J } from "@/lib/db";
@@ -12,6 +10,8 @@ import type { BlockContent, Doc, ElementDef, Page, TitleBlockTemplate } from "@/
 import { defaultStyles } from "@/core/styles";
 import { cardSvg, type Card } from "./card";
 import { svgToPng } from "./raster";
+import { brandLogoUri, orgBranding, type Branding } from "@/lib/brand";
+import { setBrand } from "@/core/brand";
 
 /**
  * Link previews (Open Graph). Teams, Slack, Outlook, WhatsApp … fetch a pasted link from their own
@@ -36,23 +36,16 @@ export type Preview = {
 
 export const SITE_NAME = "Volt";
 export const SITE_DESCRIPTION =
-  "Volt is Example Company's electrical design workspace: schematics compatible with QElectroTech, a shared component library, reviews, approvals and signed releases.";
+  "Volt is an open-source electrical design workspace: schematics compatible with QElectroTech, a shared component library, reviews, approvals and signed releases.";
 
-let logoUri: string | null | undefined;
-export function brandLogoDataUri(): string | null {
-  if (logoUri !== undefined) return logoUri;
-  try {
-    logoUri = "data:image/png;base64," + readFileSync(path.join(process.cwd(), "public", "brand", "logo.png")).toString("base64");
-  } catch {
-    logoUri = null;
-  }
-  return logoUri;
-}
-
-async function workspaceMode(workspaceId: string): Promise<WorkspaceSettings["linkPreviews"]> {
+/** link-preview mode and branding of a workspace (its logo is drawn on title pages and cards) */
+async function workspaceInfo(workspaceId: string): Promise<{ mode: WorkspaceSettings["linkPreviews"]; branding: Branding }> {
   const ws = await db.workspace.findUnique({ where: { id: workspaceId }, select: { settings: true } });
-  return ws ? parseSettings(ws.settings).linkPreviews : "off";
+  if (!ws) return { mode: "off", branding: { name: "", address: "", url: "", logo: null } };
+  const st = parseSettings(ws.settings);
+  return { mode: st.linkPreviews, branding: st.branding };
 }
+const brandTag = (b: Branding) => createHash("sha1").update(`${b.name}|${b.logo?.type}|${b.logo?.data ?? ""}`).digest("hex").slice(0, 10);
 
 const short = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().replace(/_/g, " ");
@@ -63,6 +56,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().
 
 type ProjectInfo = {
   mode: WorkspaceSettings["linkPreviews"];
+  branding: Branding;
   project: { id: string; name: string; number: string | null; description: string; updatedAt: Date };
   version: { id: string; label: string; status: string; docRev: number } | null;
   pages: { idx: number; kind: string | null; order: number; title: string }[];
@@ -72,8 +66,8 @@ async function projectInfo(id: string): Promise<ProjectInfo | null> {
   if (!/^[a-z0-9]{10,40}$/i.test(id)) return null;
   const project = await db.project.findUnique({ where: { id }, select: { id: true, name: true, number: true, description: true, updatedAt: true, workspaceId: true } });
   if (!project) return null;
-  const mode = await workspaceMode(project.workspaceId);
-  if (mode === "off") return { mode, project, version: null, pages: [] };
+  const { mode, branding } = await workspaceInfo(project.workspaceId);
+  if (mode === "off") return { mode, branding, project, version: null, pages: [] };
   const version = await db.version.findFirst({ where: { projectId: id }, orderBy: { seq: "desc" }, select: { id: true, label: true, status: true, docRev: true } });
   let pages: ProjectInfo["pages"] = [];
   if (version) {
@@ -82,7 +76,7 @@ async function projectInfo(id: string): Promise<ProjectInfo | null> {
       FROM "Version" v, json_each(v.doc, '$.pages') p WHERE v.id = ${version.id}`;
     pages = rows.map((r) => ({ idx: Number(r.k), kind: r.kind, order: Number(r.ord ?? r.k), title: r.title ?? "" })).sort((a, b) => a.order - b.order);
   }
-  return { mode, project, version, pages };
+  return { mode, branding, project, version, pages };
 }
 
 /** the page that best represents the project: a cover sheet, else the first drawing */
@@ -150,8 +144,8 @@ async function loadPageDoc(versionId: string, idx: number): Promise<{ doc: Doc; 
 export async function projectCardPng(id: string): Promise<{ png: Buffer; etag: string } | null> {
   const info = await projectInfo(id);
   if (!info || info.mode === "off") return null;
-  const { project, version, pages, mode } = info;
-  const key = `p|${id}|${mode}|${project.name}|${project.number}|${project.updatedAt.getTime()}|${version?.id}|${version?.docRev}|${version?.status}`;
+  const { project, version, pages, mode, branding } = info;
+  const key = `p|${id}|${mode}|${brandTag(branding)}|${project.name}|${project.number}|${project.updatedAt.getTime()}|${version?.id}|${version?.docRev}|${version?.status}`;
   return cached(key, async () => {
     let picture: string | null = null;
     const tp = titlePage(pages);
@@ -159,6 +153,7 @@ export async function projectCardPng(id: string): Promise<{ png: Buffer; etag: s
       const pd = await loadPageDoc(version.id, tp.idx).catch((e) => (console.error("[og] page", id, e), null));
       if (pd) {
         try {
+          setBrand(branding);
           picture = pageToSvg(pd.doc, pd.page, { measure: approxMeasure, lod: 100, pageIndex: pages.indexOf(tp), pageCount: pages.length, background: "#ffffff" });
         } catch (e) {
           console.error("[og] render", id, e);
@@ -175,7 +170,7 @@ export async function projectCardPng(id: string): Promise<{ png: Buffer; etag: s
       ],
       picture,
       frame: true,
-      brandLogo: brandLogoDataUri(),
+      brandLogo: brandLogoUri(branding),
       seed: seedOf(id),
     };
     return svgToPng(cardSvg(card), 1200);
@@ -188,6 +183,7 @@ export async function projectCardPng(id: string): Promise<{ png: Buffer; etag: s
 
 type LibInfo = {
   mode: WorkspaceSettings["linkPreviews"];
+  branding: Branding;
   el: { id: string; kind: string; name: string; category: string; description: string; prefix: string; meta: Record<string, unknown>; status: string; revision: number; library: string };
   /** the revision the organization sees */
   revision: number;
@@ -203,9 +199,10 @@ async function libInfo(id: string): Promise<LibInfo | null> {
   const live = ORG_LIVE.includes(el.status as (typeof ORG_LIVE)[number]) || el.status === "DEPRECATED";
   if (!live && !(el.approvedAt && approvedRev)) return null; // drafts are not public knowledge
   const revision = live ? el.revision : approvedRev!;
-  const mode = await workspaceMode(el.library.workspaceId);
+  const { mode, branding } = await workspaceInfo(el.library.workspaceId);
   return {
     mode,
+    branding,
     el: { id: el.id, kind: el.kind, name: el.name, category: el.category, description: el.description, prefix: el.prefix, meta, status: el.status, revision: el.revision, library: el.library.name },
     revision,
     content: async () => {
@@ -244,7 +241,7 @@ export async function libraryPreview(id: string): Promise<Preview | null> {
 export async function libraryCardPng(id: string): Promise<{ png: Buffer; etag: string } | null> {
   const i = await libInfo(id);
   if (!i || i.mode === "off") return null;
-  return cached(`l|${id}|${i.mode}|${i.revision}|${i.el.status}|${i.el.name}`, async () => {
+  return cached(`l|${id}|${i.mode}|${brandTag(i.branding)}|${i.revision}|${i.el.status}|${i.el.name}`, async () => {
     let picture: string | null = null;
     if (i.mode === "picture") {
       const content = await i.content();
@@ -260,7 +257,7 @@ export async function libraryCardPng(id: string): Promise<{ png: Buffer; etag: s
       lines: libFacts(i),
       picture,
       frame: i.el.kind === "BLOCK",
-      brandLogo: brandLogoDataUri(),
+      brandLogo: brandLogoUri(i.branding),
       seed: seedOf(id),
     };
     return svgToPng(cardSvg(card), 1200);
@@ -272,13 +269,14 @@ export async function libraryCardPng(id: string): Promise<{ png: Buffer; etag: s
 /* ------------------------------------------------------------------ */
 
 export async function siteCardPng(): Promise<{ png: Buffer; etag: string }> {
-  return (await cached("site|v1", async () =>
+  const b = await orgBranding();
+  return (await cached(`site|v2|${brandTag(b)}`, async () =>
     svgToPng(
       cardSvg({
-        kicker: "Example Company · Electrical engineering",
+        kicker: b.name ? `${b.name} · Electrical engineering` : "Electrical engineering",
         title: "Electrical diagrams & document control",
         lines: ["Schematics, component library, reviews and signed releases"],
-        brandLogo: brandLogoDataUri(),
+        brandLogo: brandLogoUri(b),
         seed: 5,
       }),
       1200,

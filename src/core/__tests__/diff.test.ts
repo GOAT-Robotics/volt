@@ -140,11 +140,11 @@ describe("diffDocs", () => {
   it("detects title block changes", () => {
     const { doc } = base();
     const B = clone(doc);
-    B.pages[0].titleBlock.fields.author = "Admin";
+    B.pages[0].titleBlock.fields.author = "Jane Doe";
     let d = diffDocs(doc, B);
     const tb = find(d.changes, "titleblock");
     expect(tb).toHaveLength(1);
-    expect(tb[0].details).toEqual(["author: ∅ → Admin"]);
+    expect(tb[0].details).toEqual(["author: ∅ → Jane Doe"]);
     const C = clone(doc);
     C.pages[0].titleBlock.template = "other";
     d = diffDocs(doc, C);

@@ -38,7 +38,7 @@ export function backupConfig() {
     enabled: !!bucket,
     bucket,
     prefix,
-    region: process.env.BACKUP_S3_REGION || process.env.AWS_REGION || "ap-south-1",
+    region: process.env.BACKUP_S3_REGION || process.env.AWS_REGION || "us-east-1",
     intervalHours: Math.max(1, Number(process.env.BACKUP_INTERVAL_HOURS) || 6),
     keepDays: Math.max(1, Number(process.env.BACKUP_KEEP_DAYS) || 30),
     kmsKeyId: process.env.BACKUP_S3_KMS_KEY_ID || null,

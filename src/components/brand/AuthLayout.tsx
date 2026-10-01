@@ -1,7 +1,7 @@
 import { LogoMark } from "./Logo";
 import { schematicArt } from "@/lib/brand/schematic";
 
-const COMPANY = "Example Company";
+import { brandLogoUri, orgBranding } from "@/lib/brand";
 
 /* rendered once per server process: the art is deterministic */
 const ART_W = 1600, ART_H = 1000;
@@ -34,20 +34,38 @@ function SchematicBackdrop() {
   );
 }
 
-export function AuthFooter() {
+/** your organization (Administration → Branding), then the project's license */
+export async function AuthFooter() {
   const year = new Date().getFullYear();
+  const b = await orgBranding();
+  const logo = brandLogoUri(b);
+  const org = b.name.trim();
+  const mark = logo ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={logo} alt={org || "Organization logo"} className="h-[50px] w-auto max-w-[180px] object-contain" />
+  ) : null;
   return (
     <footer className="relative mt-8 flex flex-col items-center gap-2 text-center">
-      <a href="https://www.example.com" target="_blank" rel="noopener noreferrer" className="rounded focus-visible:outline-2 focus-visible:outline-offset-4" aria-label={`${COMPANY} (opens in a new tab)`}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/logo.png" alt="Example Company" width={96} height={50} className="h-[50px] w-auto dark:hidden" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/logo-dark.png" alt="Example Company" width={96} height={50} className="hidden h-[50px] w-auto dark:block" />
-      </a>
-      <p className="text-2xs text-muted">
-        © {year} {COMPANY}. All rights reserved.
+      {mark &&
+        (b.url ? (
+          <a href={b.url} target="_blank" rel="noopener noreferrer" className="rounded focus-visible:outline-2 focus-visible:outline-offset-4" aria-label={`${org || "Organization"} (opens in a new tab)`}>
+            {mark}
+          </a>
+        ) : (
+          mark
+        ))}
+      {org && (
+        <p className="text-2xs text-muted">
+          © {year} {org}
+        </p>
+      )}
+      <p className="max-w-xs text-2xs text-subtle">
+        Volt is free software under the{" "}
+        <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+          GNU GPL v3
+        </a>
+        .
       </p>
-      <p className="max-w-xs text-2xs text-subtle">Volt is developed by Example Company for its electrical engineering teams.</p>
     </footer>
   );
 }

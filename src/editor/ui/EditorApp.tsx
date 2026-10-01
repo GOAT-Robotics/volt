@@ -16,6 +16,7 @@ import { Dialogs } from "./dialogs/Dialogs";
 import { TooltipProvider } from "@/components/ui/misc";
 import { useBlockPlacement } from "./blocks";
 import { LiveClient } from "../live/client";
+import { setBrand } from "@/core/brand";
 
 export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) {
   const engine = useRef<Engine | null>(null);
@@ -25,6 +26,7 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
   const liveRef = useRef<LiveClient | null>(null);
 
   if (!initialized.current) {
+    setBrand(version.brand);
     useEditor.getState().init(doc, version);
     initialized.current = true;
   }

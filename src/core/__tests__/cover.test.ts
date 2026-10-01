@@ -12,10 +12,10 @@ o    Document Number : EX-EL-CP-SC-001
 o    Issue Date : 
 o   Revision Number : v1.5
 o    Name and Address of Manufacturer :
-            EXAMPLE COMPANY
+            EXAMPLE MACHINES LTD
             12 Sample Street,
             Springfield 12345
-            India.`;
+            Freedonia.`;
 
 describe("cover sheet", () => {
   it("takes over a hand-typed cover", () => {
@@ -25,17 +25,17 @@ describe("cover sheet", () => {
     expect(cover.title).toBe("Conveyor Panel");
     expect(cover.fields.map((f) => f.label)).toEqual(["Product", "Model Number", "Battery Specification", "Charging Specification", "Full Load Current", "Document Number", "Issue Date", "Revision Number"]);
     expect(cover.fields[5].value).toBe("EX-EL-CP-SC-001");
-    expect(cover.manufacturer).toBe("EXAMPLE COMPANY\n12 Sample Street,\nSpringfield 12345\nIndia.");
+    expect(cover.manufacturer).toBe("EXAMPLE MACHINES LTD\n12 Sample Street,\nSpringfield 12345\nFreedonia.");
     expect(used).toEqual(["t1"]);
   });
 
   it("renders cover and contents sheets", () => {
     const d = newDoc("CP");
     d.pages[0].kind = "cover";
-    d.pages[0].cover = { fields: [{ label: "Model number", value: "CP-100" }], manufacturer: "EXAMPLE COMPANY\nSpringfield", showRevisions: true };
+    d.pages[0].cover = { fields: [{ label: "Model number", value: "CP-100" }], manufacturer: "EXAMPLE MACHINES\nSpringfield", showRevisions: true };
     d.revisions = [{ rev: "1.5", date: "2026-09-27", description: "CE file", drawn: "SU", checked: "NS", approved: "MS" }];
     const svg = pageToSvg(d, d.pages[0]);
-    for (const s of ["CP-100", "MANUFACTURER", "REVISION HISTORY", "CE file", "EXAMPLE COMPANY"]) expect(svg).toContain(s);
+    for (const s of ["CP-100", "MANUFACTURER", "REVISION HISTORY", "CE file", "EXAMPLE MACHINES"]) expect(svg).toContain(s);
     d.pages[0].kind = "contents";
     expect(pageToSvg(d, d.pages[0])).toContain("Table of contents");
   });

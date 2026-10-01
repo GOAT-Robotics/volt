@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-NAME="Volt – Example Company"
+NAME="${VOLT_APP_NAME:-Volt}"
 URLS=("http://localhost:3000")
 while [ $# -gt 0 ]; do
   case "$1" in

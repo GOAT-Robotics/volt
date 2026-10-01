@@ -11,7 +11,9 @@ import { api } from "@/lib/fetcher";
 import { relTime } from "@/lib/utils";
 import { ROLES, ROLE_DESCRIPTION, ROLE_LABEL, type Role } from "@/lib/roles";
 import type { WorkspaceSettings } from "@/lib/settings";
-import type { Styles } from "@/core/model";
+import type { Styles, TitleBlockLogo } from "@/core/model";
+import { logoDataUrl } from "@/core/logos";
+import { toast } from "sonner";
 import type { ProjectTemplateContent } from "@/lib/templates";
 import { PromptDialog, Section, useMutation } from "@/components/volt/common";
 import { StyleTemplatesTab, ProjectTemplatesTab } from "./AdminTemplates";
@@ -128,6 +130,24 @@ function Optional({ value, onChange, label, unit, min = 1 }: { value: number | n
   );
 }
 
+function pickBrandLogo(done: (logo: TitleBlockLogo) => void) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/png,image/jpeg,image/svg+xml,.png,.jpg,.jpeg,.svg";
+  input.onchange = async () => {
+    const f = input.files?.[0];
+    if (!f) return;
+    try {
+      const { readLogoFile } = await import("@/editor/ui/logoUpload");
+      const { logo } = await readLogoFile(f);
+      done({ type: logo.type, data: logo.data });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+  input.click();
+}
+
 function GeneralTab({ data }: { data: AdminData }) {
   const [run, busy] = useMutation();
   const [s, setS] = React.useState<WorkspaceSettings>(data.settings);
@@ -142,6 +162,37 @@ function GeneralTab({ data }: { data: AdminData }) {
       <Section title="Workspace">
         <Row label="Workspace name">
           <Input value={name} onChange={(e) => setName(e.target.value)} className="w-60" aria-label="Workspace name" />
+        </Row>
+      </Section>
+      <Section title="Branding" description="Your organization, for the sign-in page, link previews, title blocks and cover sheets. Leave empty for an unbranded installation.">
+        <Row label="Organization name">
+          <Input value={s.branding.name} onChange={(e) => up("branding", { name: e.target.value })} className="w-72" maxLength={160} placeholder="e.g. Example Engineering Ltd" aria-label="Organization name" />
+        </Row>
+        <Row label="Address" hint="Manufacturer block of new cover sheets (with the name).">
+          <Textarea value={s.branding.address} onChange={(e) => up("branding", { address: e.target.value })} className="w-72" rows={2} maxLength={600} aria-label="Organization address" />
+        </Row>
+        <Row label="Website">
+          <Input value={s.branding.url} onChange={(e) => up("branding", { url: e.target.value })} className="w-72" maxLength={300} placeholder="https://" aria-label="Organization website" />
+        </Row>
+        <Row label="Logo" hint="Default company logo of title block logo cells and cover sheets that have none of their own. PNG, JPEG or SVG.">
+          <span className="flex items-center gap-2">
+            <span className="flex h-12 w-24 items-center justify-center overflow-hidden rounded border border-border bg-white">
+              {s.branding.logo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoDataUrl(s.branding.logo)} alt="" className="max-h-full max-w-full object-contain" />
+              ) : (
+                <span className="text-2xs text-subtle">none</span>
+              )}
+            </span>
+            <Button size="xs" variant="secondary" onClick={() => pickBrandLogo((logo) => up("branding", { logo }))}>
+              Upload
+            </Button>
+            {s.branding.logo && (
+              <Button size="xs" variant="ghost" onClick={() => up("branding", { logo: null })}>
+                Remove
+              </Button>
+            )}
+          </span>
         </Row>
       </Section>
       <Section title="Access & sessions">

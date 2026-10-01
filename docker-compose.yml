@@ -20,6 +20,9 @@ services:
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped
+    environment:
+      # host name in the Caddyfile (set VOLT_DOMAIN in .env next to this file)
+      VOLT_DOMAIN: ${VOLT_DOMAIN:-localhost}
     depends_on:
       volt:
         condition: service_healthy

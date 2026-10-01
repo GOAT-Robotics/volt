@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Switch, Tip } from "@/components/ui/misc";
 import { getPage } from "@/core/ops";
 import type { CoverSheet, Doc, Page, RevisionEntry } from "@/core/model";
-import { coverFromPageTexts, DEFAULT_COVER } from "@/core/render/cover";
+import { coverFromPageTexts, DEFAULT_COVER, newCover } from "@/core/render/cover";
 import { logoDataUrl } from "@/core/logos";
-import { BRAND_LOGO } from "@/core/brand-logo";
+import { brandLogo } from "@/core/brand";
 import { Commit, Row, Section } from "./Inspector";
 import { PICTURE_LIMITS, readLogoFile } from "./logoUpload";
 
@@ -31,7 +31,7 @@ export function PageTypeRow({ page, editable }: { page: Page; editable: boolean 
             s().apply("Make cover sheet", (d) => {
               const p = getPage(d, page.id);
               p.kind = "cover";
-              p.cover = took.length ? cover : structuredClone(DEFAULT_COVER);
+              p.cover = took.length ? cover : newCover();
               if (took.length) p.texts = p.texts.filter((t) => !took.includes(t.id));
             });
             if (took.length) toast.success(`Cover sheet made from the typed text (${cover.fields.length} fields${cover.manufacturer ? ", manufacturer address" : ""}) — undo brings the text back`);
@@ -58,7 +58,7 @@ export function CoverSection({ page, doc, editable }: { page: Page; doc: Doc; ed
   const upd = (label: string, fn: (c: CoverSheet) => void) =>
     s().apply(label, (d) => {
       const p = getPage(d, page.id);
-      p.cover ??= structuredClone(DEFAULT_COVER);
+      p.cover ??= newCover();
       fn(p.cover);
     });
   const pickImage = (what: "image" | "logo" = "image") => {
@@ -95,7 +95,7 @@ export function CoverSection({ page, doc, editable }: { page: Page; doc: Doc; ed
         <Row label="Company logo">
           <div className="flex items-center gap-2">
             <div className="flex h-12 w-20 items-center justify-center overflow-hidden rounded border border-border bg-white">
-              {c.logo === null ? <span className="text-2xs text-subtle">none</span> : <img src={logoDataUrl(c.logo ?? BRAND_LOGO)} alt="" className="max-h-full max-w-full object-contain" />}
+              {c.logo === null || !(c.logo ?? brandLogo()) ? <span className="text-2xs text-subtle">none</span> : <img src={logoDataUrl((c.logo ?? brandLogo())!)} alt="" className="max-h-full max-w-full object-contain" />}
             </div>
             {editable && (
               <>
@@ -105,7 +105,7 @@ export function CoverSection({ page, doc, editable }: { page: Page; doc: Doc; ed
                   </Button>
                 </Tip>
                 {c.logo !== undefined && (
-                  <Tip content="Use the Example Company logo">
+                  <Tip content="Use the organization logo (Administration → General → Branding)">
                     <Button size="xs" variant="ghost" onClick={() => upd("Default company logo", (x) => void delete x.logo)}>
                       Default
                     </Button>

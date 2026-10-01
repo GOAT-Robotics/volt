@@ -1,4 +1,4 @@
-volt.example.com {
+{$VOLT_DOMAIN:localhost} {
     encode zstd gzip
     # largest upload is an 80 MB library archive; anything bigger never reaches the app
     request_body {

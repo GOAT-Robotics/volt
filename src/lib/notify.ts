@@ -24,7 +24,7 @@ export async function notify(userIds: string[], n: { type: NotifyType; title: st
     const base = process.env.AUTH_URL ?? process.env.APP_URL ?? "";
     if (settings.notifications.email && process.env.SES_FROM_EMAIL) {
       const users = await db.user.findMany({ where: { id: { in: ids } } });
-      const ses = new SESv2Client({ region: process.env.AWS_REGION ?? "ap-south-1" });
+      const ses = new SESv2Client({ region: process.env.AWS_REGION ?? "us-east-1" });
       const from = process.env.SES_FROM_EMAIL;
       await Promise.allSettled(
         users.map((u) =>

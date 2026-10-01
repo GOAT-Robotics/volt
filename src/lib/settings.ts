@@ -1,3 +1,5 @@
+import type { TitleBlockLogo } from "@/core/model";
+
 export type ApprovalPolicy = {
   minApprovals: number;
   sequentialDefault: boolean;
@@ -41,6 +43,11 @@ export type WorkspaceSettings = {
    * ("admins": workspace admins only; "owners": project owners too).
    */
   access: { newMemberRole: "none" | "VIEWER" | "DESIGNER"; projectSharing: "admins" | "owners" };
+  /**
+   * Your organization: shown on the sign-in page and link previews, used as the default company
+   * logo of title blocks and cover sheets, and as the manufacturer of new cover sheets.
+   */
+  branding: { name: string; address: string; url: string; logo: TitleBlockLogo | null };
 };
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -72,6 +79,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   linkPreviews: "picture",
   collaboration: { live: true, presence: true },
   access: { newMemberRole: "none", projectSharing: "admins" },
+  branding: { name: "", address: "", url: "", logo: null },
 };
 
 export function parseSettings(s: string | null | undefined): WorkspaceSettings {
@@ -90,5 +98,6 @@ export function parseSettings(s: string | null | undefined): WorkspaceSettings {
     library: { ...DEFAULT_SETTINGS.library, ...(v.library ?? {}) },
     collaboration: { ...DEFAULT_SETTINGS.collaboration, ...(v.collaboration ?? {}) },
     access: { ...DEFAULT_SETTINGS.access, ...(v.access ?? {}) },
+    branding: { ...DEFAULT_SETTINGS.branding, ...(v.branding ?? {}) },
   };
 }

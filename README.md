@@ -1,6 +1,8 @@
 # Volt
 
-A browser-based electrical diagram editor with a complete standard symbol library, an organization-wide component library, project-wide styles, controlled versions, review/approval, digital signatures and a full audit trail. Sign-in is Microsoft Entra ID.
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
+A free, open-source, browser-based electrical diagram editor with a complete standard symbol library, an organization-wide component library, project-wide styles, controlled versions, review/approval, digital signatures and a full audit trail. Sign-in is Microsoft Entra ID.
 
 Volt is a drawing and document-control tool. It does not simulate circuits, lay out PCBs, or certify anything. Its checks look for drawing consistency, not electrical safety.
 
@@ -13,7 +15,7 @@ npm run setup      # installs deps, writes .env with secrets, creates the SQLite
 npm run dev        # http://localhost:3000
 ```
 
-`setup` turns on the **development login** (`AUTH_DEV_LOGIN=true`), so you can sign in without Entra. Sign in as `admin@example.com`, the seeded admin. The seed also creates these accounts, one per role, for trying the workflow:
+`setup` turns on the **development login** (`AUTH_DEV_LOGIN=true`), so you can sign in without Entra. Sign in as the first address in `ADMIN_EMAILS` (`admin@example.com` in `.env.example`), the seeded admin. The seed also creates these accounts (on the admin's email domain), one per role, for trying the workflow:
 
 | email | name | role |
 |---|---|---|
@@ -28,7 +30,7 @@ When you sign in with the dev form, enter the full seeded name. Signing checks t
 
 ```bash
 az login
-npm run entra                               # registers "Volt – Example Company", writes client id/secret/issuer to .env
+npm run entra                               # registers "Volt" (or $VOLT_APP_NAME), writes client id/secret/issuer to .env
 npm run entra -- --url https://volt.example.com   # also adds the production redirect URI
 ```
 
@@ -42,7 +44,7 @@ Guests (B2B) follow the guest policy you set in Administration.
 
 ## Production (Docker)
 
-The production image is built and published by GitHub Actions to GHCR. On the server, log in to GHCR with the supplied read-only `GITHUB_TOKEN`, copy `.env` into `/opt/volt`, and run `docker compose pull && docker compose up -d`.
+GitHub Actions (`.github/workflows/docker.yml`) builds the image and publishes it to GHCR as `ghcr.io/<owner>/<repo>`. On the server, set `VOLT_IMAGE` to that image and `VOLT_DOMAIN` to your host name in `.env`, copy `.env`, `docker-compose.yml` and `Caddyfile` into `/opt/volt`, and run `docker compose pull && docker compose up -d`. Caddy gets the HTTPS certificate for `VOLT_DOMAIN`. To build the image yourself: `docker build -t volt .`
 The standard library, blocks and title blocks install automatically when the container starts.
 
 - Data (SQLite DB + signing key) lives in the host bind directory `/opt/volt/data`, mounted at `/app/data`. Back it up.
@@ -109,7 +111,7 @@ The standard library, blocks and title blocks install automatically when the con
 - **AI element drawing.** New element → *Describe or sketch (AI)*: describe the symbol, draw it on the built-in sketch pad (pen, line, rectangle, ellipse, eraser, undo) or upload a photo / datasheet picture, and OpenAI returns a clean, grid-aligned symbol with numbered pins. Refine it with follow-up instructions, then open it in the element editor. Needs `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`, default `gpt-4.1`) in `.env`; requests go from the server, the key never reaches the browser.
 - **Element editor.** Canvas symbol editor with lines, rectangles, ellipses, arcs, polygons, text, dynamic text and pins; pin table; validation; live previews. A New-element wizard offers templates and SVG import.
 
-**Branding.** The Example Company logo is built in: it fills any title block logo cell that has no uploaded logo, and appears at the top of cover sheets (replace or hide it per cover sheet).
+**Branding.** Administration → General → Branding sets your organization's name, address, website and logo. The logo fills any title block logo cell that has no uploaded logo and appears at the top of cover sheets (replace or hide it per cover sheet); name and address become the manufacturer of new cover sheets; the sign-in page and link previews show them. A fresh installation is unbranded.
 
 **Document control**
 - **Versions.** "Start new version" copies the current version, which stays unchanged. Version labels can be integer, decimal, letter or custom.
@@ -136,3 +138,10 @@ npm run db:studio
 Layout: `src/core` (isomorphic model, QET I/O, rendering to Canvas/SVG/PDF/DXF), `src/editor` (canvas engine + editor UI), `src/library-editor` (symbol editor), `src/app` (Next.js routes/pages/APIs), `src/lib` (auth, permissions, workflow, signing, audit), `prisma` (SQLite schema + seed). `docs/CONTRACT.md` lists the API surface.
 
 Stack: Next.js 16, React 19, Tailwind CSS 4, Prisma 6 + SQLite, Auth.js 5 (Entra ID), pdf-lib, rbush, immer, zustand.
+
+## License
+
+Volt is free software, licensed under the **GNU General Public License v3.0 or later** — see [`LICENSE`](LICENSE). You may use it for free for any purpose, study and change it, and redistribute it, with or without changes. If you distribute it (including as a Docker image), you must make the source code available under the same license and keep the notices.
+
+Volt includes and is partly derived from material of the [QElectroTech](https://qelectrotech.org) project: some algorithms (GPL-2.0-or-later), the standard title blocks and example projects (GPL-2.0-or-later), and the elements collection (CC-BY 3.0, not for training machine-learning models). Volt is not affiliated with the QElectroTech team. Details and the font and npm package licenses are in [`NOTICE.md`](NOTICE.md).
+

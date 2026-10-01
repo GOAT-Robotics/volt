@@ -9,3 +9,7 @@ test-results
 playwright-report
 next-env.d.ts
 *.tsbuildinfo
+
+# local only
+.DS_Store
+Claude outputs/

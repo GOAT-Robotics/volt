@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Volt. Parts of this file re-implement QElectroTech algorithms
+// (Copyright 2006-2026 The QElectroTech Team, GPL-2.0-or-later); see NOTICE.md.
 /**
  * Isomorphic helpers for library elements (used by the API routes, the seed and the symbol editor).
  * No server-only imports here.

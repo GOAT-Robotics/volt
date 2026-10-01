@@ -7,6 +7,7 @@ import { db } from "./db";
 import { parseRoles, rolesAllow, type Action, type Role } from "./roles";
 import { parseSettings, type WorkspaceSettings } from "./settings";
 import { ensureDefaultWorkspace } from "./membership";
+import { setBrand } from "@/core/brand";
 
 export type Ctx = {
   user: { id: string; name: string; email: string; isGuest: boolean; groups: string[] };
@@ -44,10 +45,13 @@ export const getCtx = cache(async (): Promise<Ctx | null> => {
     if (!pm) return null;
     workspace = pm.project.workspace;
   }
+  const settings = parseSettings(workspace.settings);
+  // server-side renders (canonical / release PDFs, previews) draw this workspace's logo
+  setBrand(settings.branding);
   return {
     user: { id: user.id, name: user.name, email: user.email, isGuest: user.isGuest, groups: JSON.parse(user.groups || "[]") },
     workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
-    settings: parseSettings(workspace.settings),
+    settings,
     roles: mem ? parseRoles(mem.roles) : ["GUEST"],
     projectAccess,
     authTime: s.authTime,

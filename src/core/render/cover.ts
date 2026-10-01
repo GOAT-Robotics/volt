@@ -17,7 +17,7 @@ import type { CoverSheet, Doc, Page, Rect, Styles } from "../model";
 import { PathBuilder, type Painter } from "./painter";
 import { fitContain, LOGO_MIME, logoKey, logoSize } from "../logos";
 import { layoutRich } from "../richtext";
-import { BRAND_LOGO } from "../brand-logo";
+import { brand, brandLogo } from "../brand";
 
 type Vars = Record<string, string>;
 type Measure = Painter["measure"];
@@ -35,17 +35,21 @@ export const DEFAULT_COVER: CoverSheet = {
     { label: "Serial number", value: "" },
     { label: "Supply voltage", value: "" },
     { label: "Full load current", value: "" },
-    { label: "Battery", value: "" },
-    { label: "Charger", value: "" },
     { label: "Degree of protection", value: "" },
     { label: "Year of manufacture", value: "" },
     { label: "Applicable standards", value: "IEC 60204-1" },
   ],
-  manufacturer: "Example Company\nSpringfield",
+  manufacturer: "",
   notes: "",
   notice: "© This document and its contents are the property of the manufacturer. Do not copy or disclose without written permission.",
   showRevisions: true,
 };
+
+/** A new cover sheet: the defaults, with the organization's name and address as manufacturer. */
+export function newCover(): CoverSheet {
+  const b = brand();
+  return { ...structuredClone(DEFAULT_COVER), manufacturer: [b.name, b.address].filter((x) => x.trim()).join("\n") };
+}
 
 /** usable area inside the border (between the row/column headers), with a margin */
 export function sheetArea(page: Page, margin = 18): Rect {
@@ -123,7 +127,7 @@ export function drawCoverSheet(pt: Painter, doc: Doc, page: Page, styles: Styles
   pt.begin?.("cover");
 
   // identification band: company logo, then title and subtitle
-  const logo = c.logo === null ? null : (c.logo ?? BRAND_LOGO);
+  const logo = c.logo === null ? null : (c.logo ?? brandLogo());
   let tx = a.x;
   const lnat = logo && logoSize(logo);
   if (logo && lnat && pt.image) {
@@ -289,7 +293,7 @@ export function coverFromPageTexts(page: Page): { cover: CoverSheet; used: strin
   }
   return {
     cover: {
-      ...structuredClone(DEFAULT_COVER),
+      ...newCover(),
       ...(title ? { title } : {}),
       fields: fields.length ? fields.map((f) => (/^name$/i.test(f.label) ? { ...f, label: "Product" } : f)) : structuredClone(DEFAULT_COVER.fields),
       manufacturer: mf.join("\n"),
