@@ -19,6 +19,7 @@ import { FreeTextInspector } from "./FreeTextInspector";
 import { MatingSection } from "./MatingSection";
 import { ReportSection } from "./ReportSection";
 import { TerminalDiagramSection } from "./TerminalDiagramSection";
+import { TerminalSymbolFix } from "./TerminalSymbolFix";
 import { autoLinkReports, isReportDef, looksLikeArrow } from "@/core/reports";
 import { CoverSection, PageTypeRow } from "./CoverInspector";
 import { logoBytes, logoDataUrl, logoSize } from "@/core/logos";
@@ -429,7 +430,7 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
       <XrefSection id={e.id} />
       <MatingSection e={e} page={page} doc={doc} editable={editable} />
       <ReportSection e={e} page={page} doc={doc} editable={editable} />
-      {isTerminalDef(def) && <TerminalSection e={e} doc={doc} />}
+      {isTerminalDef(def) && <TerminalSection e={e} doc={doc} page={page} editable={editable} />}
       {e.group && <BlockSection e={e} page={page} editable={editable} />}
       <Section title="Identity">
         <Row label="Reference">
@@ -804,12 +805,13 @@ function FrameRow({ e, styles, editable, upd }: { e: ElemInst; styles: ReturnTyp
 }
 
 /** Terminal: its strip and number, what it connects to, and a way into the strip editor. */
-function TerminalSection({ e, doc }: { e: ElemInst; doc: Doc }) {
+function TerminalSection({ e, doc, page, editable }: { e: ElemInst; doc: Doc; page: Page; editable: boolean }) {
   const ui = useEditorUI();
   const ref = parseTerminalRef(e.info.label ?? "");
   const row = useMemo(() => collectStrips(doc).find((v) => v.tag === ref.tag)?.rows.find((r) => r.instances.some((x) => x.el === e.id)), [doc, ref.tag, e.id]);
   return (
     <Section title="Terminal">
+      <TerminalSymbolFix e={e} doc={doc} page={page} editable={editable} />
       <Row label="Strip">
         <span className="text-xs">
           {ref.tag || <span className="text-subtle">no reference</span>}
