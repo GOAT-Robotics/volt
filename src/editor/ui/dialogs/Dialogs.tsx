@@ -21,6 +21,7 @@ import { BlockDialog, CreateElementDialog } from "./LibraryDialogs";
 import { WiringDialog } from "./WiringDialog";
 import { TitleBlockEditor } from "./TitleBlockEditor";
 import { WireNumberingDialog } from "./WireNumberingDialog";
+const WireLabelsDialog = dynamic(() => import("./WireLabelsDialog").then((m) => m.WireLabelsDialog), { ssr: false });
 import { DeleteDialog } from "./DeleteDialog";
 import type { Sel } from "@/core/ops";
 import type { DeleteImpact } from "@/core/impact";
@@ -35,6 +36,7 @@ export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?:
       {open("numbering") && <NumberingDialog onClose={onClose} />}
       {open("wiring") && <WiringDialog onClose={onClose} />}
       {open("wireNumbers") && <WireNumberingDialog onClose={onClose} />}
+      {open("wireLabels") && <WireLabelsDialog onClose={onClose} arg={dialog?.arg as { scope?: "selection" | "page" | "all" | "cable" } | undefined} />}
       {open("delete") && <DeleteDialog onClose={onClose} arg={dialog?.arg as { sel: Sel; impact?: DeleteImpact } | undefined} />}
       {open("titleBlock") && <TitleBlockEditor onClose={onClose} arg={dialog?.arg as { template?: string } | undefined} />}
       {open("export") && <ExportDialog onClose={onClose} arg={dialog?.arg as { format?: "bom" } | undefined} />}

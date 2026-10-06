@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { Plus, Trash2, Download } from "lucide-react";
 import { useEditor } from "../../store";
+import { useEditorUI } from "../context";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
@@ -26,6 +27,7 @@ const PRESETS: { label: string; n: number; scheme: CoreScheme; earth: boolean }[
 
 export function WiringDialog({ onClose }: { onClose: () => void }) {
   const doc = useEditor((s) => s.doc);
+  const ui = useEditorUI();
   const editable = useEditor((s) => !s.version || s.version.editable);
   const [ws, setWs] = useState<WiringSettings>(() => wiringOf(doc));
   const [cables, setCables] = useState<(Cable & { origTag?: string })[]>(() => (doc.cables ?? []).map((c) => ({ ...c, origTag: c.tag })));
@@ -241,6 +243,9 @@ export function WiringDialog({ onClose }: { onClose: () => void }) {
             </Button>
             <Button size="sm" variant="ghost" onClick={() => downloadCsv(`${doc.meta.title || "project"} - cable list.csv`, cableListRows({ ...doc, wiring: ws, cables }))}>
               <Download /> Cable list
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => (onClose(), setTimeout(() => ui.openDialog("wireLabels", { scope: "all" }), 50))}>
+              <Download /> Wire labels…
             </Button>
           </div>
           <div className="flex gap-2">

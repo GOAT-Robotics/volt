@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { RotateCw, RotateCcw, FlipHorizontal2, Lock, Unlock, RotateCcw as Reset, Plus, X, Link2, Unlink, ExternalLink, Pencil, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight} from "lucide-react";
+import { RotateCw, RotateCcw, FlipHorizontal2, Lock, Unlock, RotateCcw as Reset, Plus, X, Link2, Unlink, ExternalLink, Pencil, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { useEditor } from "../store";
 import { useEditorUI } from "./context";
@@ -994,6 +994,11 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
               Auto
             </Button>
           </div>
+        </Row>
+        <Row label="Labels">
+          <Button size="xs" variant="secondary" onClick={() => ui.openDialog("wireLabels", { scope: "selection" })}>
+            <Printer /> Print wire labels
+          </Button>
         </Row>
         <Row label="Bus">
           <Switch checked={!!w.bus} disabled={!editable} onCheckedChange={(v) => upd("Bus", (x) => (x.bus = v))} />

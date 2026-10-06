@@ -30,7 +30,8 @@ export type DialogName =
   | "terminals"
   | "wireNumbers"
   | "delete"
-  | "documents";
+  | "documents"
+  | "wireLabels";
 
 export const EditorCtx = createContext<EditorUI | null>(null);
 export function useEditorUI() {
