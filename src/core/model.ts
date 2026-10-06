@@ -445,8 +445,10 @@ export type Page = {
   archived?: boolean;
   revMarker?: string;
   /** generated pages: a cover sheet or a table of contents (drawn from project data) */
-  kind?: "drawing" | "cover" | "contents";
+  kind?: "drawing" | "cover" | "contents" | "terminals";
   cover?: CoverSheet;
+  /** terminal diagram sheet: which strip, and which terminals (1-based positions in strip order; `to` unset = to the end) */
+  terminalDiagram?: { tag: string; from?: number; to?: number; style?: "rail" | "box" };
   qet?: { idx?: number };
 };
 

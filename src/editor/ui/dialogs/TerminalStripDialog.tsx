@@ -5,7 +5,7 @@
  * immediately (undoable); renumbering rewrites the terminals' references on the drawings.
  */
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Crosshair, FileSpreadsheet, FileText, GripVertical, ListOrdered, Plus, SortAsc, Trash2, Download } from "lucide-react";
+import { ArrowDown, ArrowUp, Crosshair, FileSpreadsheet, FileText, GripVertical, ListOrdered, Plus, SortAsc, Trash2, Download, PanelTopOpen, MoveRight, MoveDown, LayoutPanelTop } from "lucide-react";
 import { useEditor } from "../../store";
 import { useEditorUI } from "../context";
 import { runCommand } from "../commands";
@@ -14,14 +14,23 @@ import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Checkbox, Tip } from "@/components/ui/misc";
 import { Commit } from "../Inspector";
-import { mkSel } from "@/core/ops";
+import { mkSel, newElement } from "@/core/ops";
+import { newPage } from "@/core/doc";
+import { insertTerminalDiagram } from "@/core/render/terminal-diagram";
 import { cn, downloadBlob } from "@/lib/utils";
 import type { Doc, TerminalType } from "@/core/model";
 import {
   TERMINAL_TYPES,
   PLAN_COLUMNS,
   addSpare,
+  assignToStrip,
   collectStrips,
+  createStrip,
+  placeTerminalsOnSheets,
+  freeSpot,
+  sheetCapacity,
+  stripSheets,
+  terminalSymbols,
   deleteStrip,
   moveToStrip,
   removeRow,
@@ -49,9 +58,24 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
   const views = useMemo(() => collectStrips(doc), [doc]);
   const [tag, setTag] = useState<string>(() => arg?.tag ?? views.find((x) => x.tag)?.tag ?? views[0]?.tag ?? "");
   const [newTag, setNewTag] = useState("");
+  const [newCount, setNewCount] = useState(10);
+  const pageId = useEditor((s) => s.pageId);
+  const pageTitle = doc.pages.find((p) => p.id === pageId)?.title ?? "";
+  const [symbolId, setSymbolId] = useState<string>("");
+  const [dir, setDir] = useState<"h" | "v">("h");
+  const [assignTo, setAssignTo] = useState("");
+  const [perSheet, setPerSheet] = useState<number | null>(null);
+  const [sheetFilter, setSheetFilter] = useState<string>("all");
   const [renum, setRenum] = useState<{ start: number; step: number; pad: number } | null>(null);
   const [drag, setDrag] = useState<string | null>(null);
   const view = views.find((x) => x.tag === tag) ?? null;
+  const shownRows = useMemo(() => {
+    const rows = view?.rows ?? [];
+    if (sheetFilter === "all") return { rows, filtered: false };
+    if (sheetFilter === "none") return { rows: rows.filter((r) => !r.instances.length), filtered: true };
+    if (!rows.some((r) => r.instances.some((x) => x.pageId === sheetFilter))) return { rows, filtered: false };
+    return { rows: rows.filter((r) => r.instances.some((x) => x.pageId === sheetFilter)), filtered: true };
+  }, [view, sheetFilter]);
   const keys = view?.rows.map((r) => r.key) ?? [];
 
   const apply = (label: string, fn: (d: Doc) => void) => {
@@ -74,6 +98,44 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
     s.setSel(mkSel({ elements: [el] }));
     onClose();
     setTimeout(() => runCommand("zoomSel", ui), 60);
+  };
+  const symbols = useMemo(() => terminalSymbols(doc, tag), [doc, tag]);
+  const symbol = symbols.find((x) => x.id === symbolId) ?? symbols[0];
+  const curPage = doc.pages.find((p) => p.id === pageId);
+  const capacity = curPage && symbol ? sheetCapacity(curPage, symbol, dir) : 20;
+  const per = Math.max(1, perSheet ?? capacity);
+  const toPlace = view?.rows.filter((r) => r.spare && r.num).map((r) => r.num!) ?? [];
+  const sheetsNeeded = Math.ceil(toPlace.length / per);
+  /** draw terminals (row numbers) of this strip from the current sheet on (long strips continue on new sheets), then show them selected */
+  const place = (nums: string[]) => {
+    if (!nums.length || !symbol) return;
+    let res = { ids: [] as string[], pages: [] as string[] };
+    apply(`Place ${nums.length} terminal${nums.length === 1 ? "" : "s"} of ${tag}`, (d) => {
+      res = placeTerminalsOnSheets(d, pageId, tag, nums, symbol, { dir, perSheet: per, newElement, newPage });
+    });
+    const { ids, pages } = res;
+    if (!ids.length) return;
+    const first = ids.slice(0, Math.min(per, ids.length));
+    const st = useEditor.getState();
+    const firstTitle = st.doc.pages.find((p) => p.id === pages[0])?.title ?? pageTitle;
+    const newSheets = pages.filter((p) => p !== pageId).length;
+    if (pages[0] !== st.pageId) st.setPage(pages[0]);
+    useEditor.getState().setSel(mkSel({ elements: first }));
+    ui.toast(
+      `${ids.length} terminal${ids.length === 1 ? "" : "s"} ${tag}${view?.sep ?? ":"}${nums[0]}${nums.length > 1 ? `…${nums[nums.length - 1]}` : ""} placed${pages[0] === pageId ? ` on “${firstTitle}”` : ""}${newSheets ? `${pages[0] === pageId ? " and" : " on"} ${newSheets} new sheet${newSheets === 1 ? "" : "s"}${pages[0] === pageId ? " after it" : ` (“${pageTitle}” is full)`}` : ""} — drag them into position and wire them`,
+      { undo: true },
+    );
+    onClose();
+    setTimeout(() => runCommand("zoomSel", ui), 200);
+  };
+  /** create / re-split the generated terminal diagram sheet(s) of this strip and show the first */
+  const diagramSheet = () => {
+    let ids: string[] = [];
+    apply(`Terminal diagram ${tag}`, (d) => void (ids = insertTerminalDiagram(d, tag, { afterPageId: pageId, newPage })));
+    if (!ids.length) return;
+    useEditor.getState().setPage(ids[0]);
+    ui.toast(`Terminal diagram of ${tag} on ${ids.length} sheet${ids.length === 1 ? "" : "s"} — it follows the schematic; click a terminal to go to its symbol`);
+    onClose();
   };
   const title = `${v?.projectName ?? doc.meta.title}${v ? ` — v${v.label}` : ""}`;
   const exportPlan = async (fmt: "xlsx" | "csv" | "pdf", all: boolean) => {
@@ -106,10 +168,13 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
           {/* strips */}
           <aside className="flex w-48 shrink-0 flex-col border-r border-border">
             <div className="flex-1 overflow-auto p-2">
-              {views.length === 0 && <p className="p-2 text-2xs text-subtle">No terminals in this project yet. Place terminal symbols (Library → terminals) and give them a reference like X1.</p>}
+              {views.length === 0 && <p className="p-2 text-2xs text-subtle">No terminals in this project yet. Create a strip below (name + number of terminals), then place it on the drawing — or place terminal symbols from the library and give them references like X1:1.</p>}
               {views.map((x) => (
-                <button key={x.tag || "_"} onClick={() => (setTag(x.tag), setRenum(null))} className={cn("flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs", x.tag === tag ? "bg-accent-soft font-medium text-accent" : "hover:bg-hover")}>
-                  <span className="truncate">{x.tag || <i className="text-subtle">No reference</i>}</span>
+                <button key={x.tag || "_"} onClick={() => (setTag(x.tag), setRenum(null), setSheetFilter("all"))} className={cn("flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs", x.tag === tag ? "bg-accent-soft font-medium text-accent" : "hover:bg-hover")}>
+                  <span className="min-w-0 truncate">
+                    {x.tag || <i className="text-subtle">No strip</i>}
+                    {stripSheets(x).length > 0 && <span className="ml-1 text-[10px] font-normal text-subtle">sh {stripSheets(x).map((q) => q.sheet).join(", ")}</span>}
+                  </span>
                   <span className="tabular text-2xs text-subtle">
                     {x.rows.length}
                     {x.rows.some((r) => !r.num) ? " · ?" : ""}
@@ -125,12 +190,13 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
                   const t = newTag.trim();
                   if (!t) return;
                   if (views.some((x) => x.tag === t)) return ui.toast(`Strip ${t} already exists`, { tone: "error" });
-                  apply("New terminal strip", (d) => void (d.terminalStrips = [...(d.terminalStrips ?? []), { id: uid(), tag: t, sep: ":", rows: [] }]));
+                  apply("New terminal strip", (d) => createStrip(d, t, newCount));
                   setTag(t);
                   setNewTag("");
                 }}
               >
                 <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="New strip, e.g. X2" className="h-7 text-2xs" onKeyDown={(e) => e.stopPropagation()} aria-label="New strip name" />
+                <Input type="number" min={0} max={500} value={newCount} onChange={(e) => setNewCount(Math.max(0, Math.min(500, Number(e.target.value) || 0)))} className="h-7 w-12 px-1 text-2xs" onKeyDown={(e) => e.stopPropagation()} aria-label="Number of terminals" title="Number of terminals" />
                 <Button size="icon-sm" variant="secondary" type="submit" aria-label="Add strip">
                   <Plus />
                 </Button>
@@ -170,7 +236,33 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
                     </Field>
                   </div>
                 ) : (
-                  <p className="border-b border-border p-3 text-2xs text-muted">These terminals have no reference yet. Move each one to a strip (last column); it gets that strip&apos;s next number.</p>
+                  <div className="space-y-2 border-b border-border p-3 text-2xs text-muted">
+                    <p>These terminals are not in a strip: no reference, or only a number (“12”). Put them all into a strip — bare numbers are kept when free — or move them one by one (last column).</p>
+                    {editable && view.rows.length > 0 && (
+                      <form
+                        className="flex flex-wrap items-center gap-2"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const t = assignTo.trim();
+                          if (!t) return;
+                          let n = 0;
+                          apply(`Put ${view.rows.length} terminals into ${t}`, (d) => void (n = assignToStrip(d, "", view.rows.map((r) => r.key), t)));
+                          if (n) (setTag(t), ui.toast(`${n} terminal${n === 1 ? "" : "s"} now in strip ${t}`, { undo: true }));
+                        }}
+                      >
+                        Put all {view.rows.length} into strip
+                        <Input value={assignTo} onChange={(e) => setAssignTo(e.target.value)} placeholder="X1" list="volt-strip-tags" className="h-7 w-24 text-2xs" onKeyDown={(e) => e.stopPropagation()} aria-label="Strip" />
+                        <datalist id="volt-strip-tags">
+                          {others.map((o) => (
+                            <option key={o.tag} value={o.tag} />
+                          ))}
+                        </datalist>
+                        <Button size="xs" variant="primary" type="submit" disabled={!assignTo.trim()}>
+                          Put into strip
+                        </Button>
+                      </form>
+                    )}
+                  </div>
                 )}
 
                 {/* toolbar */}
@@ -189,6 +281,9 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
                       </Button>
                       <Button size="xs" variant="ghost" onClick={() => apply("Add spare terminal", (d) => void addSpare(d, tag, undefined, keys))}>
                         <Plus /> Spare terminal
+                      </Button>
+                      <Button size="xs" variant="primary" onClick={diagramSheet} title="A generated sheet that draws this strip as a box of terminals with bridges and what each side connects to — always up to date with the schematic">
+                        <LayoutPanelTop /> {doc.pages.some((p) => p.kind === "terminals" && p.terminalDiagram?.tag === tag) ? "Update diagram sheet" : "Terminal diagram sheet"}
                       </Button>
                     </>
                   )}
@@ -237,6 +332,56 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
                   </div>
                 )}
 
+                {view.tag && editable && view.rows.some((r) => r.spare) && (
+                  <div className="flex flex-wrap items-center gap-2 border-b border-border bg-accent-soft/60 px-3 py-2 text-2xs">
+                    <PanelTopOpen className="size-3.5 text-accent" />
+                    <span>
+                      <b>{view.rows.filter((r) => r.spare).length}</b> terminal{view.rows.filter((r) => r.spare).length === 1 ? " is" : "s are"} not on the drawing yet. Place them on “{pageTitle}” as
+                    </span>
+                    <NativeSelect value={symbol?.id ?? ""} onChange={(e) => setSymbolId(e.target.value)} className="h-6 w-52 text-2xs" aria-label="Terminal symbol">
+                      {symbols.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.names.en ?? d.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                    <div className="flex rounded-md border border-border bg-panel p-0.5">
+                      <button className={cn("flex items-center gap-1 rounded px-1.5 py-0.5", dir === "h" && "bg-hover font-medium")} onClick={() => setDir("h")} title="Side by side (left to right)">
+                        <MoveRight className="size-3" /> in a row
+                      </button>
+                      <button className={cn("flex items-center gap-1 rounded px-1.5 py-0.5", dir === "v" && "bg-hover font-medium")} onClick={() => setDir("v")} title="One under the other">
+                        <MoveDown className="size-3" /> in a column
+                      </button>
+                    </div>
+                    <label className="flex items-center gap-1" title={`About ${capacity} fit across this sheet`}>
+                      max
+                      <Input type="number" min={1} max={500} value={per} onChange={(e) => setPerSheet(Math.max(1, Number(e.target.value) || 1))} className="h-6 w-14 text-2xs" onKeyDown={(e) => e.stopPropagation()} aria-label="Terminals per sheet" />
+                      per sheet
+                    </label>
+                    <Button size="xs" variant="primary" onClick={() => place(toPlace)}>
+                      Place {toPlace.length} on drawing{sheetsNeeded > 1 ? ` (${sheetsNeeded} sheets)` : ""}
+                    </Button>
+                    <span className="text-subtle">
+                      {curPage && symbol && !freeSpot(doc, curPage, symbol, Math.min(per, toPlace.length), dir) ? `“${pageTitle}” has no free room: they go on ${sheetsNeeded} new sheet${sheetsNeeded === 1 ? "" : "s"} inserted after it. ` : sheetsNeeded > 1 ? `First ${per} on “${pageTitle}”, the rest on ${sheetsNeeded - 1} new sheet${sheetsNeeded === 2 ? "" : "s"} inserted after it. ` : ""}Or use ⊕ on a row for one terminal; rows you want to keep as undrawn spares can stay.
+                    </span>
+                  </div>
+                )}
+
+                {view.rows.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 border-b border-border px-3 py-1.5 text-2xs">
+                    <span className="mr-1 text-subtle">Sheets:</span>
+                    {[
+                      { id: "all", label: `All (${view.rows.length})` },
+                      ...stripSheets(view).map((x) => ({ id: x.pageId, label: `${x.sheet} · ${doc.pages.find((p) => p.id === x.pageId)?.title ?? ""} (${x.count})` })),
+                      ...(view.rows.some((r) => !r.instances.length) ? [{ id: "none", label: `Not drawn (${view.rows.filter((r) => !r.instances.length).length})` }] : []),
+                    ].map((c) => (
+                      <button key={c.id} onClick={() => setSheetFilter(c.id)} className={cn("max-w-56 truncate rounded-full border px-2 py-0.5", (sheetFilter === c.id || (c.id === "all" && !shownRows.filtered)) ? "border-accent bg-accent-soft text-accent" : "border-border hover:bg-hover")}>
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* table */}
                 <div className="min-h-0 flex-1 overflow-auto">
                   <table className="w-full text-2xs">
@@ -256,7 +401,9 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
                       </tr>
                     </thead>
                     <tbody>
-                      {view.rows.map((r, i) => (
+                      {shownRows.rows.map((r) => {
+                        const i = keys.indexOf(r.key);
+                        return (
                         <Row
                           key={r.key}
                           r={r}
@@ -274,8 +421,10 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
                           move={(d) => move(i, i + d)}
                           apply={apply}
                           goTo={goTo}
+                          place={place}
                         />
-                      ))}
+                        );
+                      })}
                       {!view.rows.length && (
                         <tr>
                           <td colSpan={11} className="px-3 py-6 text-center text-subtle">
@@ -331,7 +480,9 @@ function Row({
   move,
   apply,
   goTo,
+  place,
 }: {
+  place: (nums: string[]) => void;
   r: TerminalRowView;
   i: number;
   view: StripView;
@@ -399,7 +550,7 @@ function Row({
           </NativeSelect>
           {TYPE_TONE[r.type] && <span className={cn("rounded px-1 text-[9px] font-semibold", TYPE_TONE[r.type])}>{TERMINAL_TYPES.find((t) => t.id === r.type)!.short}</span>}
         </div>
-        {r.spare ? <span className="text-[10px] text-subtle">spare · not drawn</span> : <span className="block truncate text-[10px] text-subtle" title={r.symbol}>{r.symbol}</span>}
+        {r.spare ? <span className="text-[10px] text-subtle">not drawn (spare)</span> : <span className="block truncate text-[10px] text-subtle" title={r.symbol}>{r.symbol}</span>}
       </td>
       <td className="px-1 py-1">
         <Commit value={r.row?.level ?? ""} type="number" min={1} max={4} disabled={!rowEditable} className="h-6 w-11 text-2xs" aria-label="Level" onCommit={(x) => set("Terminal level", { level: Number(x) > 0 ? Number(x) : undefined })} />
@@ -444,6 +595,13 @@ function Row({
                 </option>
               ))}
             </NativeSelect>
+          )}
+          {editable && r.spare && num && (
+            <Tip content="Place this terminal on the drawing">
+              <Button size="icon-sm" variant="ghost" aria-label="Place on drawing" onClick={() => place([num])}>
+                <PanelTopOpen />
+              </Button>
+            </Tip>
           )}
           {editable && r.spare && num && (
             <Button size="icon-sm" variant="ghost" aria-label="Remove spare" onClick={() => apply("Remove spare terminal", (d) => removeRow(d, tag, num))}>

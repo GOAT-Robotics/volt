@@ -1,3 +1,4 @@
+import { isTerminalDef } from "./terminals";
 import type { Doc, ElemInst, ElementDef, NumberingRule, Page } from "./model";
 
 export type RefChange = { pageId: string; elId: string; from: string; to: string };
@@ -98,6 +99,8 @@ export function duplicateRefs(doc: Doc): Map<string, { pageId: string; elId: str
       const def = doc.defs[e.defId];
       // master/slave cross references legitimately share a label
       if (def && (def.linkType === "slave" || def.linkType === "next_report" || def.linkType === "previous_report")) continue;
+      // a terminal may be drawn several times (schematic, cabinet view…): equal references are the same terminal
+      if (isTerminalDef(def)) continue;
       const arr = m.get(r) ?? [];
       arr.push({ pageId: p.id, elId: e.id });
       m.set(r, arr);

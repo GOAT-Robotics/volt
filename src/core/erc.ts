@@ -443,7 +443,7 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
     if (!def || isJunctionEl(def) || !def.pins.length || page.kind === "cover" || page.kind === "contents") continue;
     if (isReport(def)) {
       if (!e.links?.length || !e.links.some((l) => idx.has(l)))
-        onEl({ level: "error", code: "erc.reportOpen", category: "connection", message: `Folio report arrow${e.info.label ? ` ${e.info.label}` : ""} on "${page.title}" is not linked to a counterpart — the conductor ends here`, suggestion: "Link the report arrow to its continuation on the other sheet.", ids: [id] }, id);
+        onEl({ level: "error", code: "erc.reportOpen", category: "connection", message: `Folio report arrow${e.info.label ? ` ${e.info.label}` : ""} on "${page.title}" is not linked to a counterpart — the conductor ends here`, suggestion: "Give the going and the coming arrow the same reference (they link automatically), or pick the counterpart in the inspector under Folio report.", ids: [id] }, id);
       continue;
     }
     const wired = def.pins.filter((p) => netOfPin.has(`${id}/${p.id}`));

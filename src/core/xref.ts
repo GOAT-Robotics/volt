@@ -15,9 +15,10 @@ import type { Doc, ElemInst, Page, Pt, Rect, Styles } from "./model";
 import { docStyles, elementBounds, layoutElementTexts, pageGeometry, textBounds, wireTexts } from "./render/scene";
 import { symbolFor } from "./render/symbol";
 import { pointAlong, unionRect } from "./geometry";
+import { terminalDiagramLayout } from "./render/terminal-diagram";
 import type { Painter } from "./render/painter";
 
-export type XrefKind = "component" | "wire" | "report" | "link";
+export type XrefKind = "component" | "wire" | "report" | "link" | "terminal";
 
 export type Occurrence = {
   idx: number;
@@ -84,6 +85,19 @@ export function buildXref(doc: Doc, measure: Painter["measure"], styles: Styles 
       byElement.set(e.id, i);
       if (label && !report) {
         const k = label.toLowerCase();
+        const prev = byLabel.get(k);
+        if (prev === undefined) byLabel.set(k, i);
+        else dsu.union(prev, i);
+      }
+    }
+    // terminal diagram sheets: each terminal cell links to the terminal's symbol(s) on the schematic
+    if (page.kind === "terminals") {
+      const L = terminalDiagramLayout(doc, page, styles);
+      for (const c of L.cells) {
+        if (!c.row.num) continue;
+        const i = dsu.add();
+        occ.push({ idx: i, kind: "terminal", text: c.ref, pageId: page.id, id: `td:${page.id}:${c.row.key}`, rect: c.rect, hit: [c.rect], at: { x: c.cx, y: c.rect.y + c.rect.h / 2 }, group: -1 });
+        const k = c.ref.toLowerCase();
         const prev = byLabel.get(k);
         if (prev === undefined) byLabel.set(k, i);
         else dsu.union(prev, i);

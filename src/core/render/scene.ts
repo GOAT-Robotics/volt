@@ -2,6 +2,8 @@ import { COMPONENT_INFO } from "../model";
 import { layoutRich, type RichLayout } from "../richtext";
 import { drawContents, drawCoverSheet } from "./cover";
 import { mateLabel } from "../mating";
+import { isReportDef, reportTarget } from "../reports";
+import { drawTerminalDiagram } from "./terminal-diagram";
 import { brandLogo } from "../brand";
 import type { ComponentFrame, Doc, ElemInst, ElementDef, FreeText, Junction, Page, PinDef, PlacedText, Pt, Rect, Styles, TextStyle, TitleBlockTemplate, Wire } from "../model";
 import { effectiveText, projectStyles } from "../styles";
@@ -504,6 +506,7 @@ export function drawPage(pt: Painter, o: DrawOpts) {
   // generated sheets
   if (page.kind === "cover") drawCoverSheet(pt, doc, page, styles, titleVars(o), measure);
   else if (page.kind === "contents") drawContents(pt, doc, page, styles, measure);
+  else if (page.kind === "terminals") drawTerminalDiagram(pt, doc, page, styles, measure);
 
   pt.begin?.("shapes");
   for (const s of page.shapes) {
@@ -610,6 +613,14 @@ export function drawPage(pt: Painter, o: DrawOpts) {
       if (!ml) continue;
       pt.text({ text: ml.text, x: ml.x, y: ml.y, size: ml.size, font: ml.font, italic: true, color: o.tint?.get(e.id) ?? "#6b7280", baseline: "top", alpha: o.alpha });
     }
+  // folio report arrows: where the conductor continues ("5-3B")
+  if (lod > 0.35)
+    for (const e of page.elements) {
+      if (!e.links?.length || e.hidden) continue;
+      const def = doc.defs[e.defId];
+      const rl = def && isReportDef(def) ? reportLabelLayout(doc, e, def, styles, measure) : null;
+      if (rl) pt.text({ text: rl.text, x: rl.x, y: rl.y, size: rl.size, font: rl.font, color: o.tint?.get(e.id) ?? "#374151", baseline: "top", alpha: o.alpha });
+    }
   pt.end?.();
 
   // free texts
@@ -659,6 +670,29 @@ export function mateLabelLayout(doc: Doc, e: ElemInst, def: ElementDef, page: Pa
   const h = size * st.lineHeight;
   const p = e.mate.labelPos ? { x: e.x + e.mate.labelPos.x, y: e.y + e.mate.labelPos.y } : { x: b.x, y: b.y + b.h + 2 };
   return { text, x: p.x, y: p.y, w, h, size, font: st.font };
+}
+
+/** "5-3B" next to a linked report arrow, on the side away from its connection point */
+export function reportLabelLayout(doc: Doc, e: ElemInst, def: ElementDef, styles: Styles, measure: Painter["measure"]): { text: string; x: number; y: number; w: number; h: number; size: number; font: string } | null {
+  const text = reportTarget(doc, e);
+  if (!text) return null;
+  const b = elementBounds(e, def);
+  const st = styles.text.componentName;
+  const size = st.size * PT * 0.9;
+  const w = measure(text, size, st.font, st.weight);
+  const h = size * st.lineHeight;
+  const pin = def.pins[0] ? toScene(e, def.pins[0]) : { x: b.x, y: b.y + b.h / 2 };
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  let x: number, y: number;
+  if (Math.abs(pin.x - cx) >= Math.abs(pin.y - cy)) {
+    // horizontal arrow: text past the tip
+    x = pin.x < cx ? b.x + b.w + 2 : b.x - w - 2;
+    y = cy - h / 2;
+  } else {
+    x = cx - w / 2;
+    y = pin.y < cy ? b.y + b.h + 1 : b.y - h - 1;
+  }
+  return { text, x, y, w, h, size, font: st.font };
 }
 
 export const DEFAULT_FRAME: ComponentFrame = { show: false, color: "#111827", width: 0.8, dash: "dashed", padding: 4 };

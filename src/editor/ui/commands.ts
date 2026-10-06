@@ -1,4 +1,7 @@
 "use client";
+import { autoLinkReports } from "@/core/reports";
+import { insertTerminalDiagram } from "@/core/render/terminal-diagram";
+import { collectStrips } from "@/core/terminals";
 import { applyRefChanges, deleteImpact, needsConfirmation, planCloseGaps } from "@/core/impact";
 import { applyWireNumbers, planWireNumbers } from "@/core/wirenumber";
 import { closeGapsDefault, performDelete } from "./dialogs/DeleteDialog";
@@ -463,7 +466,41 @@ export const COMMANDS: Command[] = [
       ui.toast(`${n} reference${n === 1 ? "" : "s"} renumbered`, { undo: true });
     },
   },
+  {
+    id: "linkReports",
+    label: "Link off-page arrows (folio reports) with the same reference",
+    section: "Project",
+    enabled: editable,
+    run: (ui, s) => {
+      let n = 0;
+      s.apply("Link folio reports", (d) => void (n = autoLinkReports(d)));
+      ui.toast(n ? `${n} arrow pair${n === 1 ? "" : "s"} linked` : "No unlinked going / coming arrows share a reference", n ? { undo: true } : undefined);
+    },
+  },
   { id: "wiring", label: "Wiring & cables… (colors, cross-sections, cables)", section: "Project", run: (ui) => ui.openDialog("wiring") },
+  {
+    id: "terminalDiagrams",
+    label: "Terminal diagram sheets (all strips, generated from the schematic)",
+    section: "Page",
+    enabled: editable,
+    run: (ui, s) => {
+      const tags = collectStrips(s.doc).map((v) => v.tag).filter(Boolean);
+      if (!tags.length) return ui.toast("No terminal strips yet — give terminals references like X1:1, or create a strip in Terminal strips…");
+      let first = "";
+      let n = 0;
+      s.apply("Terminal diagram sheets", (d) => {
+        let after = s.pageId;
+        for (const t of tags) {
+          const ids = insertTerminalDiagram(d, t, { afterPageId: after, newPage });
+          first ||= ids[0];
+          after = ids[ids.length - 1] ?? after;
+          n += ids.length;
+        }
+      });
+      if (first) s.setPage(first);
+      ui.toast(`${tags.length} strip${tags.length === 1 ? "" : "s"} on ${n} terminal diagram sheet${n === 1 ? "" : "s"}`, { undo: true });
+    },
+  },
   { id: "terminals", label: "Terminal strips… (order, numbers, bridges, terminal plan)", section: "Project", run: (ui) => ui.openDialog("terminals") },
   { id: "projectProps", label: "Project properties…", section: "Project", run: (ui) => ui.openDialog("projectProps") },
   { id: "export", label: "Export…", section: "Project", keys: "⌘E", enabled: (s) => s.version?.canExport ?? true, run: (ui) => ui.openDialog("export") },

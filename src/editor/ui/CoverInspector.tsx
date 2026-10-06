@@ -7,6 +7,7 @@ import { NativeSelect, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch, Tip } from "@/components/ui/misc";
 import { getPage } from "@/core/ops";
+import { collectStrips } from "@/core/terminals";
 import type { CoverSheet, Doc, Page, RevisionEntry } from "@/core/model";
 import { coverFromPageTexts, DEFAULT_COVER, newCover } from "@/core/render/cover";
 import { logoDataUrl } from "@/core/logos";
@@ -41,12 +42,14 @@ export function PageTypeRow({ page, editable }: { page: Page; editable: boolean 
             const p = getPage(d, page.id);
             if (kind === "drawing") delete p.kind;
             else p.kind = kind;
+            if (kind === "terminals" && !p.terminalDiagram) p.terminalDiagram = { tag: collectStrips(d).find((v) => v.tag)?.tag ?? "" };
           });
         }}
       >
         <option value="drawing">Drawing</option>
         <option value="cover">Cover sheet</option>
         <option value="contents">Table of contents</option>
+        <option value="terminals">Terminal diagram</option>
       </NativeSelect>
     </Row>
   );

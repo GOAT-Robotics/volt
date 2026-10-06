@@ -17,6 +17,9 @@ import { StylePicker } from "./StylePicker";
 import { TitleBlockLogos } from "./TitleBlockLogos";
 import { FreeTextInspector } from "./FreeTextInspector";
 import { MatingSection } from "./MatingSection";
+import { ReportSection } from "./ReportSection";
+import { TerminalDiagramSection } from "./TerminalDiagramSection";
+import { autoLinkReports, isReportDef, looksLikeArrow } from "@/core/reports";
 import { CoverSection, PageTypeRow } from "./CoverInspector";
 import { logoBytes, logoDataUrl, logoSize } from "@/core/logos";
 import { PICTURE_LIMITS, readLogoFile } from "./logoUpload";
@@ -215,6 +218,7 @@ function PageInspector({ page, doc, editable }: { page: Page; doc: Doc; editable
         </Button>
       </Section>
       {page.kind === "cover" && <CoverSection page={page} doc={doc} editable={editable} />}
+      {page.kind === "terminals" && <TerminalDiagramSection page={page} doc={doc} editable={editable} />}
       <Section title="Title block">
         <Row label="Show">
           <Switch checked={page.titleBlock.show} disabled={!editable} onCheckedChange={(v) => upd("Toggle title block", (p) => (p.titleBlock.show = v))} />
@@ -424,6 +428,7 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
       </div>
       <XrefSection id={e.id} />
       <MatingSection e={e} page={page} doc={doc} editable={editable} />
+      <ReportSection e={e} page={page} doc={doc} editable={editable} />
       {isTerminalDef(def) && <TerminalSection e={e} doc={doc} />}
       {e.group && <BlockSection e={e} page={page} editable={editable} />}
       <Section title="Identity">
@@ -435,8 +440,11 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
               onCommit={(v) => {
                 const old = (e.info.label ?? "").trim();
                 // the device's other parts (contacts, other representations) carry the same reference: rename them too
-                const others = old ? doc.pages.flatMap((p) => p.elements.filter((x) => x.id !== e.id && (x.info.label ?? "").trim() === old && !doc.defs[x.defId]?.linkType?.endsWith("_report"))) : [];
-                const clash = v.trim() && v.trim() !== old && doc.pages.some((p) => p.elements.some((x) => (x.info.label ?? "").trim() === v.trim() && x.id !== e.id && !others.includes(x)));
+                // folio report arrows share their reference with the arrow on the other sheet (that is how they link)
+                const report = isReportDef(def);
+                const others = old && !report ? doc.pages.flatMap((p) => p.elements.filter((x) => x.id !== e.id && (x.info.label ?? "").trim() === old && !isReportDef(doc.defs[x.defId]))) : [];
+                const clash = !report && v.trim() && v.trim() !== old && doc.pages.some((p) => p.elements.some((x) => (x.info.label ?? "").trim() === v.trim() && x.id !== e.id && !others.includes(x) && !isReportDef(doc.defs[x.defId]) && !(isTerminalDef(def) && isTerminalDef(doc.defs[x.defId]))));
+                let linkedNow = 0;
                 const ids = new Set(others.map((x) => x.id));
                 s().apply("Edit reference", (d) => {
                   for (const p of d.pages)
@@ -444,9 +452,11 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
                       if (x.id === e.id) ((x.info.label = v), (x.refLocked = true));
                       else if (ids.has(x.id)) x.info.label = v;
                     }
+                  if (report && v.trim()) linkedNow = autoLinkReports(d, v.trim());
                 });
+                if (linkedNow) ui.toast(`Linked to the arrow${linkedNow === 1 ? "" : "s"} with reference ${v.trim()} on the other sheet${linkedNow === 1 ? "" : "s"}`, { undo: true });
                 if (others.length) ui.toast(`Also renamed ${others.length} other part${others.length === 1 ? "" : "s"} of ${old} (contacts / other sheets)`, { undo: true });
-                if (clash) ui.toast(`${v.trim()} is already used by another component`, { tone: "error" });
+                if (clash) ui.toast(looksLikeArrow(def) ? `${v.trim()} is already used — to repeat a signal name on off-page arrows, mark this symbol as a going / coming arrow (Off-page arrow, above)` : `${v.trim()} is already used by another component`, { tone: "error" });
               }}
             />
             <Tip content={e.refLocked ? "Reference locked — renumbering keeps it" : "Reference follows automatic numbering"}>
@@ -1344,7 +1354,7 @@ function XrefSection({ id }: { id: string }) {
               onClick={() => ui.engine.current?.goToOccurrence(q, true)}
               className={cn("flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-2xs", q.idx === info.o.idx ? "bg-accent-soft text-accent" : "hover:bg-hover")}
             >
-              <span className="w-12 shrink-0 text-subtle">{q.kind === "wire" ? "wire" : q.kind === "report" ? "report" : q.kind === "link" ? "linked" : "part"}</span>
+              <span className="w-12 shrink-0 text-subtle">{q.kind === "wire" ? "wire" : q.kind === "report" ? "report" : q.kind === "link" ? "linked" : q.kind === "terminal" ? "diagram" : "part"}</span>
               <span className="min-w-0 flex-1 truncate">{describe(doc, q)}</span>
               {q.idx === info.o.idx && <span className="text-subtle">here</span>}
             </button>

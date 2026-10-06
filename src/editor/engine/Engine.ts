@@ -661,7 +661,7 @@ export class Engine {
     }
     // select tool — labels are links: ⌘/Ctrl-click (or plain click on read-only versions) follows them
     const link = this.linkAt(wp);
-    if (link && (e.metaKey || e.ctrlKey || !this.editable)) {
+    if (link && (e.metaKey || e.ctrlKey || !this.editable || link.kind === "terminal")) {
       this.follow(link);
       return;
     }
@@ -801,7 +801,7 @@ export class Engine {
       return;
     }
     const lk = this.linkAt(wp);
-    const modHeld = e.metaKey || e.ctrlKey || !this.editable;
+    const modHeld = e.metaKey || e.ctrlKey || !this.editable || lk?.kind === "terminal";
     if (lk !== this.hoverLink || modHeld !== this.hoverMod) {
       this.hoverLink = lk;
       this.hoverMod = modHeld;
@@ -1547,7 +1547,7 @@ export class Engine {
     }
     const sel = emptySel();
     if (o.kind === "wire") sel.wires.push(o.id);
-    else sel.elements.push(o.id);
+    else if (o.kind !== "terminal") sel.elements.push(o.id);
     if (s.pageId !== o.pageId) {
       s.setPage(o.pageId);
       this.pendingFocus = { at: o.at };
