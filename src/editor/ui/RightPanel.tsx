@@ -22,7 +22,7 @@ export function RightPanel() {
     { id: "inspector", icon: <SlidersHorizontal />, label: "Properties" },
     { id: "review", icon: <MessageSquare />, label: "Comments", badge: comments },
     { id: "validate", icon: <ShieldCheck />, label: "Checks" },
-    { id: "history", icon: <History />, label: "History & versions" },
+    { id: "history", icon: <History />, label: "Version control" },
   ] as const;
   return (
     <div className="flex shrink-0">

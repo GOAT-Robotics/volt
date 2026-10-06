@@ -23,6 +23,16 @@ export function diffDocs(A: Doc, B: Doc): DocDiff {
   if (pd.length) changes.push({ kind: "changed", area: "project", label: "Project properties", details: pd });
   if (!same(A.styles, B.styles) || !same(A.baseStyles, B.baseStyles)) changes.push({ kind: "changed", area: "style", label: "Project styles", details: diffStyles(A, B) });
   if (!same(A.numbering, B.numbering)) changes.push({ kind: "changed", area: "project", label: "Numbering rules" });
+  if (!same(A.wiring, B.wiring)) changes.push({ kind: "changed", area: "project", label: "Wiring settings" });
+  if (!same(A.wireNumbering, B.wireNumbering)) changes.push({ kind: "changed", area: "project", label: "Wire numbering scheme" });
+  if (!same(A.cables, B.cables)) {
+    const ca = new Map((A.cables ?? []).map((c) => [c.tag, c])), cb = new Map((B.cables ?? []).map((c) => [c.tag, c]));
+    for (const [t] of ca) if (!cb.has(t)) changes.push({ kind: "removed", area: "project", label: `Cable ${t}` });
+    for (const [t, c] of cb) if (!ca.has(t)) changes.push({ kind: "added", area: "project", label: `Cable ${t}` });
+      else if (!same(ca.get(t), c)) changes.push({ kind: "changed", area: "project", label: `Cable ${t}` });
+  }
+  if (!same(A.terminalStrips, B.terminalStrips)) changes.push({ kind: "changed", area: "project", label: "Terminal strips" });
+  if (!same(A.revisions, B.revisions)) changes.push({ kind: "changed", area: "project", label: "Revision history" });
 
   for (const id of new Set([...Object.keys(A.defs), ...Object.keys(B.defs)])) {
     const a = A.defs[id], b = B.defs[id];
@@ -116,6 +126,7 @@ function diffPage(A: Doc, B: Doc, a: Page, b: Page, changes: Change[], tintA: Ma
     const det: string[] = [];
     if (!same(o.a, w.a) || !same(o.b, w.b)) det.push("connection changed");
     if ((o.label ?? "") !== (w.label ?? "")) det.push(`label: ${o.label ?? "∅"} → ${w.label ?? "∅"}`);
+    for (const k of ["fn", "insulation", "section", "cable", "core", "vclass"] as const) if ((o[k] ?? "") !== (w[k] ?? "")) det.push(`${k === "fn" ? "function" : k === "vclass" ? "class" : k}: ${o[k] ?? "∅"} → ${w[k] ?? "∅"}`);
     if (!same(o.override, w.override) || o.bus !== w.bus) det.push("style");
     const geo = !same(o.pts, w.pts);
     if (det.length) {

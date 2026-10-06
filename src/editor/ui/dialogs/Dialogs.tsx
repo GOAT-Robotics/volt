@@ -20,6 +20,10 @@ import { NewVersionDialog, SubmitDialog, CompareDialog, DiffDrawer } from "./Wor
 import { BlockDialog, CreateElementDialog } from "./LibraryDialogs";
 import { WiringDialog } from "./WiringDialog";
 import { TitleBlockEditor } from "./TitleBlockEditor";
+import { WireNumberingDialog } from "./WireNumberingDialog";
+import { DeleteDialog } from "./DeleteDialog";
+import type { Sel } from "@/core/ops";
+import type { DeleteImpact } from "@/core/impact";
 
 export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?: unknown } | null; onClose: () => void }) {
   const open = (n: DialogName) => dialog?.name === n;
@@ -30,6 +34,8 @@ export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?:
       {open("styles") && <StylesDialog onClose={onClose} />}
       {open("numbering") && <NumberingDialog onClose={onClose} />}
       {open("wiring") && <WiringDialog onClose={onClose} />}
+      {open("wireNumbers") && <WireNumberingDialog onClose={onClose} />}
+      {open("delete") && <DeleteDialog onClose={onClose} arg={dialog?.arg as { sel: Sel; impact?: DeleteImpact } | undefined} />}
       {open("titleBlock") && <TitleBlockEditor onClose={onClose} arg={dialog?.arg as { template?: string } | undefined} />}
       {open("export") && <ExportDialog onClose={onClose} arg={dialog?.arg as { format?: "bom" } | undefined} />}
       {open("terminals") && <TerminalStripDialog onClose={onClose} arg={dialog?.arg as { tag?: string } | undefined} />}

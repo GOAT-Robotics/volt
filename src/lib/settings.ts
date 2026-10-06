@@ -48,6 +48,14 @@ export type WorkspaceSettings = {
    * logo of title blocks and cover sheets, and as the manufacturer of new cover sheets.
    */
   branding: { name: string; address: string; url: string; logo: TitleBlockLogo | null };
+  /**
+   * Automated first review when a version is submitted (and on demand): electrical rule checks
+   * (connections, naming, short circuits, wiring, safety, cross-sections) and — with useModel and
+   * OPENAI_API_KEY set — an AI engineering review of the netlist. Findings become review comments
+   * by "Volt AI Reviewer" that the designer resolves. minLevel: lowest rule-check level posted as a
+   * comment (lower ones are only summarised). instructions: house rules added to the AI prompt.
+   */
+  aiReview: { enabled: boolean; onSubmit: boolean; useModel: boolean; minLevel: "error" | "warning" | "info"; instructions: string };
 };
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -80,6 +88,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   collaboration: { live: true, presence: true },
   access: { newMemberRole: "none", projectSharing: "admins" },
   branding: { name: "", address: "", url: "", logo: null },
+  aiReview: { enabled: true, onSubmit: true, useModel: true, minLevel: "warning", instructions: "" },
 };
 
 export function parseSettings(s: string | null | undefined): WorkspaceSettings {
@@ -99,5 +108,6 @@ export function parseSettings(s: string | null | undefined): WorkspaceSettings {
     collaboration: { ...DEFAULT_SETTINGS.collaboration, ...(v.collaboration ?? {}) },
     access: { ...DEFAULT_SETTINGS.access, ...(v.access ?? {}) },
     branding: { ...DEFAULT_SETTINGS.branding, ...(v.branding ?? {}) },
+    aiReview: { ...DEFAULT_SETTINGS.aiReview, ...(v.aiReview ?? {}) },
   };
 }

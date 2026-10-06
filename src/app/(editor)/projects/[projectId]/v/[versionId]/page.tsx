@@ -4,6 +4,7 @@ import { getCtx, requireCtx, HttpError } from "@/lib/session";
 import { projectPreview } from "@/lib/og/preview";
 import { previewMetadata } from "@/lib/og/meta";
 import { loadVersion } from "@/lib/versioning";
+import { db } from "@/lib/db";
 import { preload } from "react-dom";
 import { EditorClient } from "@/editor/ui/EditorClient";
 
@@ -30,6 +31,7 @@ export default async function EditorPage({ params }: { params: Promise<{ project
   }
   if (a.project.id !== projectId) redirect(`/projects/${a.project.id}/v/${versionId}`);
   // start downloading the drawing while the editor code loads (the editor's fetch picks this up)
+  const variant = a.version.variantId ? await db.variant.findUnique({ where: { id: a.version.variantId }, select: { code: true, name: true, customer: true } }) : null;
   preload(`/api/versions/${versionId}/doc`, { as: "fetch", crossOrigin: "anonymous" });
   return (
     <EditorClient
@@ -47,6 +49,7 @@ export default async function EditorPage({ params }: { params: Promise<{ project
         userId: ctx.user.id,
         userName: ctx.user.name,
         live: ctx.settings.collaboration.live,
+        variant,
         brand: { name: ctx.settings.branding.name, address: ctx.settings.branding.address, logo: ctx.settings.branding.logo },
       }}
     />

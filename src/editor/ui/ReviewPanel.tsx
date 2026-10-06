@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CornerDownRight, MapPin, RotateCcw, X, MessageSquare, ThumbsUp, ThumbsDown, AlertCircle, Clock } from "lucide-react";
+import { Check, CornerDownRight, MapPin, RotateCcw, X, MessageSquare, ThumbsUp, ThumbsDown, AlertCircle, Clock, Bot, Sparkles, ChevronDown, ChevronRight } from "lucide-react";
 import { useEditor, type CommentPin } from "../store";
 import { useEditorUI } from "./context";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { StatusBadge } from "@/components/ui/status";
 import { api } from "@/lib/fetcher";
 import { cn, relTime, fmtDate } from "@/lib/utils";
 import { emptySel } from "@/core/ops";
+import { ChangeList, locateChange } from "./HistoryPanel";
+import type { Change } from "@/core/diff";
 
 type C = {
   id: string;
@@ -18,8 +20,17 @@ type C = {
   parentId: string | null;
   body: string;
   status: string;
-  author: { id: string; name: string };
+  author: { id: string; name: string; bot?: boolean };
   createdAt: string;
+};
+
+type AiStatus = {
+  enabled: boolean;
+  model: string | null;
+  canRun: boolean;
+  running: boolean;
+  startedAt: string | null;
+  last: { at: string; status: "DONE" | "FAILED"; summary: string; findings: number; errors: number; warnings: number; suggestions: number; model: string | null; error: string | null; truncated: boolean } | null;
 };
 
 type ReviewInfo = {
@@ -34,6 +45,8 @@ type ReviewInfo = {
   } | null;
   canDecide: boolean;
   canApprove: boolean;
+  canRecall?: boolean;
+  versionStatus?: string;
   blockers: string[];
 };
 
@@ -41,7 +54,7 @@ export function ReviewPanel() {
   const v = useEditor((s) => s.version);
   const active = useEditor((s) => s.activeComment);
   const [list, setList] = useState<C[] | null>(null);
-  const [filter, setFilter] = useState<"open" | "all">("open");
+  const [filter, setFilter] = useState<"open" | "ai" | "all">("open");
   const [draft, setDraft] = useState<{ pageId: string; anchor: C["anchor"] } | null>(null);
   const [review, setReview] = useState<ReviewInfo | null>(null);
   const ui = useEditorUI();
@@ -76,7 +89,10 @@ export function ReviewPanel() {
     useEditor.getState().set("pendingComment", null);
   }, [pending]);
 
-  const roots = useMemo(() => (list ?? []).filter((c) => !c.parentId && (filter === "all" || c.status === "OPEN" || c.status === "REOPENED")), [list, filter]);
+  const roots = useMemo(
+    () => (list ?? []).filter((c) => !c.parentId && (filter === "all" || ((c.status === "OPEN" || c.status === "REOPENED") && (filter === "open" || c.author.bot)))),
+    [list, filter],
+  );
 
   const locate = (c: C) => {
     const s = useEditor.getState();
@@ -95,11 +111,13 @@ export function ReviewPanel() {
   return (
     <div className="flex h-full flex-col">
       {review?.review && <ReviewBox info={review} reload={load} />}
+      <AiReviewBox versionId={v.versionId} onDone={load} />
+      <VersionChanges versionId={v.versionId} />
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex rounded-md border border-border p-0.5 text-2xs">
-          {(["open", "all"] as const).map((k) => (
+          {(["open", "ai", "all"] as const).map((k) => (
             <button key={k} onClick={() => setFilter(k)} className={cn("rounded px-2 py-0.5", filter === k ? "bg-hover font-medium" : "text-subtle")}>
-              {k === "open" ? "Open" : "All"}
+              {k === "open" ? "Open" : k === "ai" ? "AI open" : "All"}
             </button>
           ))}
         </div>
@@ -178,6 +196,7 @@ function ReviewBox({ info, reload }: { info: ReviewInfo; reload: () => void }) {
           </li>
         ))}
       </ul>
+      {info.canRecall && <RecallButton approved={info.versionStatus === "APPROVED"} />}
       {info.canDecide && r.status === "OPEN" && (
         <div className="space-y-1.5">
           <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (required to reject or request changes)" rows={2} onKeyDown={(e) => e.stopPropagation()} />
@@ -265,13 +284,65 @@ function Thread({ root, replies, active, onLocate, reload, canComment, versionId
   );
 }
 
+const SEVERITY: Record<string, string> = {
+  Error: "bg-danger-soft text-danger",
+  Warning: "bg-warning-soft text-warning",
+  Suggestion: "bg-accent-soft text-accent",
+  Note: "bg-hover text-muted",
+};
+
+/** AI reviewer comments: "Error · Safety\nTitle\n\nDetail\n\nSuggestion: …\n\nReference: …" */
+function BotBody({ body }: { body: string }) {
+  const [head, ...rest] = body.split("\n");
+  const m = /^(Error|Warning|Suggestion|Note) · (.+)$/.exec(head);
+  if (!m) return <p className="whitespace-pre-wrap break-words text-xs leading-relaxed">{body}</p>;
+  const text = rest.join("\n");
+  const [title, ...paras] = text.split("\n\n");
+  return (
+    <div className="space-y-1.5 text-xs leading-relaxed">
+      <p className="flex flex-wrap items-center gap-1">
+        <span className={cn("rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide", SEVERITY[m[1]])}>{m[1]}</span>
+        <span className="text-2xs text-muted">{m[2]}</span>
+      </p>
+      <p className="whitespace-pre-wrap break-words font-medium">{title}</p>
+      {paras.map((p, i) =>
+        p.startsWith("Suggestion: ") ? (
+          <p key={i} className="whitespace-pre-wrap break-words rounded-md border border-success/25 bg-success-soft px-2 py-1 text-success">
+            <span className="font-semibold">Suggestion: </span>
+            {p.slice(12)}
+          </p>
+        ) : p.startsWith("Reference: ") ? (
+          <p key={i} className="text-2xs text-subtle">
+            {p}
+          </p>
+        ) : (
+          <p key={i} className="whitespace-pre-wrap break-words text-muted">
+            {p}
+          </p>
+        ),
+      )}
+    </div>
+  );
+}
+
 function Msg({ c }: { c: C }) {
   return (
     <div className="flex gap-2">
-      <Avatar name={c.author.name} size={20} />
+      {c.author.bot ? (
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-purple-500/15 text-purple-600 dark:text-purple-300" aria-hidden>
+          <Bot className="size-3" />
+        </span>
+      ) : (
+        <Avatar name={c.author.name} size={20} />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">
           <span className="text-xs font-medium">{c.author.name}</span>
+          {c.author.bot && (
+            <Badge tone="purple" className="!h-4">
+              AI
+            </Badge>
+          )}
           <span className="text-2xs text-subtle" title={fmtDate(c.createdAt)}>
             {relTime(c.createdAt)}
           </span>
@@ -281,7 +352,7 @@ function Msg({ c }: { c: C }) {
             </Badge>
           )}
         </div>
-        <p className="whitespace-pre-wrap break-words text-xs leading-relaxed">{highlightMentions(c.body)}</p>
+        {c.author.bot ? <BotBody body={c.body} /> : <p className="whitespace-pre-wrap break-words text-xs leading-relaxed">{highlightMentions(c.body)}</p>}
       </div>
     </div>
   );
@@ -374,6 +445,158 @@ function Composer({ onSubmit, onCancel, placeholder, compact }: { onSubmit: (bod
           {busy ? <Spinner /> : "Comment"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+function AiReviewBox({ versionId, onDone }: { versionId: string; onDone: () => void }) {
+  const [st, setSt] = useState<AiStatus | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ui = useEditorUI();
+  const wasRunning = useRef(false);
+  const load = useCallback(async () => {
+    try {
+      const j = await api<AiStatus>(`/api/versions/${versionId}/ai-review`);
+      setSt(j);
+      if (wasRunning.current && !j.running) onDone();
+      wasRunning.current = j.running;
+    } catch {
+      setSt(null);
+    }
+  }, [versionId, onDone]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  useEffect(() => {
+    if (!st?.running) return;
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [st?.running, load]);
+  if (!st || !st.enabled || (!st.last && !st.running && !st.canRun)) return null;
+  const run = async () => {
+    setBusy(true);
+    try {
+      await ui.saveNow();
+      await api(`/api/versions/${versionId}/ai-review`, { method: "POST" });
+      wasRunning.current = true;
+      setSt((x) => (x ? { ...x, running: true } : x));
+      ui.toast("AI review started — findings arrive as comments");
+    } catch (e) {
+      ui.toast((e as Error).message, { tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const l = st.last;
+  return (
+    <div className="border-b border-border bg-purple-500/[0.04] p-3">
+      <div className="flex items-center gap-2">
+        <Sparkles className="size-3.5 text-purple-600 dark:text-purple-300" />
+        <span className="text-xs font-semibold">AI reviewer</span>
+        {st.running ? (
+          <span className="flex items-center gap-1 text-2xs text-muted">
+            <Spinner /> checking…
+          </span>
+        ) : l ? (
+          <span className="truncate text-2xs text-muted" title={fmtDate(l.at)}>
+            {l.status === "FAILED" ? "failed" : `${l.findings} finding${l.findings === 1 ? "" : "s"}`} · {relTime(l.at)}
+          </span>
+        ) : null}
+        {st.canRun && (
+          <Button size="xs" variant="secondary" className="ml-auto" disabled={busy || st.running} onClick={run} title={st.model ? `Rule checks + ${st.model}` : "Rule checks (AI model not configured)"}>
+            {l ? "Run again" : "Run AI review"}
+          </Button>
+        )}
+      </div>
+      {l && !st.running && (
+        <>
+          {l.status === "DONE" && l.findings > 0 && (
+            <div className="mt-1.5 flex gap-1.5 text-[10px] font-semibold">
+              {l.errors > 0 && <span className="rounded bg-danger-soft px-1.5 py-px text-danger">{l.errors} error{l.errors === 1 ? "" : "s"}</span>}
+              {l.warnings > 0 && <span className="rounded bg-warning-soft px-1.5 py-px text-warning">{l.warnings} warning{l.warnings === 1 ? "" : "s"}</span>}
+              {l.suggestions > 0 && <span className="rounded bg-accent-soft px-1.5 py-px text-accent">{l.suggestions} suggestion{l.suggestions === 1 ? "" : "s"}</span>}
+            </div>
+          )}
+          {(l.summary || l.error) && (
+            <button className="mt-1.5 flex w-full items-start gap-1 text-left text-2xs text-muted hover:text-fg" onClick={() => setOpen((x) => !x)} aria-expanded={open}>
+              {open ? <ChevronDown className="mt-0.5 size-3 shrink-0" /> : <ChevronRight className="mt-0.5 size-3 shrink-0" />}
+              <span className={cn("whitespace-pre-wrap", !open && "line-clamp-2")}>{l.error ?? l.summary}</span>
+            </button>
+          )}
+          {open && (
+            <p className="mt-1 pl-4 text-[10px] text-subtle">
+              {l.model ? `Rule checks + ${l.model}` : "Rule checks only"}
+              {l.truncated ? " · project too large, the AI saw only part of it" : ""} · the designer resolves each finding (Resolve / Won’t fix with a reply).
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function RecallButton({ approved }: { approved: boolean }) {
+  const v = useEditor((s) => s.version);
+  const ui = useEditorUI();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!v) return null;
+  if (!open)
+    return (
+      <Button size="xs" variant="ghost" className="mb-2" onClick={() => setOpen(true)} title="The version returns to draft so it can be edited; the review is closed as recalled">
+        <RotateCcw /> {approved ? "Take back approval" : "Recall to draft to fix"}
+      </Button>
+    );
+  return (
+    <div className="mb-2 space-y-1.5 rounded-md border border-border bg-panel p-2">
+      <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why (e.g. fixing the AI review findings)" rows={2} onKeyDown={(e) => e.stopPropagation()} />
+      <div className="flex justify-end gap-1">
+        <Button size="xs" variant="ghost" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+        <Button
+          size="xs"
+          variant="primary"
+          disabled={busy || !reason.trim()}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await api(`/api/versions/${v.versionId}/recall`, { method: "POST", json: { reason } });
+              ui.toast(`v${v.label} is a draft again`);
+              setTimeout(() => location.reload(), 500);
+            } catch (e) {
+              ui.toast((e as Error).message, { tone: "error" });
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? <Spinner /> : approved ? "Take back approval" : "Recall to draft"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** what this version changes against where it started — the "files changed" of a pull request */
+function VersionChanges({ versionId }: { versionId: string }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<{ base: string; total: number; summary: Record<string, number>; changes: Change[]; initial: boolean } | null>(null);
+  const ui = useEditorUI();
+  useEffect(() => {
+    if (!open || data) return;
+    api<NonNullable<typeof data>>(`/api/versions/${versionId}/changes`)
+      .then(setData)
+      .catch(() => setData({ base: "", total: 0, summary: {}, changes: [], initial: true }));
+  }, [open, data, versionId]);
+  return (
+    <div className="border-b border-border px-3 py-2">
+      <button className="flex w-full items-center gap-1 text-left text-xs font-semibold" onClick={() => setOpen((x) => !x)} aria-expanded={open}>
+        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />} Changes in this version
+        {data && !data.initial && <span className="ml-auto text-2xs font-normal text-subtle">{data.total} vs {data.base}</span>}
+      </button>
+      {open && (!data ? <Spinner /> : data.initial ? <p className="mt-1 text-2xs text-subtle">First version — everything is new.</p> : <ChangeList changes={data.changes} onPick={(c) => locateChange(c, ui)} />)}
     </div>
   );
 }

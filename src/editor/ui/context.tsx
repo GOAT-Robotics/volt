@@ -27,7 +27,10 @@ export type DialogName =
   | "createElement"
   | "wiring"
   | "titleBlock"
-  | "terminals";
+  | "terminals"
+  | "wireNumbers"
+  | "delete"
+  | "documents";
 
 export const EditorCtx = createContext<EditorUI | null>(null);
 export function useEditorUI() {

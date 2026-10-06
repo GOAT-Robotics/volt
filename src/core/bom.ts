@@ -30,6 +30,11 @@ export type BomRow = {
   symbol: string;
   /** 1-based sheet numbers the parts appear on */
   sheets: number[];
+  /** placed components and library elements behind this line (to find datasheets) */
+  ids?: string[];
+  libraryIds?: string[];
+  /** link to the datasheet (filled in by the exporter when documents exist) */
+  datasheet?: string;
 };
 
 export type BomCableRow = { tag: string; type: string; cores: number; section: string; shield: boolean; length: string; note: string };
@@ -67,7 +72,7 @@ function parseQty(s: string): number {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
-type Comp = { ref: string; def: ElementDef; info: Record<string, string>; sheets: Set<number>; qty: number };
+type Comp = { ref: string; def: ElementDef; info: Record<string, string>; sheets: Set<number>; qty: number; ids?: string[] };
 
 /** Build the bill of materials for the given pages (default: every page that isn't archived). */
 export function buildBom(doc: Doc, opts: { pages?: Page[]; grouping?: BomGrouping } = {}): Bom {
@@ -97,14 +102,15 @@ export function buildBom(doc: Doc, opts: { pages?: Page[]; grouping?: BomGroupin
         if (v) info[k] = v;
       }
       if (!ref) {
-        loose.push({ ref: "", def, info, sheets: new Set([sheet]), qty: parseQty(info.quantity ?? "") });
+        loose.push({ ref: "", def, info, sheets: new Set([sheet]), qty: parseQty(info.quantity ?? ""), ids: [e.id] });
         continue;
       }
       const cur = byRef.get(ref);
       if (!cur) {
-        byRef.set(ref, { ref, def, info, sheets: new Set([sheet]), qty: parseQty(info.quantity ?? "") });
+        byRef.set(ref, { ref, def, info, sheets: new Set([sheet]), qty: parseQty(info.quantity ?? ""), ids: [e.id] });
       } else {
         cur.sheets.add(sheet);
+        cur.ids?.push(e.id);
         // the instance carrying the most information describes the part (e.g. the coil, not a contact)
         for (const [k, v] of Object.entries(info)) if (!cur.info[k]) cur.info[k] = v;
         if (info.quantity && !cur.info.quantity) cur.qty = parseQty(info.quantity);
@@ -149,6 +155,8 @@ export function buildBom(doc: Doc, opts: { pages?: Page[]; grouping?: BomGroupin
     location: c.info.location ?? "",
     symbol: symbolName(c.def),
     sheets: [...c.sheets].filter(Boolean).sort((a, b) => a - b),
+    ids: c.ids ?? [],
+    libraryIds: c.def.source?.libraryElementId ? [c.def.source.libraryElementId] : [],
   });
 
   let rows: Omit<BomRow, "item">[];
@@ -170,6 +178,8 @@ export function buildBom(doc: Doc, opts: { pages?: Page[]; grouping?: BomGroupin
       g.qty += r.qty;
       g.refs.push(...r.refs);
       g.sheets = [...new Set([...g.sheets, ...r.sheets])].sort((a, b) => a - b);
+      g.ids = [...(g.ids ?? []), ...(r.ids ?? [])];
+      g.libraryIds = [...new Set([...(g.libraryIds ?? []), ...(r.libraryIds ?? [])])];
       if (grouping === "part" && r.location && !g.location.split(", ").includes(r.location)) g.location = g.location ? `${g.location}, ${r.location}` : r.location;
       for (const k of ["rating", "supplier", "manufacturer"] as const) if (!g[k] && r[k]) g[k] = r[k];
     }
@@ -234,7 +244,20 @@ export const BOM_COLUMNS = [
   { key: "sheets", label: "Sheets" },
 ] as const;
 
-export function bomCell(r: BomRow, key: (typeof BOM_COLUMNS)[number]["key"]): string | number {
+type BomKey = (typeof BOM_COLUMNS)[number]["key"] | "datasheet";
+/** the columns of a BOM (Datasheet only when links exist) */
+export function bomColumns(bom: Bom): { key: BomKey; label: string }[] {
+  return bom.rows.some((r) => r.datasheet) ? [...BOM_COLUMNS, { key: "datasheet", label: "Datasheet" }] : [...BOM_COLUMNS];
+}
+
+/** fill in datasheet links: by placed component, library element or part number */
+export function attachDatasheets(bom: Bom, idx: { byElement: Record<string, string>; byLibrary: Record<string, string>; byPart: Record<string, string> }) {
+  for (const r of bom.rows) r.datasheet = r.ids?.map((i) => idx.byElement[i]).find(Boolean) ?? r.libraryIds?.map((i) => idx.byLibrary[i]).find(Boolean) ?? (r.partNumber ? idx.byPart[r.partNumber] : undefined);
+  return bom;
+}
+
+export function bomCell(r: BomRow, key: BomKey): string | number {
+  if (key === "datasheet") return r.datasheet ?? "";
   if (key === "refs") return compactRefs(r.refs);
   if (key === "sheets") return r.sheets.join(", ");
   return r[key];
@@ -257,8 +280,9 @@ const csvCell = (v: string | number) => {
 
 /** CSV (UTF-8 with BOM so Excel reads accents and mm² correctly). */
 export function bomToCsv(bom: Bom): string {
-  const lines = [BOM_COLUMNS.map((c) => c.label).join(",")];
-  for (const r of bom.rows) lines.push(BOM_COLUMNS.map((c) => csvCell(bomCell(r, c.key))).join(","));
+  const cols = bomColumns(bom);
+  const lines = [cols.map((c) => c.label).join(",")];
+  for (const r of bom.rows) lines.push(cols.map((c) => csvCell(bomCell(r, c.key))).join(","));
   if (bom.cables.length) {
     lines.push("", "Cables", CABLE_COLUMNS.map((c) => c.label).join(","));
     for (const c of bom.cables) lines.push(CABLE_COLUMNS.map((k) => csvCell(k.key === "shield" ? (c.shield ? "yes" : "no") : c[k.key])).join(","));
@@ -272,9 +296,9 @@ export function bomToXlsx(bom: Bom, meta: { title: string; subtitle?: string }):
     {
       name: "Bill of materials",
       title: [meta.title, ...(meta.subtitle ? [meta.subtitle] : [])],
-      header: BOM_COLUMNS.map((c): string => c.label),
-      rows: bom.rows.map((r) => BOM_COLUMNS.map((c) => bomCell(r, c.key))),
-      widths: [6, 7, 6, 28, 30, 20, 18, 22, 16, 14, 10],
+      header: bomColumns(bom).map((c): string => c.label),
+      rows: bom.rows.map((r) => bomColumns(bom).map((c) => bomCell(r, c.key))),
+      widths: [6, 7, 6, 28, 30, 20, 18, 22, 16, 14, 10, 50],
     },
   ];
   if (bom.cables.length)

@@ -68,7 +68,7 @@ async function projectInfo(id: string): Promise<ProjectInfo | null> {
   if (!project) return null;
   const { mode, branding } = await workspaceInfo(project.workspaceId);
   if (mode === "off") return { mode, branding, project, version: null, pages: [] };
-  const version = await db.version.findFirst({ where: { projectId: id }, orderBy: { seq: "desc" }, select: { id: true, label: true, status: true, docRev: true } });
+  const version = await db.version.findFirst({ where: { projectId: id, variantId: null }, orderBy: { seq: "desc" }, select: { id: true, label: true, status: true, docRev: true } });
   let pages: ProjectInfo["pages"] = [];
   if (version) {
     const rows = await db.$queryRaw<{ k: number; kind: string | null; ord: number | null; title: string | null }[]>`

@@ -13,7 +13,7 @@ export const Anchor = z.object({
   h: z.number().finite().optional(),
 });
 
-type Row = Awaited<ReturnType<typeof db.comment.findFirstOrThrow>> & { author: { id: string; name: string } };
+type Row = Awaited<ReturnType<typeof db.comment.findFirstOrThrow>> & { author: { id: string; name: string; isBot?: boolean } };
 
 export function commentDto(c: Row) {
   return {
@@ -23,7 +23,7 @@ export function commentDto(c: Row) {
     parentId: c.parentId,
     body: c.body,
     status: c.status,
-    author: { id: c.author.id, name: c.author.name },
+    author: { id: c.author.id, name: c.author.name, bot: !!c.author.isBot },
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   };

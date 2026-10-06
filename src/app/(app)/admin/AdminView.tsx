@@ -33,6 +33,7 @@ export type AdminData = {
   versions: { id: string; label: string }[];
   retention: { autosavesDue: number; projectsDue: number };
   entraEnabled: boolean;
+  aiModel: string | null;
 };
 
 const TABS = ["general", "members", "groups", "styles", "layouts", "templates", "retention"];
@@ -316,6 +317,39 @@ function GeneralTab({ data }: { data: AdminData }) {
         <Row label="Show who is working now" hint="“Live now” avatars on project lists and project pages.">
           <Switch checked={s.collaboration.live && s.collaboration.presence} disabled={!s.collaboration.live} onCheckedChange={(c) => up("collaboration", { presence: c })} aria-label="Show who is working now" />
         </Row>
+      </Section>
+      <Section
+        title="AI reviewer"
+        description="A first review of every submitted version: electrical rule checks (connections, naming, short circuits, wrong wiring, safety, wire cross-sections) and an AI engineering review. Findings arrive as comments from “Volt AI Reviewer” that the designer resolves."
+      >
+        <Row label="AI reviewer" hint="Designers and reviewers can also run it from the editor's Review panel at any time.">
+          <Switch checked={s.aiReview.enabled} onCheckedChange={(c) => up("aiReview", { enabled: c })} aria-label="AI reviewer" />
+        </Row>
+        <Row label="Run when a version is submitted for review">
+          <Switch checked={s.aiReview.enabled && s.aiReview.onSubmit} disabled={!s.aiReview.enabled} onCheckedChange={(c) => up("aiReview", { onSubmit: c })} aria-label="Run on submit" />
+        </Row>
+        <Row
+          label="AI engineering review"
+          hint={
+            data.aiModel
+              ? `Sends the project's netlist (components, references, ratings, conductors) to ${data.aiModel} via the configured OpenAI endpoint. Off: rule checks only, nothing leaves the server.`
+              : "Not available: set OPENAI_API_KEY on the server. Rule checks still run without it."
+          }
+        >
+          <Switch checked={s.aiReview.enabled && s.aiReview.useModel && !!data.aiModel} disabled={!s.aiReview.enabled || !data.aiModel} onCheckedChange={(c) => up("aiReview", { useModel: c })} aria-label="AI engineering review" />
+        </Row>
+        <Row label="Rule-check findings posted as comments" hint="Lower levels appear only in the review summary.">
+          <NativeSelect value={s.aiReview.minLevel} onChange={(e) => up("aiReview", { minLevel: e.target.value as WorkspaceSettings["aiReview"]["minLevel"] })} className="w-60" aria-label="Lowest level posted">
+            <option value="error">Errors only</option>
+            <option value="warning">Errors and warnings</option>
+            <option value="info">Everything (including notes)</option>
+          </NativeSelect>
+        </Row>
+        <div className="border-b border-border px-4 py-3 last:border-0">
+          <p className="text-xs font-medium">House rules for the AI</p>
+          <p className="mb-1.5 text-2xs text-muted">Your own design rules and conventions, e.g. “Control voltage is 24 V DC; every output card needs its own fuse; robot drives use 2.5 mm² minimum; wire numbers follow page.column”.</p>
+          <Textarea rows={4} value={s.aiReview.instructions} onChange={(e) => up("aiReview", { instructions: e.target.value })} maxLength={8000} aria-label="House rules for the AI reviewer" />
+        </div>
       </Section>
       <Section title="Editor & compatibility">
         <Row label=".qet format version" hint="Version written into exported .qet files.">

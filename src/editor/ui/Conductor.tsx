@@ -11,6 +11,7 @@ import { computeNets } from "@/core/topology";
 import type { Doc, Page, Wire, WireFunction } from "@/core/model";
 import { COLORS, FUNCTIONS, assignCores, cableDesignation, colorLabel, colorOf, makeCores, nextCableTag, sectionChoices, standardColor, wireInfo, wiringOf } from "@/core/wiring";
 import { uid } from "@/core/ids";
+import { wireClassOf, wireNumberingOf } from "@/core/wirenumber";
 
 const MIXED = "\u0000mixed";
 
@@ -102,6 +103,7 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
           <option key={x} value={x} />
         ))}
       </datalist>
+      <ClassRow wires={wires} doc={doc} editable={editable} onSet={(v) => upd("Circuit class", (w) => (w.vclass = v || undefined))} />
       <Row label="Function">
         <NativeSelect value={fn === MIXED ? "" : fn} disabled={!editable} onChange={(e) => upd("Wire function", (w) => (w.fn = (e.target.value || undefined) as WireFunction | undefined))} aria-label="Wire function">
           <option value="">{fn === MIXED ? "Mixed" : "—"}</option>
@@ -212,4 +214,41 @@ export function normSection(v: string, std: "iec" | "nfpa" | "jis"): string | un
   if (!t) return undefined;
   if (/^\d+(\.\d+)?$/.test(t) || /^\d\/0$/.test(t)) return std === "nfpa" ? `${t} AWG` : std === "jis" ? `${t} sq` : `${t} mm²`;
   return t.replace(/\s*mm2$/i, " mm²").replace(/\s*sqmm$/i, " mm²");
+}
+
+/** voltage / circuit class for automatic wire numbering: detected, or set on the wire */
+function ClassRow({ wires, doc, editable, onSet }: { wires: Wire[]; doc: Doc; editable: boolean; onSet: (v: string) => void }) {
+  const ui = useEditorUI();
+  const cfg = wireNumberingOf(doc);
+  const single = wires.length === 1 ? wires[0] : null;
+  const detected = useMemo(() => (single ? wireClassOf(doc, single.id, cfg) : null), [doc, single, cfg]);
+  const v = wires.every((w) => (w.vclass ?? "") === (wires[0].vclass ?? "")) ? wires[0].vclass ?? "" : MIXED;
+  const name = (id: string | null) => (id === "__pe" ? "Protective earth" : cfg.classes.find((c) => c.id === id)?.name ?? "Unclassified");
+  return (
+    <Row
+      label="Circuit class"
+      hint={
+        detected && !single?.vclass ? (
+          <>
+            Detected: <b>{detected.letter}</b> {name(detected.classId)} ({detected.source}){detected.isReturn ? " · return" : ""}
+            {detected.conflict ? ` — ${detected.conflict}` : ""}.{" "}
+            <button className="text-accent hover:underline" onClick={() => ui.openDialog("wireNumbers")}>
+              Number wires…
+            </button>
+          </>
+        ) : undefined
+      }
+    >
+      <NativeSelect value={v === MIXED ? MIXED : v} disabled={!editable} onChange={(e) => onSet(e.target.value === MIXED ? "" : e.target.value)} aria-label="Circuit class">
+        {v === MIXED && <option value={MIXED}>Mixed</option>}
+        <option value="">Automatic{detected && !single?.vclass ? ` (${detected.letter})` : ""}</option>
+        {cfg.classes.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.letter} · {c.name}
+          </option>
+        ))}
+        <option value="__pe">{cfg.peLetter} · Protective earth</option>
+      </NativeSelect>
+    </Row>
+  );
 }

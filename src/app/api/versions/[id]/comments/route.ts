@@ -14,7 +14,7 @@ export const GET = route<{ id: string }>(async (_req, { params }) => {
   const ctx = await apiCtx();
   const { id } = await params;
   await loadVersion(ctx, id, { withDoc: false });
-  const rows = await db.comment.findMany({ where: { versionId: id }, include: { author: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } });
+  const rows = await db.comment.findMany({ where: { versionId: id }, include: { author: { select: { id: true, name: true, isBot: true } } }, orderBy: { createdAt: "asc" } });
   return { comments: rows.map(commentDto) };
 });
 
@@ -58,7 +58,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   }
   const c = await db.comment.create({
     data: { projectId: a.project.id, versionId: id, pageId, anchor: anchor ? JSON.stringify(anchor) : null, parentId: b.parentId ?? null, body: b.body, mentions: JSON.stringify(mentions), authorId: ctx.user.id },
-    include: { author: { select: { id: true, name: true } } },
+    include: { author: { select: { id: true, name: true, isBot: true } } },
   });
   // a reply on a resolved thread reopens nothing automatically; status is explicit
   await audit({ workspaceId: a.project.workspaceId, projectId: a.project.id, versionId: id, actorId: ctx.user.id, type: "comment.create", data: { commentId: c.id, reply: !!b.parentId, label: a.version.label } });

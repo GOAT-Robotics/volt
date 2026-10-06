@@ -67,3 +67,47 @@ export async function generateSymbol(input: { description?: string; image?: stri
     throw new HttpError(502, "The AI returned an unreadable answer — try again");
   }
 }
+
+/** One chat completion with a strict JSON schema answer (server only). */
+export async function chatJson<T>(input: { system: string; user: string; schemaName: string; schema: object; timeoutMs?: number; maxTokens?: number }): Promise<{ data: T; usage?: unknown; model: string }> {
+  const key = process.env.OPENAI_API_KEY?.trim();
+  if (!key) throw new HttpError(503, "AI is not configured: set OPENAI_API_KEY in the server environment", "AI_DISABLED");
+  const base = (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/$/, "");
+  const model = aiModel();
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), input.timeoutMs ?? 240_000);
+  let res: Response;
+  try {
+    res = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      signal: ctl.signal,
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: input.system },
+          { role: "user", content: input.user },
+        ],
+        ...(input.maxTokens ? { max_completion_tokens: input.maxTokens } : {}),
+        response_format: { type: "json_schema", json_schema: { name: input.schemaName, strict: true, schema: input.schema } },
+      }),
+    });
+  } catch (e) {
+    throw new HttpError(502, (e as Error).name === "AbortError" ? "The AI took too long to answer" : "Could not reach the AI service");
+  } finally {
+    clearTimeout(timer);
+  }
+  const j = (await res.json().catch(() => null)) as { choices?: { message?: { content?: string; refusal?: string }; finish_reason?: string }[]; error?: { message?: string }; usage?: unknown; model?: string } | null;
+  if (!res.ok) {
+    const msg = j?.error?.message ?? `HTTP ${res.status}`;
+    console.error("[ai] OpenAI error", res.status, msg);
+    throw new HttpError(res.status === 429 ? 429 : 502, res.status === 401 ? "The OpenAI API key was rejected" : `AI service error: ${msg}`.slice(0, 300));
+  }
+  const m = j?.choices?.[0]?.message;
+  if (m?.refusal) throw new HttpError(422, `The AI declined: ${m.refusal}`.slice(0, 300));
+  try {
+    return { data: JSON.parse(m?.content ?? "") as T, usage: j?.usage, model: j?.model ?? model };
+  } catch {
+    throw new HttpError(502, j?.choices?.[0]?.finish_reason === "length" ? "The AI answer was cut off (too long)" : "The AI returned an unreadable answer");
+  }
+}

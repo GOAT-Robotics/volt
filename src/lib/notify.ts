@@ -11,7 +11,10 @@ export type NotifyType =
   | "signature.requested"
   | "version.released"
   | "version.superseded"
-  | "library.approval";
+  | "library.approval"
+  | "ai.review"
+  | "version.recalled"
+  | "variant.created";
 
 /** In-app notification + optional SES email + optional Teams webhook. Never throws. */
 export async function notify(userIds: string[], n: { type: NotifyType; title: string; body?: string; link?: string; workspaceId?: string }) {

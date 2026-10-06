@@ -1,4 +1,7 @@
 "use client";
+import { applyRefChanges, deleteImpact, needsConfirmation, planCloseGaps } from "@/core/impact";
+import { applyWireNumbers, planWireNumbers } from "@/core/wirenumber";
+import { closeGapsDefault, performDelete } from "./dialogs/DeleteDialog";
 import { useEditor, type EditorStore } from "../store";
 import type { EditorUI } from "./context";
 import {
@@ -125,7 +128,13 @@ export const COMMANDS: Command[] = [
     run: (ui, s) => {
       const sel = s.sel;
       const n = selSize(sel);
-      s.apply("Delete", (d) => deleteSelection(d, getPage(d, s.pageId), sel), { sel: emptySel() });
+      // anything used elsewhere (cross references, blocks, other sheets, broken connections …) asks first
+      const impact = deleteImpact(s.doc, s.page(), sel, { comments: s.comments.map((c) => ({ id: c.id, anchor: c.anchor, status: c.status, body: c.body, pageId: c.pageId })) });
+      if (needsConfirmation(impact)) return ui.openDialog("delete", { sel, impact });
+      const gaps = closeGapsDefault(s.doc) ? [...new Set(impact.freedRefs.map((r) => /^(.*?)(\d+)$/.exec(r)?.[1]).filter((p): p is string => !!p))] : null;
+      let res = { renamed: 0, wires: 0 };
+      s.apply("Delete", (d) => void (res = performDelete(d, s.pageId, sel, { related: [], closeGaps: gaps, renumberWires: false })), { sel: emptySel() });
+      if (res.renamed) ui.toast(`Deleted · ${res.renamed} reference${res.renamed === 1 ? "" : "s"} renumbered to close the gap`, { undo: true });
       ui.announce(`Deleted ${n} object${n > 1 ? "s" : ""}`);
     },
   },
@@ -412,6 +421,47 @@ export const COMMANDS: Command[] = [
   { id: "titleBlockEditor", label: "Edit title block template…", section: "Page", run: (ui) => ui.openDialog("titleBlock") },
   { id: "styles", label: "Global styles…", section: "Project", keys: "⌘⇧S", run: (ui) => ui.openDialog("styles") },
   { id: "numbering", label: "Automatic numbering…", section: "Project", run: (ui) => ui.openDialog("numbering") },
+  { id: "wireNumbers", label: "Wire numbering… (automatic wire labels by voltage class)", section: "Project", keys: "⌘⇧L", run: (ui) => ui.openDialog("wireNumbers") },
+  {
+    id: "wireNumbersNew",
+    label: "Number new wires",
+    section: "Project",
+    enabled: editable,
+    run: (ui, s) => {
+      if (!s.doc.wireNumbering) return ui.openDialog("wireNumbers");
+      const p = planWireNumbers(s.doc, { mode: "new" });
+      if (!p.changes.length) return ui.toast("Every wire already has its number");
+      s.apply(`Number ${p.changes.length} wire${p.changes.length === 1 ? "" : "s"}`, (d) => applyWireNumbers(d, p));
+      ui.toast(`${p.changes.length} wire number${p.changes.length === 1 ? "" : "s"} assigned`, { undo: true });
+    },
+  },
+  {
+    id: "lockWireNumbers",
+    label: "Lock / unlock wire numbers of the selection",
+    section: "Edit",
+    enabled: (s) => editable(s) && s.sel.wires.length > 0,
+    run: (ui, s) => {
+      const ids = new Set(s.sel.wires);
+      const lock = s.page().wires.some((w) => ids.has(w.id) && !w.labelLocked);
+      s.apply(lock ? "Lock wire numbers" : "Unlock wire numbers", (d) => {
+        for (const w of getPage(d, s.pageId).wires) if (ids.has(w.id)) w.labelLocked = lock || undefined;
+      });
+      ui.toast(`${ids.size} wire number${ids.size === 1 ? "" : "s"} ${lock ? "locked" : "unlocked"}`);
+    },
+  },
+  {
+    id: "closeRefGaps",
+    label: "Close gaps in references (K1, K2, K4 → K1, K2, K3)",
+    section: "Project",
+    enabled: editable,
+    run: (ui, s) => {
+      const ch = planCloseGaps(s.doc);
+      const n = new Set(ch.map((c) => c.from)).size;
+      if (!n) return ui.toast("References have no gaps");
+      s.apply(`Close gaps in ${n} reference${n === 1 ? "" : "s"}`, (d) => applyRefChanges(d, ch));
+      ui.toast(`${n} reference${n === 1 ? "" : "s"} renumbered`, { undo: true });
+    },
+  },
   { id: "wiring", label: "Wiring & cables… (colors, cross-sections, cables)", section: "Project", run: (ui) => ui.openDialog("wiring") },
   { id: "terminals", label: "Terminal strips… (order, numbers, bridges, terminal plan)", section: "Project", run: (ui) => ui.openDialog("terminals") },
   { id: "projectProps", label: "Project properties…", section: "Project", run: (ui) => ui.openDialog("projectProps") },

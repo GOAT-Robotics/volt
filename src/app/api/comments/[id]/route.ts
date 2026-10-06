@@ -10,7 +10,7 @@ import { evaluateReview } from "@/lib/workflow";
 export const runtime = "nodejs";
 
 async function load(ctx: Awaited<ReturnType<typeof apiCtx>>, id: string) {
-  const c = await db.comment.findUnique({ where: { id }, include: { author: { select: { id: true, name: true } } } });
+  const c = await db.comment.findUnique({ where: { id }, include: { author: { select: { id: true, name: true, isBot: true } } } });
   if (!c || !c.versionId) throw new HttpError(404, "Comment not found");
   const a = await loadVersion(ctx, c.versionId, { withDoc: false });
   return { c, a };
@@ -29,7 +29,7 @@ export const PATCH = route<{ id: string }>(async (req, { params }) => {
   if ("body" in b) {
     if (c.authorId !== ctx.user.id) throw new HttpError(403, "Only the author can edit a comment");
     if (!["DRAFT", "CHANGES_REQUESTED", "IN_REVIEW"].includes(a.version.status)) throw new HttpError(409, "Comments on a closed version are part of the record and cannot be edited");
-    const u = await db.comment.update({ where: { id }, data: { body: b.body }, include: { author: { select: { id: true, name: true } } } });
+    const u = await db.comment.update({ where: { id }, data: { body: b.body }, include: { author: { select: { id: true, name: true, isBot: true } } } });
     return { comment: commentDto(u) };
   }
   const root = c.parentId ? await db.comment.findUnique({ where: { id: c.parentId } }) : c;
@@ -39,10 +39,12 @@ export const PATCH = route<{ id: string }>(async (req, { params }) => {
   // closing a thread (which can complete a review) is for its author, the version author or owners;
   // anyone in the thread may reopen it
   const closing = b.status === "RESOLVED" || b.status === "REJECTED";
-  const allowed = root.authorId === ctx.user.id || a.version.createdById === ctx.user.id || a.can("project.manage") || (!closing && participants.some((p) => p.authorId === ctx.user.id));
+  // findings of the AI reviewer are resolved by the people who work on the drawing
+  const botRoot = root.authorId === c.authorId ? !!c.author.isBot : !!(await db.user.findUnique({ where: { id: root.authorId }, select: { isBot: true } }))?.isBot;
+  const allowed = (botRoot && a.can("project.edit")) || root.authorId === ctx.user.id || a.version.createdById === ctx.user.id || a.can("project.manage") || (!closing && participants.some((p) => p.authorId === ctx.user.id));
   if (!allowed) throw new HttpError(403, closing ? "Only the comment's author, the version author or project owners can resolve it" : "Only people in this thread can reopen it");
   if (!["DRAFT", "CHANGES_REQUESTED", "IN_REVIEW"].includes(a.version.status)) throw new HttpError(409, "This version is closed — its comments are part of the record");
-  const u = await db.comment.update({ where: { id: root.id }, data: { status: b.status }, include: { author: { select: { id: true, name: true } } } });
+  const u = await db.comment.update({ where: { id: root.id }, data: { status: b.status }, include: { author: { select: { id: true, name: true, isBot: true } } } });
   await audit({ workspaceId: a.project.workspaceId, projectId: a.project.id, versionId: a.version.id, actorId: ctx.user.id, type: "comment.status", data: { commentId: root.id, from: root.status, to: b.status } });
   // resolving the last open comment may complete a pending review
   if (a.version.status === "IN_REVIEW" && (b.status === "RESOLVED" || b.status === "REJECTED")) {

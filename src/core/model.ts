@@ -259,7 +259,39 @@ export type Wire = {
   bus?: boolean;
   override?: Partial<LineStyle>;
   group?: GroupRef;
+  /** wire number set by hand: automatic wire numbering never changes it */
+  labelLocked?: boolean;
+  /** voltage / circuit class for automatic wire numbering (id of a WireClass), overriding detection */
+  vclass?: string;
   qet?: { idx?: number; attrs?: Record<string, string> };
+};
+
+/**
+ * A class of circuits for automatic wire numbering: the identifier's leading letter(s) tell the
+ * voltage system at a glance (e.g. A = 48 V DC, B = 24 V DC, C = 5 V DC). kind/volts drive detection
+ * from rail names, conductor functions and pin names; `match` (regex) catches signal names (CAN_H …).
+ */
+export type WireClass = { id: string; letter: string; name: string; kind: "dc" | "ac" | "signal" | "any"; volts?: number; match?: string };
+
+/** Automatic wire numbering (Volt-only, stored with the project). */
+export type WireNumbering = {
+  preset: "harness" | "panel" | "custom";
+  /** tokens: {class} {n} {n:3} {seg} {ret} {page} {col} {row} {size} */
+  format: string;
+  /** every physical wire segment (terminal to terminal, splice to splice) gets its own segment letter */
+  segments: boolean;
+  /** appended to return conductors (0 V, GND, N) — "N" as in SAE AS50881 */
+  returnSuffix: string;
+  /** class letters for protective earth and for circuits whose voltage cannot be determined */
+  peLetter: string;
+  fallbackLetter: string;
+  classes: WireClass[];
+  /** class used for DC / AC conductors of unknown voltage */
+  defaultDc?: string;
+  defaultAc?: string;
+  start: number;
+  /** overwrite rail names (L1, N, +24V, 0V) with numbers — the potential is kept as the conductor function / class */
+  replacePotentialNames: boolean;
 };
 
 export type WireFunction = "power" | "L1" | "L2" | "L3" | "N" | "PE" | "acControl" | "dcControl" | "dc0V" | "interlock" | "signal";
@@ -461,12 +493,14 @@ export type Doc = {
   baseStylesRef?: { templateId: string; version: number; name: string };
   /** project level partial overrides on top of base */
   styles: PartialStyles;
-  numbering: { rules: NumberingRule[]; autoOnPlace: boolean };
+  /** closeGapsOnDelete: renumber references to close the gap when a component is deleted (default on) */
+  numbering: { rules: NumberingRule[]; autoOnPlace: boolean; closeGapsOnDelete?: boolean };
   pages: Page[];
   defs: Record<string, ElementDef>;
   titleBlocks: Record<string, TitleBlockTemplate>;
   grid: { size: number; show: boolean };
   wiring?: WiringSettings;
+  wireNumbering?: WireNumbering;
   cables?: Cable[];
   /** terminal strips: order, numbering and properties of terminals (Volt-only; labels go to .qet) */
   terminalStrips?: TerminalStrip[];
@@ -525,6 +559,7 @@ export const VERSION_STATUSES = [
   "RELEASED",
   "SUPERSEDED",
   "WITHDRAWN",
+  "OBSOLETE",
 ] as const;
 export type VersionStatus = (typeof VERSION_STATUSES)[number];
 export const EDITABLE_STATUSES: VersionStatus[] = ["DRAFT", "CHANGES_REQUESTED"];

@@ -19,7 +19,7 @@ export const GET = route(async (req) => {
     where: { AND: [projectScope(ctx), { state }, q ? { OR: [{ name: { contains: q } }, { number: { contains: q } }, { tags: { contains: q } }] } : {}] },
     orderBy: { updatedAt: "desc" },
     take: 200,
-    include: { versions: { orderBy: { seq: "desc" }, take: 1, omit: { doc: true } } },
+    include: { versions: { where: { variantId: null }, orderBy: { seq: "desc" }, take: 1, omit: { doc: true } } },
   });
   return { projects: rows.map((p) => ({ id: p.id, name: p.name, number: p.number, tags: J.parse<string[]>(p.tags, []), state: p.state, updatedAt: p.updatedAt.toISOString(), latest: p.versions[0] ? { id: p.versions[0].id, label: p.versions[0].label, status: p.versions[0].status } : null })) };
 });

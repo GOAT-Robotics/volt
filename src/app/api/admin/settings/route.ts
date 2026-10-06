@@ -57,6 +57,9 @@ const Settings = z.object({
     })
     .default({ name: "", address: "", url: "", logo: null }),
   access: z.object({ newMemberRole: z.enum(["none", "VIEWER", "DESIGNER"]), projectSharing: z.enum(["admins", "owners"]) }).default({ newMemberRole: "none", projectSharing: "admins" }),
+  aiReview: z
+    .object({ enabled: z.boolean(), onSubmit: z.boolean(), useModel: z.boolean(), minLevel: z.enum(["error", "warning", "info"]), instructions: z.string().max(8000) })
+    .default({ enabled: true, onSubmit: true, useModel: true, minLevel: "warning", instructions: "" }),
 });
 
 export const PUT = route(async (req) => {

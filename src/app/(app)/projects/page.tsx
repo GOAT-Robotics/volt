@@ -20,7 +20,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     db.project.findMany({
       where: { AND: [projectScope(ctx), { state }] },
       orderBy: { updatedAt: "desc" },
-      include: { versions: { orderBy: { seq: "desc" }, take: 3, omit: { doc: true } }, _count: { select: { versions: true } } },
+      include: { versions: { where: { variantId: null }, orderBy: { seq: "desc" }, take: 3, omit: { doc: true } }, _count: { select: { versions: true } } },
     }),
     isGuestCtx(ctx) ? [] : db.folder.findMany({ where: { workspaceId: ctx.workspace.id }, orderBy: { name: "asc" } }),
     db.favorite.findMany({ where: { userId: ctx.user.id }, select: { projectId: true } }),

@@ -21,6 +21,31 @@ export function describeAudit(type: string, data: Record<string, unknown>): stri
       if (data.parent) parts.push(`from v${data.parent}`);
       if (data.summary) parts.push(`“${data.summary}”`);
       break;
+    case "document.add":
+    case "document.remove":
+      if (data.title) parts.push(`${String(data.kind ?? "").toLowerCase()} “${data.title}”`.trim());
+      if (data.partNumber) parts.push(String(data.partNumber));
+      break;
+    case "version.commit":
+      if (data.seq) parts.push(`#${data.seq}`);
+      if (data.message) parts.push(`“${String(data.message).slice(0, 80)}”`);
+      break;
+    case "version.recall":
+      if (data.from) parts.push(`${String(data.from).toLowerCase().replace("_", " ")} → draft`);
+      break;
+    case "version.obsolete":
+      if (data.by) parts.push(`replaced by v${data.by}`);
+      break;
+    case "variant.create":
+    case "variant.update":
+      if (data.name) parts.push(`${data.code ? `${data.code} · ` : ""}${data.name}`);
+      if (data.base) parts.push(`from v${data.base}`);
+      if (data.state) parts.push(String(data.state).toLowerCase());
+      break;
+    case "ai.review":
+      if (data.status === "FAILED") parts.push(`failed: ${data.error ?? ""}`);
+      else if (data.status === "DONE") parts.push(`${data.findings ?? 0} finding${data.findings === 1 ? "" : "s"}${data.model ? ` (${data.model})` : " (rule checks)"}`);
+      break;
     case "version.supersede":
       if (data.by) parts.push(`by v${data.by}`);
       break;

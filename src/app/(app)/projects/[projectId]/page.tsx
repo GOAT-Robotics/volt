@@ -41,7 +41,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   // comment-only guests: the versions they review, not the project's records
   const full = can("project.view");
 
-  const [versions, reviews, signatures, events, members, attachments, imports, folders, fav, policy] = await Promise.all([
+  const [versions, reviews, signatures, events, members, attachments, imports, folders, fav, policy, variants] = await Promise.all([
     db.version.findMany({ where: { projectId }, omit: { doc: true }, orderBy: { seq: "desc" } }),
     db.review.findMany({ where: { version: { projectId } }, include: { assignments: { orderBy: { order: "asc" } } }, orderBy: { createdAt: "desc" } }),
     db.signature.findMany({ where: { version: { projectId } }, orderBy: [{ createdAt: "desc" }, { order: "asc" }] }),
@@ -52,11 +52,13 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     isGuestCtx(ctx) ? [] : db.folder.findMany({ where: { workspaceId: project.workspaceId }, orderBy: { name: "asc" } }),
     db.favorite.findUnique({ where: { userId_projectId: { userId: ctx.user.id, projectId } } }),
     effectivePolicy(project, ctx.settings),
+    db.variant.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } }),
   ]);
   const memberMemberships = await db.membership.findMany({ where: { workspaceId: project.workspaceId, userId: { in: members.map((m) => m.userId) } } });
   const memberRoles = new Map(memberMemberships.map((m) => [m.userId, parseRoles(m.roles)]));
   const uids = new Set<string>();
   versions.forEach((v) => uids.add(v.createdById));
+  variants.forEach((v) => uids.add(v.createdById));
   reviews.forEach((r) => (uids.add(r.submittedById), r.assignments.forEach((a) => [a.userId, a.decidedById].forEach((x) => x && uids.add(x)))));
   signatures.forEach((s) => (uids.add(s.signatoryId), uids.add(s.requestedById)));
   attachments.forEach((a) => uids.add(a.userId));
@@ -69,7 +71,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
 
   const data: ProjectData = {
     me: { id: ctx.user.id, isAdmin: isAdmin(ctx) && project.workspaceId === ctx.workspace.id },
-    perms: { manage: canManage, requestSignatures: canRequestSignatures, share: canShareProject(ctx, canManage), edit: can("project.edit"), export: canExport, view: can("project.view") },
+    perms: { manage: canManage, requestSignatures: canRequestSignatures, share: canShareProject(ctx, canManage), edit: can("project.edit"), export: canExport, view: can("project.view"), approve: can("review.approve") },
     project: {
       id: project.id,
       name: project.name,
@@ -84,12 +86,16 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       favorite: !!fav,
       hasRelease: versions.some((v) => v.releasedAt),
     },
+    variants: variants.map((v) => ({ id: v.id, code: v.code, name: v.name, customer: v.customer, description: v.description, baseVersionId: v.baseVersionId, baseLabel: v.baseLabel, state: v.state, createdBy: nm(v.createdById) ?? "", createdAt: v.createdAt.toISOString() })),
     policy: { signatureRequiredForRelease: policy.signatureRequiredForRelease, requiredSignatories: policy.requiredSignatories, minApprovals: policy.minApprovals },
     folders: folders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId, count: 0 })),
     versions: versions.map((v) => ({
       id: v.id,
       label: v.label,
       status: v.status,
+      variantId: v.variantId,
+      seq: v.seq,
+      createdById: v.createdById,
       summary: v.summary,
       description: v.description,
       ticket: v.ticket,

@@ -190,6 +190,10 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
         if (k === "d") return run("duplicate");
         if (k === "a") return run("selectAll");
         if (k === "s" && e.shiftKey) return run("styles");
+        if (k === "l" && e.shiftKey) {
+          e.preventDefault();
+          return run("wireNumbers");
+        }
         if (k === "s") {
           e.preventDefault();
           return void saveNow();
@@ -253,6 +257,16 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
   }, [ui, saveNow]);
 
   useBlockPlacement(ui);
+
+  // deep link: ?panel=review or ?comment=<id> opens the review panel (notifications link here)
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    const c = q.get("comment");
+    if (q.get("panel") !== "review" && !c) return;
+    const s = useEditor.getState();
+    s.set("panels", { ...s.panels, right: "review" });
+    if (c) s.set("activeComment", c);
+  }, []);
 
   // deep link: ?page=<pageId>&el=<elementId>
   useEffect(() => {

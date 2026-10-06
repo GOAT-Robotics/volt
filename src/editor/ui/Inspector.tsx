@@ -12,6 +12,7 @@ import { getPage, emptySel, scaleElements } from "@/core/ops";
 import type { Doc, ElemInst, LineStyle, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
 import { TEXT_ROLES, COMPONENT_INFO, type ComponentInfoFlags, type ComponentInfoKey, type InfoLayout, type InfoPlacement } from "@/core/model";
 import { ConductorSection, Swatch } from "./Conductor";
+import { PartDocuments } from "@/components/volt/PartDocuments";
 import { StylePicker } from "./StylePicker";
 import { TitleBlockLogos } from "./TitleBlockLogos";
 import { FreeTextInspector } from "./FreeTextInspector";
@@ -390,6 +391,7 @@ const BOM_KEYS = ["bom", "quantity", "unity", "supplier"];
 
 function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page; doc: Doc; editable: boolean }) {
   const def = doc.defs[e.defId];
+  const v = useEditor((st) => st.version);
   const ui = useEditorUI();
   const styles = docStyles(doc);
   const s = useEditor.getState;
@@ -427,7 +429,26 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
       <Section title="Identity">
         <Row label="Reference">
           <div className="flex items-center gap-1">
-            <Commit value={e.info.label ?? ""} disabled={!editable} onCommit={(v) => upd("Edit reference", (x) => ((x.info.label = v), (x.refLocked = true)))} />
+            <Commit
+              value={e.info.label ?? ""}
+              disabled={!editable}
+              onCommit={(v) => {
+                const old = (e.info.label ?? "").trim();
+                // the device's other parts (contacts, other representations) carry the same reference: rename them too
+                const others = old ? doc.pages.flatMap((p) => p.elements.filter((x) => x.id !== e.id && (x.info.label ?? "").trim() === old && !doc.defs[x.defId]?.linkType?.endsWith("_report"))) : [];
+                const clash = v.trim() && v.trim() !== old && doc.pages.some((p) => p.elements.some((x) => (x.info.label ?? "").trim() === v.trim() && x.id !== e.id && !others.includes(x)));
+                const ids = new Set(others.map((x) => x.id));
+                s().apply("Edit reference", (d) => {
+                  for (const p of d.pages)
+                    for (const x of p.elements) {
+                      if (x.id === e.id) ((x.info.label = v), (x.refLocked = true));
+                      else if (ids.has(x.id)) x.info.label = v;
+                    }
+                });
+                if (others.length) ui.toast(`Also renamed ${others.length} other part${others.length === 1 ? "" : "s"} of ${old} (contacts / other sheets)`, { undo: true });
+                if (clash) ui.toast(`${v.trim()} is already used by another component`, { tone: "error" });
+              }}
+            />
             <Tip content={e.refLocked ? "Reference locked — renumbering keeps it" : "Reference follows automatic numbering"}>
               <Button variant="ghost" size="icon-sm" disabled={!editable} onClick={() => upd("Toggle reference lock", (x) => (x.refLocked = !x.refLocked))} aria-label="Toggle reference lock">
                 {e.refLocked ? <Lock /> : <Unlock />}
@@ -500,6 +521,17 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
         </div>
       </Section>
       <ComponentInfoSection e={e} doc={doc} editable={editable} upd={upd} />
+      {v && (
+        <Section title="Documents" defaultOpen={false}>
+          <PartDocuments
+            compact
+            target={{ scope: "COMPONENT", projectId: v.projectId, elementId: e.id, libraryElementId: def.source?.libraryElementId ?? null }}
+            partNumber={e.info.manufacturer_reference || def.info.manufacturer_reference || undefined}
+            manufacturer={e.info.manufacturer || def.info.manufacturer || undefined}
+            onError={(m) => ui.toast(m, { tone: "error" })}
+          />
+        </Section>
+      )}
       <Section title="Placement">
         <Row label="Position">
           <div className="grid grid-cols-2 gap-1">
@@ -914,8 +946,26 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
   return (
     <div>
       <Section title="Wire">
-        <Row label="Label / No.">
-          <Commit value={w.label ?? ""} disabled={!editable} onCommit={(v) => upd("Wire label", (x) => (x.label = v || undefined))} />
+        <Row
+          label="Label / No."
+          hint={doc.wireNumbering ? (w.labelLocked ? "Locked: automatic wire numbering keeps this number." : "Typing a number locks it against automatic numbering.") : undefined}
+        >
+          <div className="flex items-center gap-1">
+            <Commit
+              value={w.label ?? ""}
+              disabled={!editable}
+              onCommit={(v) =>
+                upd("Wire label", (x) => {
+                  x.label = v || undefined;
+                  // a number typed by hand is kept by automatic numbering
+                  if (doc.wireNumbering) x.labelLocked = !!v || undefined;
+                })
+              }
+            />
+            <Button variant="tool" size="icon-sm" active={!!w.labelLocked} disabled={!editable} onClick={() => upd(w.labelLocked ? "Unlock wire number" : "Lock wire number", (x) => (x.labelLocked = !x.labelLocked || undefined))} aria-label={w.labelLocked ? "Unlock wire number" : "Lock wire number"} title={w.labelLocked ? "Unlock: automatic numbering may change it" : "Lock against automatic numbering"}>
+              {w.labelLocked ? <Lock /> : <Unlock />}
+            </Button>
+          </div>
         </Row>
         {(["a", "b"] as const).map((end) => {
           const here = endAddress(doc, page, w[end]);

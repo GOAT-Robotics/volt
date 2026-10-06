@@ -119,7 +119,7 @@ function eligibleAssignments(r: ReviewWithAssignments, userId: string, groups: s
 export async function reviewInfo(ctx: Ctx, versionId: string, roles: Role[]) {
   await applyExpiry(versionId);
   const r0 = await db.review.findFirst({ where: { versionId }, orderBy: { createdAt: "desc" }, select: { id: true } });
-  if (!r0) return { review: null, canDecide: false, canApprove: false, blockers: [] as string[] };
+  if (!r0) return { review: null, canDecide: false, canApprove: false, canRecall: false, versionStatus: "", blockers: [] as string[] };
   const r = (await loadReview(r0.id))!;
   await primeNames(r);
   const policy = await policyForProject(r.version.project);
@@ -144,7 +144,17 @@ export async function reviewInfo(ctx: Ctx, versionId: string, roles: Role[]) {
       else canApprove = true;
     }
   }
+  // taking the version back to draft (never once signed)
+  const st = r.version.status;
+  const signed = st === "IN_REVIEW" || st === "APPROVED" ? await db.signature.count({ where: { versionId, status: "SIGNED" } }) : 1;
+  const manage = rolesAllow(roles, "project.manage");
+  const canRecall =
+    !signed &&
+    ((st === "APPROVED" && (manage || rolesAllow(roles, "review.approve"))) ||
+      (st === "IN_REVIEW" && (manage || (rolesAllow(roles, "project.edit") && (ctx.user.id === r.version.createdById || (r.status === "OPEN" && ctx.user.id === r.submittedById))))));
   return {
+    canRecall,
+    versionStatus: st,
     review: {
       id: r.id,
       status: r.status,
@@ -322,9 +332,11 @@ export async function startReview(
   const res = await db.version.updateMany({ where: { id: v.id, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, data: { status: "IN_REVIEW", submittedAt: now } });
   if (!res.count) throw new HttpError(409, "This version can no longer be submitted");
   await db.review.updateMany({ where: { versionId: v.id, status: "OPEN" }, data: { status: "CANCELLED", closedAt: now } });
+  const head = await db.version.findUnique({ where: { id: v.id }, select: { headCommitId: true } });
   const review = await db.review.create({
     data: {
       versionId: v.id,
+      commitId: head?.headCommitId ?? null,
       submittedById: ctx.user.id,
       instructions: input.instructions,
       dueDate: input.dueDate,

@@ -7,6 +7,7 @@ import { parseTemplateContent } from "@/lib/templates";
 import { normalizeStyles, parseHistory } from "@/lib/styletemplates";
 import { Forbidden } from "@/components/volt/common";
 import { standardTitleBlocks } from "@/lib/titleblocks";
+import { aiEnabled, aiModel } from "@/lib/ai/openai";
 import { AdminView, type AdminData } from "./AdminView";
 
 export const metadata: Metadata = { title: "Administration" };
@@ -45,6 +46,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     versions: versions.map((v) => ({ id: v.id, label: `${v.project.name} — v${v.label} (${v.status.toLowerCase().replace("_", " ")})` })),
     retention: { autosavesDue: autosaves, projectsDue: inactive },
     entraEnabled: !!process.env.AUTH_MICROSOFT_ENTRA_ID_ID,
+    aiModel: aiEnabled() ? aiModel() : null,
   };
   return <AdminView data={data} initialTab={tab ?? "general"} />;
 }

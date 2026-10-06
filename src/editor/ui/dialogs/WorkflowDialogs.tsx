@@ -39,7 +39,10 @@ export function NewVersionDialog({ onClose }: { onClose: () => void }) {
   };
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title="Start new version" description={`Creates an editable copy of v${v.label}. v${v.label} stays unchanged.`}>
+      <DialogContent
+        title="Start new version"
+        description={v.status === "SIGNED" ? `Creates an editable copy of v${v.label}. v${v.label} is signed and cannot be changed or taken back: it will be marked obsolete.` : `Creates an editable copy of v${v.label}${v.variant ? ` in the ${v.variant.code} variant line` : ""}. v${v.label} stays unchanged.`}
+      >
         <div className="space-y-3">
           <Field label="Change summary (required)">
             <Input autoFocus value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="e.g. Add second conveyor motor circuit" />
@@ -79,6 +82,7 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
   const [sugg, setSugg] = useState<Reviewer[]>([]);
   const [due, setDue] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [commitMessage, setCommitMessage] = useState("");
   const [sequential, setSequential] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -106,9 +110,9 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
     try {
       await ui.saveNow();
       if (useEditor.getState().save !== "saved") throw new Error("Save the version before submitting");
-      const j = await api<{ reviewId: string }>(`/api/versions/${v.versionId}/submit`, {
+      const j = await api<{ reviewId: string; aiReview?: boolean }>(`/api/versions/${v.versionId}/submit`, {
         method: "POST",
-        json: { reviewers: reviewers.map((r) => ({ userId: r.id })), dueDate: due || null, instructions, sequential, summary: undefined },
+        json: { reviewers: reviewers.map((r) => ({ userId: r.id })), dueDate: due || null, instructions, sequential, summary: undefined, commitMessage: commitMessage.trim() || undefined },
       });
       for (const f of files) {
         const fd = new FormData();
@@ -117,7 +121,7 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
         fd.append("ownerId", j.reviewId);
         await fetch(`/api/projects/${v.projectId}/attachments`, { method: "POST", body: fd });
       }
-      ui.toast("Submitted for review — this version is now frozen");
+      ui.toast(j.aiReview ? "Submitted for review — the AI reviewer is checking it now; its findings arrive as comments" : "Submitted for review — this version is now frozen");
       setTimeout(() => location.reload(), 500);
     } catch (e) {
       ui.toast((e as Error).message, { tone: "error" });
@@ -133,7 +137,7 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
   };
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title={`Submit v${v.label} for review`} description="Submitting freezes this version. Further changes need a new version." wide>
+      <DialogContent title={`Submit v${v.label} for review`} description="Submitting freezes this version. To change it during review, recall it to draft (or a reviewer requests changes); once signed, changes need a new version." wide>
         <div className="space-y-3">
           <Field label="Reviewers & approvers" hint={policy ? `Policy: at least ${policy.minApprovals} approval${policy.minApprovals === 1 ? "" : "s"}${policy.requireCommentsResolved ? ", all comments resolved" : ""}${policy.allowSelfApproval ? "" : ", authors can’t approve their own work"}.` : undefined}>
             <div className="relative">
@@ -208,6 +212,9 @@ export function SubmitDialog({ onClose }: { onClose: () => void }) {
           <Field label="Review instructions">
             <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={3} placeholder="What should reviewers focus on?" />
           </Field>
+          <Field label="Commit message" hint="Uncommitted changes are committed when you submit; reviewers review exactly that commit.">
+            <Input value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)} placeholder="Submitted for review" maxLength={2000} />
+          </Field>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
@@ -244,7 +251,7 @@ export function CompareDialog({ onClose, arg }: { onClose: () => void; arg?: { v
       const j = await api<{ doc: Doc; label: string }>(`/api/versions/${other}/doc`);
       const cur = useEditor.getState().doc;
       const diff = diffDocs(j.doc, cur);
-      useEditor.getState().set("diff", { doc: j.doc, diff, label: j.label, mode });
+      useEditor.getState().set("diff", { doc: j.doc, diff, label: `v${j.label}`, mode });
       ui.toast(`${diff.changes.length} change${diff.changes.length === 1 ? "" : "s"} vs v${j.label}`);
       onClose();
     } catch (e) {
@@ -322,7 +329,7 @@ export function DiffDrawer() {
     <div className="fixed bottom-12 left-16 z-30 flex max-h-[45vh] w-80 flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-pop animate-in">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <p className="text-xs font-semibold">
-          Changes since v{diff.label} <span className="font-normal text-subtle">({diff.diff.changes.length})</span>
+          Changes since {diff.label} <span className="font-normal text-subtle">({diff.diff.changes.length})</span>
         </p>
         <div className="flex items-center gap-1">
           <Button size="xs" variant="ghost" onClick={() => useEditor.getState().set("diff", { ...diff, mode: diff.mode === "overlay" ? "side" : "overlay" })}>

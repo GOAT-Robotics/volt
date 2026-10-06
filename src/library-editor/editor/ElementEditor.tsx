@@ -43,6 +43,7 @@ import { INFO_KEYS, finalizeDef, type Frame } from "@/lib/library/elmt-tools";
 import type { ElementDetail, LibUser } from "../types";
 import { WorkflowBar } from "../shared/WorkflowBar";
 import { RevisionsPanel } from "../shared/RevisionsPanel";
+import { PartDocuments } from "@/components/volt/PartDocuments";
 import { useEd, docFromDef, isDirty, stripId, type MetaForm, type ToolId } from "./store";
 import { SymbolCanvas, type CanvasApi } from "./SymbolCanvas";
 import { Inspector } from "./Inspector";
@@ -100,6 +101,7 @@ export function ElementEditor({ id, user }: { id: string; user: LibUser }) {
   const canvasApi = useRef<CanvasApi | null>(null);
   const dirty = useEd((s) => isDirty(s));
   const tool = useEd((s) => s.tool);
+  const metaPart = useEd((s) => s.meta);
   const issues = useIssues();
 
   const load = useCallback(
@@ -361,6 +363,7 @@ export function ElementEditor({ id, user }: { id: string; user: LibUser }) {
                 Check
                 {issues.length > 0 && <span className={cn("rounded-full px-1 text-[10px] font-semibold text-white", errors.length ? "bg-danger" : "bg-warning")}>{issues.length}</span>}
               </TabsTrigger>
+              <TabsTrigger value="docs">Docs</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
             </TabsList>
             <TabsContent value="props" className="min-h-0 flex-1 overflow-auto">
@@ -374,6 +377,10 @@ export function ElementEditor({ id, user }: { id: string; user: LibUser }) {
             </TabsContent>
             <TabsContent value="check" className="min-h-0 flex-1 overflow-auto">
               <ValidationList issues={issues} readOnly={readOnly} />
+            </TabsContent>
+            <TabsContent value="docs" className="min-h-0 flex-1 overflow-auto p-3">
+              <p className="mb-2 text-2xs text-muted">Datasheets, spec sheets, manuals and certificates for this part. Every drawing that uses this element shows them in the component's Documents section.</p>
+              <PartDocuments target={{ scope: "LIBRARY", libraryElementId: detail.id }} partNumber={metaPart.partNumber || undefined} manufacturer={metaPart.manufacturer || undefined} onError={(m) => toast.error(m)} />
             </TabsContent>
             <TabsContent value="history" className="min-h-0 flex-1 overflow-auto">
               <RevisionsPanel

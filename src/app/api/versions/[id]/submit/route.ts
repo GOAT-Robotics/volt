@@ -8,6 +8,9 @@ import { startReview } from "@/lib/workflow";
 import { requiredFieldsFor } from "@/lib/projects";
 import { missingFields } from "@/lib/templates";
 import { liveReadonly } from "@/lib/live/hooks";
+import { after } from "next/server";
+import { runAiReview } from "@/lib/ai/review";
+import { createCommit } from "@/lib/commits";
 
 export const runtime = "nodejs";
 
@@ -18,6 +21,8 @@ const Body = z.object({
     .max(30),
   dueDate: z.string().nullish(),
   instructions: z.string().max(10_000).default(""),
+  /** message for committing what is not committed yet (default: "Submitted for review") */
+  commitMessage: z.string().trim().max(2000).optional(),
   sequential: z.boolean().default(false),
 });
 
@@ -40,8 +45,13 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   }
   // freeze: record the hash of exactly what is being reviewed
   await db.version.update({ where: { id }, data: { docHash: docHash(doc) } });
+  // the review covers a commit (like a pull request): commit what is not committed yet
+  await createCommit(ctx, id, b.commitMessage || `Submitted for review${b.instructions ? `: ${b.instructions.split("\n")[0].slice(0, 120)}` : ""}`, "SUBMIT");
   const review = await startReview(ctx, { ...a.version, project: a.project }, { reviewers: b.reviewers, dueDate: due, instructions: b.instructions, sequential: b.sequential });
   liveReadonly(id, `Submitted for review by ${ctx.user.name || ctx.user.email} — this version is now frozen`);
   await audit({ workspaceId: a.project.workspaceId, projectId: a.project.id, versionId: id, actorId: ctx.user.id, type: "version.submit", data: { label: a.version.label, reviewers: b.reviewers.length, sequential: b.sequential, due: b.dueDate ?? null } });
-  return { reviewId: review.id };
+  // the AI reviewer does the first pass in the background; its findings arrive as comments
+  const ai = ctx.settings.aiReview;
+  if (ai.enabled && ai.onSubmit) after(() => runAiReview(id, { trigger: "submit", actorId: null }));
+  return { reviewId: review.id, aiReview: ai.enabled && ai.onSubmit };
 });

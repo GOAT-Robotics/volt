@@ -78,4 +78,4 @@ export async function createProjectRecord(input: {
 }
 
 export const WORKING = ["DRAFT", "CHANGES_REQUESTED"];
-export const IMMUTABLE = ["IN_REVIEW", "APPROVED", "SIGNED", "RELEASED", "SUPERSEDED", "WITHDRAWN", "REJECTED"];
+export const IMMUTABLE = ["IN_REVIEW", "APPROVED", "SIGNED", "RELEASED", "SUPERSEDED", "WITHDRAWN", "REJECTED", "OBSOLETE"];

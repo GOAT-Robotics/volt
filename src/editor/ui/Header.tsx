@@ -69,6 +69,11 @@ export function Header() {
             <button className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover">
               <span className="truncate text-xs font-semibold">{v?.projectName ?? title}</span>
               <span className="text-subtle">/</span>
+              {v?.variant && (
+                <span className="rounded bg-purple-500/10 px-1 font-mono text-2xs font-semibold text-purple-600 dark:text-purple-300" title={`Variant: ${v.variant.name}${v.variant.customer ? ` (${v.variant.customer})` : ""}`}>
+                  {v.variant.code}
+                </span>
+              )}
               <span className="text-xs font-medium text-muted">v{v?.label}</span>
               <ChevronDown className="size-3 text-subtle" />
             </button>
@@ -127,7 +132,7 @@ export function Header() {
 
       {diff && (
         <div className="flex items-center gap-1.5 rounded-md border border-warning/30 bg-warning-soft px-2 py-0.5 text-2xs text-warning">
-          <GitCompare className="size-3" /> Comparing with v{diff.label}
+          <GitCompare className="size-3" /> Comparing with {diff.label}
           <button className="ml-1 font-medium underline" onClick={() => useEditor.getState().set("diff", null)}>
             Exit
           </button>

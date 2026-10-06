@@ -37,6 +37,8 @@ export type VersionInfo = {
   userName: string;
   /** live collaboration is on for this workspace */
   live?: boolean;
+  /** the variant line this version belongs to (null: main line) */
+  variant?: { code: string; name: string; customer: string } | null;
   /** organization branding: default logo of title blocks and cover sheets, cover manufacturer */
   brand?: { name: string; address: string; logo: TitleBlockLogo | null };
 };

@@ -15,6 +15,8 @@ model User {
   email       String    @unique
   name        String
   isGuest     Boolean   @default(false)
+  /// system account (the AI reviewer): cannot sign in, authors automated review comments
+  isBot       Boolean   @default(false)
   disabled    Boolean   @default(false)
   groups      String    @default("[]") // JSON array of Entra group object ids (last sign-in)
   lastLoginAt DateTime?
@@ -103,10 +105,12 @@ model Project {
 
   members     ProjectMember[]
   versions    Version[]
+  variants    Variant[]
   imports     ImportRecord[]
   comments    Comment[]
   favorites   Favorite[]
   attachments Attachment[]
+  documents   PartDocument[]
 
   @@index([workspaceId, state])
   @@index([workspaceId, state, updatedAt])
@@ -136,10 +140,33 @@ model Favorite {
   @@index([projectId])
 }
 
-/// status: DRAFT | IN_REVIEW | CHANGES_REQUESTED | APPROVED | REJECTED | SIGNED | RELEASED | SUPERSEDED | WITHDRAWN
+/// A customer / configuration variant: its own line of versions branched from a version of the
+/// main line (e.g. "GT robot v2 + extra emergency stop for ACME"). state: ACTIVE | ARCHIVED
+model Variant {
+  id            String    @id @default(cuid())
+  projectId     String
+  code          String // short, unique in the project; part of version labels (2-ACME.1)
+  name          String
+  customer      String    @default("")
+  description   String    @default("")
+  baseVersionId String
+  baseLabel     String
+  state         String    @default("ACTIVE")
+  createdById   String
+  createdAt     DateTime  @default(now())
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions      Version[]
+
+  @@unique([projectId, code])
+  @@index([projectId, state])
+}
+
+/// status: DRAFT | IN_REVIEW | CHANGES_REQUESTED | APPROVED | REJECTED | SIGNED | RELEASED | SUPERSEDED | WITHDRAWN | OBSOLETE
+/// variantId: null = main line; otherwise the version belongs to that variant's line
 model Version {
   id          String    @id @default(cuid())
   projectId   String
+  variantId   String?
   seq         Int
   label       String
   parentId    String?
@@ -159,9 +186,14 @@ model Version {
   releasedAt  DateTime?
   endedAt     DateTime?
   endReason   String?
+  /// git-like history: the latest commit of this version, and the commit it was started from
+  headCommitId String?
+  baseCommitId String?
   project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  variant     Variant?  @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   reviews    Review[]
+  commits    Commit[]
   signatures Signature[]
   comments   Comment[]
   searchRows SearchEntry[]
@@ -169,7 +201,31 @@ model Version {
 
   @@unique([projectId, seq])
   @@index([projectId, status])
+  @@index([projectId, variantId, seq])
   @@index([createdById])
+}
+
+/// A committed snapshot of a version's drawing (git-like): message, author, the changes against its
+/// parent. Commits chain across versions (a new version's first commit has the parent version's
+/// head as parent); versions act as tags, variants as branches.
+/// kind: COMMIT | SUBMIT (made when submitting for review) | RESTORE | AUTO
+model Commit {
+  id        String   @id @default(cuid())
+  projectId String
+  versionId String
+  parentId  String?
+  seq       Int
+  kind      String   @default("COMMIT")
+  message   String
+  docHash   String
+  data      Bytes // gzip JSON document (without the original imported file)
+  stats     String   @default("{}") // { added, removed, changed, moved, items: Change[] }
+  authorId  String
+  createdAt DateTime @default(now())
+  version   Version  @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, seq])
+  @@index([versionId, seq])
 }
 
 model Autosave {
@@ -242,6 +298,7 @@ model LibraryElement {
   library      Library                  @relation(fields: [libraryId], references: [id], onDelete: Cascade)
   revisions    LibraryElementRevision[]
   shares       LibraryShare[]
+  documents    PartDocument[]
 
   @@index([libraryId, category])
   @@index([ownerId, kind])
@@ -325,7 +382,7 @@ model ProjectTemplate {
   @@index([workspaceId, status])
 }
 
-/// status: OPEN | APPROVED | REJECTED | CHANGES_REQUESTED | CANCELLED
+/// status: OPEN | APPROVED | REJECTED | CHANGES_REQUESTED | CANCELLED | RECALLED
 model Review {
   id            String             @id @default(cuid())
   versionId     String
@@ -334,6 +391,7 @@ model Review {
   dueDate       DateTime?
   sequential    Boolean            @default(false)
   status        String             @default("OPEN")
+  commitId      String? // the commit under review (like a pull request head)
   createdAt     DateTime           @default(now())
   closedAt      DateTime?
   version       Version            @relation(fields: [versionId], references: [id], onDelete: Cascade)
@@ -429,6 +487,39 @@ model Attachment {
 
   @@index([ownerType, ownerId])
   @@index([projectId, createdAt])
+}
+
+/// Datasheets, spec sheets, manuals, certificates … of a part. scope LIBRARY: on a library element
+/// (shared org-wide; every placed copy shows it). scope COMPONENT: on one placed component of a
+/// project (elementId = the component's id, project-wide across versions). Either a stored file or a
+/// link. kind: DATASHEET | SPEC | MANUAL | CERTIFICATE | DRAWING | CAD | OTHER.
+/// meta: JSON for specifications extracted later (e.g. by AI).
+model PartDocument {
+  id               String          @id @default(cuid())
+  workspaceId      String
+  scope            String
+  libraryElementId String?
+  projectId        String?
+  elementId        String?
+  kind             String          @default("DATASHEET")
+  title            String
+  url              String?
+  filename         String?
+  mime             String?
+  size             Int?
+  sha256           String?
+  data             Bytes?
+  manufacturer     String?
+  partNumber       String?
+  meta             String          @default("{}")
+  createdById      String
+  createdAt        DateTime        @default(now())
+  libraryElement   LibraryElement? @relation(fields: [libraryElementId], references: [id], onDelete: Cascade)
+  project          Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([libraryElementId])
+  @@index([projectId, elementId])
+  @@index([workspaceId, partNumber])
 }
 
 model Notification {

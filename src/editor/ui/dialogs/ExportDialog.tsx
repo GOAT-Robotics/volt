@@ -16,7 +16,8 @@ import { CanvasPainter, measureText } from "@/core/render/canvas";
 import { drawPage, pageGeometry } from "@/core/render/scene";
 import { PathBuilder } from "@/core/render/painter";
 import { exportQet } from "@/core/qet/project";
-import { buildBom, bomToCsv, bomToXlsx, bomCell, BOM_COLUMNS, type BomGrouping } from "@/core/bom";
+import { api } from "@/lib/fetcher";
+import { buildBom, bomToCsv, bomToXlsx, bomCell, BOM_COLUMNS, attachDatasheets, type BomGrouping } from "@/core/bom";
 import { appendBomPages, appendTerminalPlanPages } from "@/core/render/bom-pdf";
 import { collectStrips, terminalPlanRows } from "@/core/terminals";
 import type { Doc, Page } from "@/core/model";
@@ -147,7 +148,12 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
         });
         downloadBlob(new Blob([bytes as BlobPart], { type: "application/pdf" }), `${base}.pdf`);
       } else if (fmt === "bom") {
-        const b = bom ?? buildBom(doc, { pages, grouping });
+        const b = structuredClone(bom ?? buildBom(doc, { pages, grouping }));
+        // datasheet links (when documents exist) become a column of the CSV / Excel parts list
+        if (v && bomFile !== "pdf") {
+          const idx = await api<{ byElement: Record<string, string>; byLibrary: Record<string, string>; byPart: Record<string, string> }>(`/api/projects/${v.projectId}/documents`).catch(() => null);
+          if (idx) attachDatasheets(b, idx);
+        }
         if (bomFile === "csv") downloadBlob(new Blob([bomToCsv(b)], { type: "text/csv;charset=utf-8" }), `${base}_BOM.csv`);
         else if (bomFile === "xlsx") downloadBlob(new Blob([bomToXlsx(b, bomMeta()) as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${base}_BOM.xlsx`);
         else {
