@@ -9,6 +9,8 @@ import { Forbidden } from "@/components/volt/common";
 import { standardTitleBlocks } from "@/lib/titleblocks";
 import { aiEnabled, aiModel } from "@/lib/ai/openai";
 import { AdminView, type AdminData } from "./AdminView";
+import { listExternal } from "@/lib/external";
+import { mailConfigured } from "@/lib/mail";
 
 export const metadata: Metadata = { title: "Administration" };
 
@@ -18,7 +20,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const { tab } = await searchParams;
   const wsId = ctx.workspace.id;
   const [members, groups, styles, templates, versions, autosaves, inactive, layouts, standard] = await Promise.all([
-    db.membership.findMany({ where: { workspaceId: wsId }, include: { user: true } }),
+    db.membership.findMany({ where: { workspaceId: wsId, user: { external: false } }, include: { user: true } }),
     db.groupMapping.findMany({ where: { workspaceId: wsId }, orderBy: { displayName: "asc" } }),
     db.styleTemplate.findMany({ where: { workspaceId: wsId }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
     db.projectTemplate.findMany({ where: { workspaceId: wsId }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
@@ -27,6 +29,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     ctx.settings.retention.archiveAfterDays ? db.project.count({ where: { workspaceId: wsId, state: "ACTIVE", updatedAt: { lt: new Date(Date.now() - ctx.settings.retention.archiveAfterDays * 86400_000) } } }) : Promise.resolve(0),
     db.titleBlockLayout.findMany({ where: { workspaceId: wsId }, omit: { xml: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
     standardTitleBlocks(),
+  ]);
+  const [external, customRoles, projects] = await Promise.all([
+    listExternal(wsId),
+    db.customRole.findMany({ where: { workspaceId: wsId }, orderBy: { name: "asc" } }),
+    db.project.findMany({ where: { workspaceId: wsId }, select: { id: true, name: true, state: true }, orderBy: { name: "asc" } }),
   ]);
   const data: AdminData = {
     meId: ctx.user.id,
@@ -47,6 +54,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     retention: { autosavesDue: autosaves, projectsDue: inactive },
     entraEnabled: !!process.env.AUTH_MICROSOFT_ENTRA_ID_ID,
     aiModel: aiEnabled() ? aiModel() : null,
+    external,
+    customRoles: customRoles.map((r) => ({ id: r.id, name: r.name, description: r.description, actions: r.actions.split(",").filter(Boolean) })),
+    projects: projects.map((p) => ({ id: p.id, name: p.name, archived: p.state !== "ACTIVE" })),
+    mailConfigured: mailConfigured(),
   };
   return <AdminView data={data} initialTab={tab ?? "general"} />;
 }

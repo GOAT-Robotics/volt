@@ -9,6 +9,11 @@ export function isGuestCtx(ctx: Ctx): boolean {
   return ctx.user.isGuest || ctx.roles.length === 0 || (ctx.roles.length === 1 && ctx.roles[0] === "GUEST");
 }
 
+/** External partner or guest: sees only the projects shared with them — no folders, user directory or groups. */
+export function isOutsider(ctx: Ctx): boolean {
+  return isGuestCtx(ctx) || ctx.user.external;
+}
+
 export function isAdmin(ctx: Ctx): boolean {
   return ctx.roles.includes("ADMIN");
 }
@@ -19,6 +24,8 @@ export function assertAdmin(ctx: Ctx) {
 
 /** May add or remove project members (workspace setting "projectSharing"). */
 export function canShareProject(ctx: Ctx, canManage: boolean): boolean {
+  // external partners never give anyone access, whatever their role
+  if (ctx.user.external) return false;
   return isAdmin(ctx) || (ctx.settings.access.projectSharing === "owners" && canManage);
 }
 

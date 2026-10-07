@@ -53,6 +53,8 @@ export async function syncUserOnSignIn(i: { email: string; name: string; oid: st
     existing = byEmail;
   }
   if (existing?.disabled) return { ok: false, reason: "AccessDisabled" };
+  // external partners sign in with their emailed link only, never through Entra
+  if (existing?.external) return { ok: false, reason: "ExternalUseLink" };
   if (i.isGuest && settings.guestPolicy === "deny") return { ok: false, reason: "GuestsNotAllowed" };
 
   const user = existing

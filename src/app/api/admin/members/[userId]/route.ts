@@ -22,6 +22,7 @@ export const PATCH = route<{ userId: string }>(async (req, { params }) => {
   const b = await body(req, Patch);
   const m = await db.membership.findUnique({ where: { workspaceId_userId: { workspaceId: ctx.workspace.id, userId } }, include: { user: true } });
   if (!m) throw new HttpError(404, "Member not found");
+  if (m.user.external) throw new HttpError(409, "External users are managed under Administration → External users");
   const wasAdmin = parseRoles(m.roles).includes("ADMIN");
   if (b.roles) {
     if (wasAdmin && !b.roles.includes("ADMIN") && !(await adminsLeft(ctx.workspace.id, userId))) throw new HttpError(409, "The workspace needs at least one active administrator");

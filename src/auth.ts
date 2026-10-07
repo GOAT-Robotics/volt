@@ -3,6 +3,7 @@ import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import Credentials from "next-auth/providers/credentials";
 import { db } from "@/lib/db";
 import { syncUserOnSignIn } from "@/lib/membership";
+import { consumeToken } from "@/lib/magiclink";
 
 // never together with Entra, never in a production build
 const devLogin = process.env.AUTH_DEV_LOGIN === "true" && process.env.NODE_ENV !== "production" && !process.env.AUTH_MICROSOFT_ENTRA_ID_ID;
@@ -49,6 +50,20 @@ if (devLogin) {
   );
 }
 
+// external partners: one-time emailed link (lib/magiclink) — no password, no organization account
+providers.push(
+  Credentials({
+    id: "magic",
+    name: "Email link",
+    credentials: { token: { label: "Token" } },
+    async authorize(c) {
+      const res = await consumeToken(String(c?.token ?? ""));
+      if (!res.ok) return null;
+      return { id: res.user.id, email: res.user.email, name: res.user.name };
+    },
+  }),
+);
+
 export const authConfig: NextAuthConfig = {
   trustHost: true,
   providers,
@@ -56,6 +71,11 @@ export const authConfig: NextAuthConfig = {
   pages: { signIn: "/login", signOut: "/logout", error: "/login" },
   callbacks: {
     async signIn({ user, account, profile }) {
+      // the token was checked and spent in authorize(); the account is the external user itself
+      if (account?.provider === "magic") {
+        (user as { uid?: string }).uid = user.id;
+        return true;
+      }
       const p = (profile ?? {}) as Record<string, unknown>;
       const res = await syncUserOnSignIn({
         email: String(user.email ?? p.preferred_username ?? "").toLowerCase(),

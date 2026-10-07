@@ -324,7 +324,7 @@ export function MembersTab({ data }: { data: ProjectData }) {
                   </td>
                   <td>
                     <span className="flex flex-wrap gap-1">
-                      {m.roles.length ? m.roles.map((r) => <Badge key={r}>{r.charAt(0) + r.slice(1).toLowerCase()}</Badge>) : <Badge tone="warning">No workspace role</Badge>}
+                      {m.external && <Badge tone="purple">External</Badge>} {m.roles.length ? m.roles.map((r) => <Badge key={r}>{r.charAt(0) + r.slice(1).toLowerCase()}</Badge>) : <Badge tone="warning">No workspace role</Badge>}
                     </span>
                   </td>
                   <td>

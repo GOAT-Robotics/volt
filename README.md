@@ -46,6 +46,16 @@ Then set `AUTH_DEV_LOGIN="false"`. To give people access:
 
 Guests (B2B) follow the guest policy you set in Administration.
 
+### External users (no organization account)
+
+Contractors, customers and suppliers can work in Volt without an Entra account. Under **Administration → External users** an admin adds them with a **custom role** and the **projects** they work on, and optionally an end date for their access.
+
+- They sign in with a **one-time link** sent to their email: no password. The invitation link is valid for 7 days; afterwards they request a new link on the sign-in page (valid 15 minutes). Opening a link shows a confirmation button, so mail scanners that open links cannot use it up. Only a hash of each link is stored.
+- They see **only their assigned projects**: no folders, no other projects, no user directory or Entra groups. They can never share a project with anyone.
+- **Custom roles** are sets of permissions (open, edit, export, comment, review, approve, manage, request signatures, sign, use the component library). Workspace administration, creating projects and publishing or approving library parts can never be granted to them. Two presets: External designer and External reviewer.
+- Disabling, removing or reaching the end date ends their access at once, including open sessions and unused links. Every invitation, link and change is in the audit log.
+- Email goes through `SMTP_URL` (any SMTP server, e.g. Microsoft 365) or Amazon SES (`SES_FROM_EMAIL`). Without either, the admin copies the link and sends it themselves. Set `APP_URL` so links point at the public address.
+
 ## Production (Docker)
 
 GitHub Actions (`.github/workflows/docker.yml`) builds the image and publishes it to GHCR as `ghcr.io/<owner>/<repo>`. On the server, set `VOLT_IMAGE` to that image and `VOLT_DOMAIN` to your host name in `.env`, copy `.env`, `docker-compose.yml` and `Caddyfile` into `/opt/volt`, and run `docker compose pull && docker compose up -d`. Caddy gets the HTTPS certificate for `VOLT_DOMAIN`. To build the image yourself: `docker build -t volt .`

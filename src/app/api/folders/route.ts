@@ -3,13 +3,13 @@ import { route, body } from "@/lib/api";
 import { apiCtx, assertCan, HttpError } from "@/lib/session";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { isGuestCtx } from "@/lib/access";
+import { isOutsider } from "@/lib/access";
 
 export const runtime = "nodejs";
 
 export const GET = route(async () => {
   const ctx = await apiCtx();
-  if (isGuestCtx(ctx)) return { folders: [] };
+  if (isOutsider(ctx)) return { folders: [] };
   const rows = await db.folder.findMany({ where: { workspaceId: ctx.workspace.id }, orderBy: { name: "asc" } });
   return { folders: rows.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId })) };
 });

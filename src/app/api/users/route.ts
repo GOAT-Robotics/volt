@@ -1,7 +1,7 @@
 import { route } from "@/lib/api";
 import { apiCtx, loadProject } from "@/lib/session";
 import { db } from "@/lib/db";
-import { isGuestCtx } from "@/lib/access";
+import { isOutsider } from "@/lib/access";
 import { parseRoles, rolesAllow, type Action, type Role } from "@/lib/roles";
 
 export const runtime = "nodejs";
@@ -19,7 +19,7 @@ export const GET = route(async (req) => {
   if (projectId) {
     await loadProject(ctx, projectId);
     scope = { projectMembers: { some: { projectId } } };
-  } else if (isGuestCtx(ctx)) {
+  } else if (isOutsider(ctx)) {
     const mine = await db.projectMember.findMany({ where: { userId: ctx.user.id }, select: { projectId: true } });
     scope = { projectMembers: { some: { projectId: { in: mine.map((m) => m.projectId) } } } };
   } else {
@@ -36,7 +36,7 @@ export const GET = route(async (req) => {
     .filter((u) => {
       if (!need) return true;
       const roles: Role[] = u.memberships.length ? u.memberships.flatMap((m) => parseRoles(m.roles)) : u.isGuest ? ["GUEST"] : [];
-      if (need === "sign") return roles.includes("SIGNATORY") || roles.includes("ADMIN");
+      if (need === "sign") return roles.includes("SIGNATORY") || roles.includes("ADMIN") || rolesAllow(roles, "sign");
       return rolesAllow(roles, need);
     })
     .slice(0, limit)

@@ -18,6 +18,11 @@ model User {
   /// system account (the AI reviewer): cannot sign in, authors automated review comments
   isBot       Boolean   @default(false)
   disabled    Boolean   @default(false)
+  /// external partner: no organization account, signs in with an emailed one-time link, sees only assigned projects
+  external    Boolean   @default(false)
+  company     String    @default("")
+  /// external access ends at this time (null = no end)
+  accessUntil DateTime?
   groups      String    @default("[]") // JSON array of Entra group object ids (last sign-in)
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
@@ -28,6 +33,36 @@ model User {
   notifications  Notification[]
   comments       Comment[]
   audit          AuditEvent[]
+  loginTokens    LoginToken[]
+}
+
+/// one-time sign-in link (only the SHA-256 of the token is stored)
+model LoginToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  purpose     String    @default("login") // invite | login
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// admin-defined role: a named set of actions, assigned to external users (Membership.roles "custom:<id>")
+model CustomRole {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  description String    @default("")
+  actions     String    @default("") // comma separated Action ids
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
 }
 
 model Workspace {
@@ -45,6 +80,7 @@ model Workspace {
   styleTemplates    StyleTemplate[]
   projectTemplates  ProjectTemplate[]
   titleBlockLayouts TitleBlockLayout[]
+  customRoles       CustomRole[]
   audit             AuditEvent[]
 }
 
@@ -54,7 +90,7 @@ model Membership {
   workspaceId String
   userId      String
   roles       String    @default("VIEWER")
-  source      String    @default("MANUAL") // MANUAL | GROUP
+  source      String    @default("MANUAL") // MANUAL | GROUP | DOMAIN | EXTERNAL
   createdAt   DateTime  @default(now())
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)

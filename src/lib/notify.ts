@@ -1,4 +1,4 @@
-import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import { mailConfigured, sendMail } from "./mail";
 import { db } from "./db";
 import { parseSettings } from "./settings";
 
@@ -16,7 +16,7 @@ export type NotifyType =
   | "version.recalled"
   | "variant.created";
 
-/** In-app notification + optional SES email + optional Teams webhook. Never throws. */
+/** In-app notification + optional email + optional Teams webhook. Never throws. */
 export async function notify(userIds: string[], n: { type: NotifyType; title: string; body?: string; link?: string; workspaceId?: string }) {
   const ids = [...new Set(userIds.filter(Boolean))];
   if (!ids.length) return;
@@ -25,22 +25,13 @@ export async function notify(userIds: string[], n: { type: NotifyType; title: st
     const ws = n.workspaceId ? await db.workspace.findUnique({ where: { id: n.workspaceId } }) : null;
     const settings = parseSettings(ws?.settings);
     const base = process.env.AUTH_URL ?? process.env.APP_URL ?? "";
-    if (settings.notifications.email && process.env.SES_FROM_EMAIL) {
+    if (settings.notifications.email && mailConfigured()) {
       const users = await db.user.findMany({ where: { id: { in: ids } } });
-      const ses = new SESv2Client({ region: process.env.AWS_REGION ?? "us-east-1" });
-      const from = process.env.SES_FROM_EMAIL;
-      await Promise.allSettled(
-        users.map((u) =>
-          ses.send(new SendEmailCommand({
-            FromEmailAddress: from,
-            Destination: { ToAddresses: [u.email] },
-            Content: { Simple: {
-              Subject: { Data: `[Volt] ${n.title}`, Charset: "UTF-8" },
-              Body: { Text: { Data: `${n.body ?? ""}\n\n${n.link ? base + n.link : ""}`, Charset: "UTF-8" } },
-            } },
-          })),
-        ),
-      );
+      await Promise.allSettled(users.map((u) => sendMail({
+        to: u.email,
+        subject: `[Volt] ${n.title}`,
+        text: `${n.body ?? ""}\n\n${n.link ? base + n.link : ""}`,
+      })));
     }
     if (settings.notifications.teamsWebhook) {
       await fetch(settings.notifications.teamsWebhook, {

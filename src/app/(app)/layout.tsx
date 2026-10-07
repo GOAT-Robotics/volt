@@ -1,4 +1,5 @@
-import { requireCtx } from "@/lib/session";
+import { can, requireCtx } from "@/lib/session";
+import { roleNames } from "@/lib/customroles";
 import { AppShell } from "@/components/shell/AppShell";
 import { db } from "@/lib/db";
 
@@ -14,9 +15,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       user={{
         name: ctx.user.name,
         email: ctx.user.email,
-        roles: ctx.roles,
-        // no workspace role and no project yet: nothing to browse (library included)
-        library: !ctx.user.isGuest && (ctx.roles.some((r) => r !== "GUEST") || ctx.projectAccess),
+        roles: roleNames(ctx.roles),
+        // no workspace role and no project yet: nothing to browse (library included); external partners only with "library.view"
+        library: !ctx.user.isGuest && (ctx.roles.some((r) => r !== "GUEST") || ctx.projectAccess) && (!ctx.user.external || can(ctx, "library.view")),
         isAdmin: ctx.roles.includes("ADMIN"),
         workspace: ctx.workspace.name,
         workspaceId: ctx.workspace.id,

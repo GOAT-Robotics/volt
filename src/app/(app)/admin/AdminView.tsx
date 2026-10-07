@@ -18,6 +18,8 @@ import type { ProjectTemplateContent } from "@/lib/templates";
 import { PromptDialog, Section, useMutation } from "@/components/volt/common";
 import { StyleTemplatesTab, ProjectTemplatesTab } from "./AdminTemplates";
 import { TitleBlockLayoutsTab } from "./AdminLayouts";
+import { ExternalTab } from "./AdminExternal";
+import type { ExternalUser } from "@/lib/external";
 
 type Hist = { version: number; action: string; at: string; by: string; note?: string; name?: string };
 export type AdminData = {
@@ -34,9 +36,13 @@ export type AdminData = {
   retention: { autosavesDue: number; projectsDue: number };
   entraEnabled: boolean;
   aiModel: string | null;
+  external: ExternalUser[];
+  customRoles: { id: string; name: string; description: string; actions: string[] }[];
+  projects: { id: string; name: string; archived: boolean }[];
+  mailConfigured: boolean;
 };
 
-const TABS = ["general", "members", "groups", "styles", "layouts", "templates", "retention"];
+const TABS = ["general", "members", "external", "groups", "styles", "layouts", "templates", "retention"];
 
 export function AdminView({ data, initialTab }: { data: AdminData; initialTab: string }) {
   const [tab, setTab] = React.useState(TABS.includes(initialTab) ? initialTab : "general");
@@ -63,6 +69,7 @@ export function AdminView({ data, initialTab }: { data: AdminData; initialTab: s
         <TabsList className="bg-panel px-6">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsTrigger value="external">External users</TabsTrigger>
           <TabsTrigger value="groups">Entra groups</TabsTrigger>
           <TabsTrigger value="styles">Style templates</TabsTrigger>
           <TabsTrigger value="layouts">Title block layouts</TabsTrigger>
@@ -75,6 +82,9 @@ export function AdminView({ data, initialTab }: { data: AdminData; initialTab: s
           </TabsContent>
           <TabsContent value="members">
             <MembersTab data={data} />
+          </TabsContent>
+          <TabsContent value="external">
+            <ExternalTab data={data} />
           </TabsContent>
           <TabsContent value="groups">
             <GroupsTab data={data} />

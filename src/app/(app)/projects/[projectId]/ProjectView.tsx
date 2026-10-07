@@ -86,7 +86,7 @@ export type ProjectData = {
   reviews: ReviewRow[];
   signatures: SignatureRow[];
   activity: { id: string; type: string; label: string; detail: string; actor: string; createdAt: string }[];
-  members: { userId: string; name: string; email: string; isGuest: boolean; disabled: boolean; roles: string[] }[];
+  members: { userId: string; name: string; email: string; isGuest: boolean; external?: boolean; disabled: boolean; roles: string[] }[];
   attachments: { id: string; ownerType: string; ownerId: string; filename: string; mime: string; size: number; sha256: string; uploadedBy: string; uploadedById: string; createdAt: string; context: string }[];
   imports: { id: string; filename: string; sha256: string; createdAt: string; versionLabel: string | null; report: CompatReport | null }[];
   eligibleSignatories: { id: string; name: string; email: string }[];

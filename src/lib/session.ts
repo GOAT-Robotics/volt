@@ -7,10 +7,11 @@ import { db } from "./db";
 import { parseRoles, rolesAllow, type Action, type Role } from "./roles";
 import { parseSettings, type WorkspaceSettings } from "./settings";
 import { ensureDefaultWorkspace } from "./membership";
+import { loadCustomRoles } from "./customroles";
 import { setBrand } from "@/core/brand";
 
 export type Ctx = {
-  user: { id: string; name: string; email: string; isGuest: boolean; groups: string[] };
+  user: { id: string; name: string; email: string; isGuest: boolean; groups: string[]; /** external partner (magic-link sign-in, assigned projects only) */ external: boolean };
   workspace: { id: string; name: string; slug: string };
   settings: WorkspaceSettings;
   roles: Role[];
@@ -32,7 +33,10 @@ export const getCtx = cache(async (): Promise<Ctx | null> => {
   if (!s?.uid) return null;
   const user = await db.user.findUnique({ where: { id: s.uid } });
   if (!user || user.disabled) return null;
+  // external access ends at its end date, also for sessions that are still open
+  if (user.external && user.accessUntil && user.accessUntil.getTime() < Date.now()) return null;
   await ensureDefaultWorkspace();
+  await loadCustomRoles();
   const mems = await db.membership.findMany({ where: { userId: user.id }, include: { workspace: true }, orderBy: { createdAt: "asc" } });
   const jar = await cookies();
   const wanted = jar.get("volt_ws")?.value;
@@ -49,7 +53,7 @@ export const getCtx = cache(async (): Promise<Ctx | null> => {
   // server-side renders (canonical / release PDFs, previews) draw this workspace's logo
   setBrand(settings.branding);
   return {
-    user: { id: user.id, name: user.name, email: user.email, isGuest: user.isGuest, groups: JSON.parse(user.groups || "[]") },
+    user: { id: user.id, name: user.name, email: user.email, isGuest: user.isGuest, groups: JSON.parse(user.groups || "[]"), external: user.external },
     workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
     settings,
     roles: mem ? parseRoles(mem.roles) : ["GUEST"],

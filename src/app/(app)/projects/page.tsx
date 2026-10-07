@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireCtx, can } from "@/lib/session";
 import { db, J } from "@/lib/db";
-import { projectScope, isGuestCtx } from "@/lib/access";
+import { projectScope, isGuestCtx, isOutsider } from "@/lib/access";
 import { parseTemplateContent } from "@/lib/templates";
 import { ProjectsView, type ProjectRow, type FolderRow } from "./ProjectsView";
 
@@ -22,7 +22,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       orderBy: { updatedAt: "desc" },
       include: { versions: { where: { variantId: null }, orderBy: { seq: "desc" }, take: 3, omit: { doc: true } }, _count: { select: { versions: true } } },
     }),
-    isGuestCtx(ctx) ? [] : db.folder.findMany({ where: { workspaceId: ctx.workspace.id }, orderBy: { name: "asc" } }),
+    isOutsider(ctx) ? [] : db.folder.findMany({ where: { workspaceId: ctx.workspace.id }, orderBy: { name: "asc" } }),
     db.favorite.findMany({ where: { userId: ctx.user.id }, select: { projectId: true } }),
     can(ctx, "project.create") ? db.projectTemplate.findMany({ where: { workspaceId: ctx.workspace.id, status: "APPROVED" }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }) : [],
   ]);

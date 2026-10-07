@@ -6,7 +6,8 @@ import { applyProjectExpiry } from "@/lib/workflow";
 import { effectivePolicy } from "@/lib/projects";
 import { eligibleSignatories } from "@/lib/signing/service";
 import { auditLabel, describeAudit } from "@/lib/describe";
-import { isAdmin, isGuestCtx, canShareProject } from "@/lib/access";
+import { isAdmin, isGuestCtx, isOutsider, canShareProject } from "@/lib/access";
+import { roleNames } from "@/lib/customroles";
 import { parseRoles } from "@/lib/roles";
 import type { CompatReport } from "@/core/model";
 import { projectPreview } from "@/lib/og/preview";
@@ -49,13 +50,13 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     db.projectMember.findMany({ where: { projectId }, include: { user: true } }),
     db.attachment.findMany({ where: { projectId, ...(full ? {} : { ownerType: { in: ["REVIEW", "COMMENT"] } }) }, omit: { data: true }, orderBy: { createdAt: "desc" } }),
     db.importRecord.findMany({ where: { projectId }, omit: { original: true }, orderBy: { createdAt: "desc" } }),
-    isGuestCtx(ctx) ? [] : db.folder.findMany({ where: { workspaceId: project.workspaceId }, orderBy: { name: "asc" } }),
+    isOutsider(ctx) ? [] : db.folder.findMany({ where: { workspaceId: project.workspaceId }, orderBy: { name: "asc" } }),
     db.favorite.findUnique({ where: { userId_projectId: { userId: ctx.user.id, projectId } } }),
     effectivePolicy(project, ctx.settings),
     db.variant.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } }),
   ]);
   const memberMemberships = await db.membership.findMany({ where: { workspaceId: project.workspaceId, userId: { in: members.map((m) => m.userId) } } });
-  const memberRoles = new Map(memberMemberships.map((m) => [m.userId, parseRoles(m.roles)]));
+  const memberRoles = new Map(memberMemberships.map((m) => [m.userId, roleNames(parseRoles(m.roles))]));
   const uids = new Set<string>();
   versions.forEach((v) => uids.add(v.createdById));
   variants.forEach((v) => uids.add(v.createdById));
@@ -146,7 +147,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       seal: s.seal,
     })),
     activity: events.map((e) => ({ id: e.id, type: e.type, label: auditLabel(e.type), detail: describeAudit(e.type, { ...J.parse<Record<string, unknown>>(e.data, {}), ...(e.versionId && !J.parse<Record<string, unknown>>(e.data, {}).label && labelOf.get(e.versionId) ? { label: labelOf.get(e.versionId) } : {}) }), actor: e.actor?.name ?? "System", createdAt: e.createdAt.toISOString() })),
-    members: members.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, disabled: m.user.disabled, roles: memberRoles.get(m.userId) ?? (m.user.isGuest ? ["GUEST"] : []) })),
+    members: members.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, external: m.user.external, disabled: m.user.disabled, roles: memberRoles.get(m.userId) ?? (m.user.isGuest ? ["Guest reviewer"] : []) })),
     attachments: attachments.map((a) => ({ id: a.id, ownerType: a.ownerType, ownerId: a.ownerId, filename: a.filename, mime: a.mime, size: a.size, sha256: a.sha256, uploadedBy: nm(a.userId) ?? "", uploadedById: a.userId, createdAt: a.createdAt.toISOString(), context: a.ownerType === "REVIEW" ? `Review of v${labelOf.get(reviews.find((r) => r.id === a.ownerId)?.versionId ?? "") ?? "?"}` : a.ownerType === "RELEASE" ? `v${labelOf.get(a.ownerId) ?? "?"}` : a.ownerType === "COMMENT" ? "Comment" : "Project" })),
     imports: imports.map((i) => ({ id: i.id, filename: i.filename, sha256: i.sha256, createdAt: i.createdAt.toISOString(), versionLabel: i.versionId ? labelOf.get(i.versionId) ?? null : null, report: J.parse<CompatReport | null>(i.report, null) })),
     eligibleSignatories: canRequestSignatures ? await eligibleSignatories(project.workspaceId, projectId) : [],

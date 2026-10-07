@@ -4,6 +4,7 @@ import { apiCtx, HttpError, loadProject } from "@/lib/session";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { parseRoles } from "@/lib/roles";
+import { roleNames } from "@/lib/customroles";
 import { canShareProject, SHARE_DENIED } from "@/lib/access";
 
 export const runtime = "nodejs";
@@ -15,10 +16,10 @@ export const GET = route<{ id: string }>(async (_req, { params }) => {
   if (!can("project.view") && !can("review.comment")) throw new HttpError(403, "No access");
   const rows = await db.projectMember.findMany({ where: { projectId: id }, include: { user: true } });
   const memberships = await db.membership.findMany({ where: { workspaceId: ctx.workspace.id, userId: { in: rows.map((m) => m.userId) } } });
-  const roles = new Map(memberships.map((m) => [m.userId, parseRoles(m.roles)]));
+  const roles = new Map(memberships.map((m) => [m.userId, roleNames(parseRoles(m.roles))]));
   // comment-only guests see names, not email addresses
   const full = can("project.view");
-  return { members: rows.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, disabled: m.user.disabled, roles: roles.get(m.userId) ?? (m.user.isGuest ? ["GUEST"] : []) })) };
+  return { members: rows.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, external: m.user.external, disabled: m.user.disabled, roles: roles.get(m.userId) ?? (m.user.isGuest ? ["Guest reviewer"] : []) })) };
 });
 
 const Body = z

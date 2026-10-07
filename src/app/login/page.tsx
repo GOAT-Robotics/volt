@@ -7,6 +7,10 @@ import { orgBranding } from "@/lib/brand";
 import { signIn, DEV_LOGIN, ENTRA_ENABLED } from "@/auth";
 import { getCtx } from "@/lib/session";
 import { AuthShell } from "@/components/brand/AuthLayout";
+import { db } from "@/lib/db";
+import { rateLimit } from "@/lib/ratelimit";
+import { mailConfigured } from "@/lib/mail";
+import { createLoginLink, LOGIN_TTL_MIN, mailLoginLink } from "@/lib/magiclink";
 
 const ERRORS: Record<string, string> = {
   AccessDisabled: "Your access has been disabled. Contact your workspace administrator.",
@@ -15,6 +19,9 @@ const ERRORS: Record<string, string> = {
   NoEmail: "Your account has no email address.",
   AccessDenied: "Access denied.",
   Configuration: "Sign-in is not configured correctly.",
+  ExternalUseLink: "This is an external partner account: sign in with the link from your invitation email, or get a new link below.",
+  CredentialsSignin: "That sign-in link is not valid any more. Get a new one below.",
+  RateLimited: "Too many sign-in link requests. Wait a few minutes and try again.",
 };
 
 /**
@@ -60,7 +67,7 @@ const jsonLd = (org: { name: string; url: string }) => ({
 const DEV_EMAIL = (process.env.ADMIN_EMAILS ?? "").split(",").map((s) => s.trim()).filter(Boolean)[0] ?? "admin@example.com";
 const DEV_NAME = DEV_EMAIL.split("@")[0].split(/[._-]+/).filter(Boolean).map((p) => p[0].toUpperCase() + p.slice(1)).join(" ");
 
-export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string; callbackUrl?: string; reauth?: string; signedOut?: string }> }) {
+export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string; callbackUrl?: string; reauth?: string; signedOut?: string; sent?: string }> }) {
   const sp = await searchParams;
   // Only skip the login page for a session whose user still exists and has access. A stale cookie
   // (e.g. after the database was reset) must not bounce between /login and the app forever.
@@ -81,6 +88,11 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           {reauth && !sp.error && (
             <p className="mt-4 rounded-md border border-accent/20 bg-accent-soft px-3 py-2 text-xs text-accent">
               Signing a drawing requires a fresh sign-in. Please confirm your identity to continue.
+            </p>
+          )}
+          {sp.sent && !sp.error && (
+            <p className="mt-4 rounded-md border border-success/20 bg-success-soft px-3 py-2 text-xs text-success">
+              If {sp.sent} has access, a sign-in link is on its way. It works once, for {LOGIN_TTL_MIN} minutes.
             </p>
           )}
           {sp.error && <p className="mt-4 rounded-md border border-danger/20 bg-danger-soft px-3 py-2 text-xs text-danger">{ERRORS[sp.error] ?? "Sign-in failed. Please try again."}</p>}
@@ -119,8 +131,51 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
               <button className="h-8 w-full rounded-md bg-accent text-xs font-medium text-white">Sign in (dev)</button>
             </form>
           )}
+          {mailConfigured() && (
+            <form
+              id="email-link"
+              className="mt-5 space-y-2 border-t border-border pt-4"
+              action={async (fd: FormData) => {
+                "use server";
+                await requestEmailLink(String(fd.get("email") ?? ""));
+              }}
+            >
+              <p className="text-xs font-medium">External partner?</p>
+              <p className="text-2xs text-muted">Get a one-time sign-in link by email. No password needed.</p>
+              <input name="email" type="email" required placeholder="you@company.com" className="h-8 w-full rounded-md border border-border bg-panel px-2 text-xs" />
+              <button className="h-8 w-full rounded-md border border-border bg-panel text-xs font-medium hover:bg-hover">Email me a sign-in link</button>
+            </form>
+          )}
     </AuthShell>
   );
+}
+
+/**
+ * Sends a sign-in link to an external partner. Answers the same whether or not the address has
+ * access (no account discovery); limited per address and per client.
+ */
+async function requestEmailLink(raw: string) {
+  const email = raw.trim().toLowerCase().slice(0, 200);
+  const h = await headers();
+  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("x-real-ip") ?? "?";
+  try {
+    rateLimit(`magic:ip:${ip}`, 10, 15 * 60_000);
+    rateLimit(`magic:email:${email}`, 3, 15 * 60_000);
+  } catch {
+    redirect("/login?error=RateLimited");
+  }
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    const user = await db.user.findUnique({ where: { email } });
+    if (user?.external && !user.disabled && (!user.accessUntil || user.accessUntil.getTime() > Date.now())) {
+      const proto = h.get("x-forwarded-proto") ?? "https";
+      const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+      const link = await createLoginLink(user.id, "login", null, new Request(`${proto}://${host}/`));
+      const ws = await db.membership.findFirst({ where: { userId: user.id }, include: { workspace: true } });
+      await mailLoginLink(user, link.url, link.expiresAt, { workspace: ws?.workspace.name ?? "Volt" });
+      await db.auditEvent.create({ data: { actorId: user.id, workspaceId: ws?.workspaceId, type: "auth.link.requested", data: "{}" } }).catch(() => {});
+    }
+  }
+  redirect(`/login?sent=${encodeURIComponent(email)}`);
 }
 
 /** Only same-origin relative paths are allowed as post-login destinations. */
