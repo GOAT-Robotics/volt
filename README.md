@@ -6,10 +6,9 @@ A free, open-source, browser-based electrical diagram editor with a complete sta
 
 Volt is a drawing and document-control tool. It does not simulate circuits, lay out PCBs, or certify anything. Its checks look for drawing consistency, not electrical safety.
 
-<p align="center">
-  <a href="docs/media/volt-film.mp4"><img src="docs/media/volt-film-poster.jpg" alt="Volt launch film — click to play" width="820"></a>
-</p>
-<p align="center"><sub><b>Launch film (1:21)</b> — live collaboration, git-like version control and customer variants, the Volt AI Reviewer, harness wire numbering, label printing, terminal diagrams and signed releases. <a href="docs/media/volt-film.mp4">Watch</a> · made by GOAT Robotics with help from Claude.</sub></p>
+https://github.com/user-attachments/assets/64a9a26a-7b25-42a1-9c05-e5f1f272d151
+
+<p align="center"><sub><b>Launch film (1:21)</b> — live collaboration, git-like version control and customer variants, the Volt AI Reviewer, harness wire numbering, label printing, terminal diagrams and signed releases. <a href="docs/media/volt-film.mp4">Full-resolution 1080p</a> · made by GOAT Robotics with help from Claude.</sub></p>
 
 ---
 
