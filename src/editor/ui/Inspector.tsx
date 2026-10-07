@@ -9,9 +9,9 @@ import { Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge, Switch, Tip } from "@/components/ui/misc";
 import { getPage, emptySel, scaleElements } from "@/core/ops";
-import type { Doc, ElemInst, LineStyle, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
+import type { Doc, ElemInst, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
 import { TEXT_ROLES, COMPONENT_INFO, type ComponentInfoFlags, type ComponentInfoKey, type InfoLayout, type InfoPlacement } from "@/core/model";
-import { ConductorSection, Swatch } from "./Conductor";
+import { ConductorSection } from "./Conductor";
 import { PartDocuments } from "@/components/volt/PartDocuments";
 import { StylePicker } from "./StylePicker";
 import { TitleBlockLogos } from "./TitleBlockLogos";
@@ -24,7 +24,7 @@ import { autoLinkReports, isReportDef, looksLikeArrow } from "@/core/reports";
 import { CoverSection, PageTypeRow } from "./CoverInspector";
 import { logoBytes, logoDataUrl, logoSize } from "@/core/logos";
 import { PICTURE_LIMITS, readLogoFile } from "./logoUpload";
-import { endAddress, wireEndLabel, wireInfo, wiringOf } from "@/core/wiring";
+import { endAddress, wireEndLabel, wiringOf } from "@/core/wiring";
 import { ROLE_LABELS } from "@/core/styles";
 import { DEFAULT_FRAME, docStyles, tbTemplate, wireTextAnchor } from "@/core/render/scene";
 import { templateVariables } from "@/core/titleblock-edit";
@@ -927,10 +927,7 @@ function endLabel(doc: Doc, page: Page, end: WireEnd): { text: string; ok: boole
 }
 
 function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: Doc; editable: boolean }) {
-  const styles = docStyles(doc);
   const ui = useEditorUI();
-  const base: LineStyle = w.bus ? styles.graphics.bus : styles.graphics.wire;
-  const eff = { ...base, ...(w.override ?? {}) };
   const s = useEditor.getState;
   const upd = (label: string, fn: (x: Wire) => void) =>
     s().apply(label, (d) => {
@@ -938,7 +935,6 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
       if (x) fn(x);
     });
   const a = endLabel(doc, page, w.a), b = endLabel(doc, page, w.b);
-  const wi = wireInfo(doc, w);
   const autoPos = useMemo(() => {
     // where the automatic placement puts the texts, as a fraction of the wire length (for the slider)
     const { p } = wireTextAnchor(doc, w, docStyles(doc), measureText);
@@ -954,7 +950,6 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
     }
     return Math.min(0.95, Math.max(0.05, best.at));
   }, [doc, w]);
-  const conductorLook = wi.look && (wi.colorSource !== "standard" || wiringOf(doc).colorize) ? wi.look : null;
   return (
     <div>
       <Section title="Wire">
@@ -1033,28 +1028,6 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
         <Button size="xs" variant="secondary" onClick={() => runCommand("selectNet", ui)}>
           Select connected net
         </Button>
-      </Section>
-      <Section title="Appearance" actions={<Overridden on={!!w.override} onReset={() => upd("Reset wire style", (x) => (x.override = undefined))} />}>
-        <Row label="Color" hint={conductorLook ? `Drawn in the conductor color ${conductorLook.code} (${conductorLook.name}). Clear it in Conductor to use this color.` : undefined}>
-          {conductorLook ? (
-            <span className="flex items-center gap-1.5 text-xs text-muted">
-              <Swatch code={conductorLook.code} /> {conductorLook.name}
-            </span>
-          ) : (
-            <ColorInput value={eff.color} disabled={!editable} onChange={(v) => upd("Wire color", (x) => (x.override = { ...(x.override ?? {}), color: v }))} />
-          )}
-        </Row>
-        <Row label="Thickness">
-          <Commit type="number" step={0.25} value={eff.width} disabled={!editable} onCommit={(v) => upd("Wire thickness", (x) => (x.override = { ...(x.override ?? {}), width: Math.max(0.25, Number(v) || 1) }))} />
-        </Row>
-        <Row label="Line">
-          <NativeSelect value={eff.dash} disabled={!editable} onChange={(ev) => upd("Wire line style", (x) => (x.override = { ...(x.override ?? {}), dash: ev.target.value as LineStyle["dash"] }))}>
-            <option value="solid">Solid</option>
-            <option value="dashed">Dashed</option>
-            <option value="dotted">Dotted</option>
-            <option value="dashdot">Dash-dot</option>
-          </NativeSelect>
-        </Row>
       </Section>
     </div>
   );

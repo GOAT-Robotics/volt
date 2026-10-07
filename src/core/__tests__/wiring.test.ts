@@ -117,14 +117,26 @@ import { approxMeasure } from "../render/svg";
 import { endAddress, wireEndLabel } from "../wiring";
 
 describe("drawing priorities and wire ends", () => {
-  it("a conductor color wins over the appearance color; standard colors only when enabled", () => {
+  it("wires take the conductor color, never a per-wire appearance; standard colors only when enabled", () => {
     const doc = newDoc("t");
     const st = docStyles(doc);
     expect(wireStroke(st, wire("a", 0, { insulation: "BU", override: { color: "#ff00ff" } }), undefined, doc).color).toBe(colorOf("BU")!.hex);
-    expect(wireStroke(st, wire("a", 0, { override: { color: "#ff00ff" } }), undefined, doc).color).toBe("#ff00ff");
+    expect(wireStroke(st, wire("a", 0, { override: { color: "#ff00ff", width: 5 } }), undefined, doc)).toMatchObject({ color: st.graphics.wire.color, width: st.graphics.wire.width });
     expect(wireStroke(st, wire("a", 0, { fn: "acControl" }), undefined, doc).color).toBe(st.graphics.wire.color);
     doc.wiring = { standard: "iec", showColor: true, showSection: true, tick: true, colorize: true, weightBySection: false };
     expect(wireStroke(st, wire("a", 0, { fn: "acControl" }), undefined, doc).color).toBe(colorOf("RD")!.hex);
+  });
+
+  it("wire thickness follows the cross-section when enabled", () => {
+    const doc = newDoc("t");
+    const st = docStyles(doc);
+    const base = st.graphics.wire.width;
+    expect(wireStroke(st, wire("a", 0, { section: "16 mm²" }), undefined, doc).width).toBe(base);
+    doc.wiring = { standard: "iec", showColor: true, showSection: true, tick: true, colorize: false, weightBySection: true };
+    expect(wireStroke(st, wire("a", 0, { section: "16 mm²" }), undefined, doc).width).toBe(base * 2);
+    expect(wireStroke(st, wire("a", 0, { section: "1.5 mm²" }), undefined, doc).width).toBe(base);
+    expect(wireStroke(st, wire("a", 0, { section: "0.75" }), undefined, doc).width).toBeLessThan(base);
+    expect(wireStroke(st, wire("a", 0, {}), undefined, doc).width).toBe(base);
   });
 
   it("names each end: manual name, number at ends, far-end address", () => {

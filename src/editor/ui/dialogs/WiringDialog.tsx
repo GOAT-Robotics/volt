@@ -113,7 +113,7 @@ export function WiringDialog({ onClose }: { onClose: () => void }) {
                   ["showSection", "Show cross-section"],
                   ["tick", "Tick mark at the annotation"],
                   ["colorize", "Also draw wires in their function's standard color"],
-                  ["weightBySection", "Heavier lines for larger cross-sections"],
+                  ["weightBySection", "Wire thickness from cross-section"],
                 ] as const
               ).map(([k, l]) => (
                 <label key={k} className="flex h-7 items-center justify-between text-xs">
@@ -122,7 +122,7 @@ export function WiringDialog({ onClose }: { onClose: () => void }) {
                 </label>
               ))}
             </div>
-            <p className="mt-1 text-2xs text-subtle">A wire with a conductor color (its own or its cable core's) is always drawn in that color; the Appearance color is used only when none is set.</p>
+            <p className="mt-1 text-2xs text-subtle">Wires are drawn in their conductor color (their own or their cable core's). With “Wire thickness from cross-section” the line gets thicker with the cross-section set on the wire or its cable (0.75 mm² thin … 1.5 mm² normal … 16 mm² double); wires without one keep the normal thickness.</p>
           </section>
 
           <section>

@@ -479,17 +479,21 @@ export type DrawOpts = {
   extraFields?: Record<string, string>;
 };
 
+/**
+ * How a conductor is drawn. Wires have no per-wire appearance: color comes from the conductor
+ * (its insulation, its cable core, or its function's standard color when "colorize" is on), the
+ * line from the drawing style (wire / bus), and — with "Wire thickness from cross-section" — the
+ * thickness from the cross-section set on the wire or its cable.
+ */
 export function wireStroke(styles: Styles, w: Wire, tint?: string, doc?: WireLookDoc): StrokeStyle {
   const base = w.bus ? styles.graphics.bus : styles.graphics.wire;
-  const o = w.override ?? {};
   const ws = doc?.wiring;
   const insul = doc ? insulationHex(doc, w) : null;
-  const weight = ws?.weightBySection && o.width === undefined ? sectionWeight(wireInfo(doc!, w).section) : 1;
+  const weight = ws?.weightBySection ? sectionWeight(wireInfo(doc!, w).section) : 1;
   return {
-    // a conductor color wins over the appearance color; appearance applies when none is set
-    color: tint ?? insul?.hex ?? o.color ?? base.color,
-    width: (o.width ?? base.width) * weight,
-    dash: DASHES[o.dash ?? base.dash] ?? null,
+    color: tint ?? insul?.hex ?? base.color,
+    width: base.width * weight,
+    dash: DASHES[base.dash] ?? null,
     cap: "round",
     join: "round",
     minPx: 1,

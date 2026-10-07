@@ -274,7 +274,6 @@ export const COMMANDS: Command[] = [
             if (e.outlineOverride) (e.outlineOverride = undefined), n++;
             if (e.frame) (e.frame = undefined), n++;
           }
-        for (const w of p.wires) if (sel.wires.includes(w.id) && w.override) (w.override = undefined), n++;
         for (const t of p.texts) if (sel.texts.includes(t.id) && t.override) (t.override = undefined), n++;
       });
       ui.toast(n ? `Reset ${n} override${n > 1 ? "s" : ""}` : "No overrides on the selection");
