@@ -1,4 +1,5 @@
 "use client";
+import { updateInstancesDef } from "@/core/replace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Library, Files, Search, ChevronRight, Upload, Boxes, Building2, User, BadgeCheck, FolderOpen, PanelLeftClose, MoreHorizontal, ExternalLink, RefreshCw, GripVertical } from "lucide-react";
 import { useEditor } from "../store";
@@ -456,27 +457,16 @@ async function updateInstances(it: LibItem, ui: ReturnType<typeof useEditorUI>) 
   const def = await loadLibraryDef(it);
   const s = useEditor.getState();
   let n = 0;
+  let loose = 0;
   s.apply(`Update ${it.name} to rev ${it.revision}`, (d) => {
     const old = Object.values(d.defs).filter((x) => x.source?.libraryElementId === it.id && x.id !== def.id);
-    d.defs[def.id] = def;
-    const oldIds = new Set(old.map((o) => o.id));
-    for (const p of d.pages)
-      for (const e of p.elements)
-        if (oldIds.has(e.defId)) {
-          e.defId = def.id;
-          n++;
-        }
-    // wires to pins that disappeared become dangling
-    const pinIds = new Set(def.pins.map((p) => p.id));
-    for (const p of d.pages)
-      for (const w of p.wires)
-        for (const k of ["a", "b"] as const) {
-          const end = w[k];
-          if (end.k === "pin" && p.elements.find((e) => e.id === end.el)?.defId === def.id && !pinIds.has(end.pin)) w[k] = { k: "free" };
-        }
+    const r = updateInstancesDef(d, new Set(old.map((o) => o.id)), def);
+    n = r.instances;
+    loose = r.loose;
     for (const o of old) delete d.defs[o.id];
   });
-  ui.toast(`Updated ${n} instance${n === 1 ? "" : "s"}`, { undo: true });
+  if (loose) ui.toast(`Updated ${n} instance${n === 1 ? "" : "s"} — ${loose} wire end${loose === 1 ? "" : "s"} lost their pin (check the red markers)`, { undo: true });
+  else ui.toast(`Updated ${n} instance${n === 1 ? "" : "s"}`, { undo: true });
 }
 
 /* ------------------------------------------------------------------ */

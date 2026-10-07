@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, AlertTriangle, CheckCircle2, Crosshair, Grid3x3, ListOrdered, Plus, Trash2, X } from "lucide-react";
-import type { ElementDef, Orient } from "@/core/model";
+import { PIN_CLASSES, type ElementDef, type Orient } from "@/core/model";
+import { inferPinClass } from "@/core/pinclass";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/misc";
 import { inputCls } from "@/components/ui/input";
@@ -10,7 +11,8 @@ import { LINK_TYPES, validateDef, type Issue } from "@/lib/library/elmt-tools";
 import { elementSvg } from "@/lib/library/preview";
 import { useEd, defOf } from "./store";
 import { TextField, SelectField } from "./fields";
-import { centerOnOrigin, snapPinsToGrid } from "./actions";
+import { centerOnOrigin, pinGridProblems, PIN_GRID, snapPinsToGrid } from "./actions";
+import { toast } from "sonner";
 
 /* ------------------------------------------------------------------ */
 /* Pin table                                                           */
@@ -61,7 +63,8 @@ export function PinTable({ readOnly }: { readOnly: boolean }) {
               <tr className="[&_th]:px-1.5 [&_th]:py-1 [&_th]:text-left [&_th]:font-medium">
                 <th>No.</th>
                 <th>Name</th>
-                <th>Direction</th>
+                <th title="Wire leaves towards">Dir.</th>
+                <th title="What the pin carries — Auto = from the name">Class</th>
                 <th title="Must be connected">Req.</th>
                 <th />
               </tr>
@@ -79,12 +82,34 @@ export function PinTable({ readOnly }: { readOnly: boolean }) {
                       <input value={p.name} disabled={readOnly} aria-label="Pin name" onChange={(e) => set(p.id, "name", e.target.value)} onKeyDown={(e) => e.stopPropagation()} className={cn(inputCls, "h-6 w-full min-w-14 px-1")} />
                     </td>
                     <td>
-                      <select value={p.orient} disabled={readOnly} aria-label="Direction" onChange={(e) => set(p.id, "orient", e.target.value as Orient)} className={cn(inputCls, "h-6 w-20 px-1")}>
-                        <option value="n">↑ Up</option>
-                        <option value="e">→ Right</option>
-                        <option value="s">↓ Down</option>
-                        <option value="w">← Left</option>
+                      <select value={p.orient} disabled={readOnly} aria-label="Direction" onChange={(e) => set(p.id, "orient", e.target.value as Orient)} className={cn(inputCls, "h-6 w-11 px-1")}>
+                        <option value="n">↑</option>
+                        <option value="e">→</option>
+                        <option value="s">↓</option>
+                        <option value="w">←</option>
                       </select>
+                    </td>
+                    <td>
+                      {(() => {
+                        const auto = inferPinClass(p.name) ?? inferPinClass(p.number);
+                        return (
+                          <select
+                            value={p.cls ?? ""}
+                            disabled={readOnly}
+                            aria-label="Pin class"
+                            title={p.cls ? PIN_CLASSES.find((c) => c.id === p.cls)?.hint : `Auto: ${auto ?? "none"} (from the name)`}
+                            onChange={(e) => set(p.id, "cls", e.target.value || undefined)}
+                            className={cn(inputCls, "h-6 w-[4.5rem] px-1", !p.cls && "text-subtle")}
+                          >
+                            <option value="">{auto ? `Auto·${auto === "DC0" ? "0V" : auto === "signal" ? "Sig" : auto}` : "Auto"}</option>
+                            {PIN_CLASSES.map((c) => (
+                              <option key={c.id} value={c.id} title={c.label}>
+                                {c.id === "DC0" ? "0V" : c.id === "signal" ? "Signal" : c.id === "none" ? "None" : c.id}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      })()}
                     </td>
                     <td>
                       <Checkbox checked={!!p.required} disabled={readOnly} aria-label="Required" onCheckedChange={(v) => set(p.id, "required", v === true)} />
@@ -319,11 +344,9 @@ export function useIssues(): Issue[] {
     const t = setTimeout(() => {
       const def = defOf(doc);
       const list = validateDef(def);
-      const pos = new Set<string>();
-      for (const p of doc.pins) {
-        if (p.x % 5 !== 0 || p.y % 5 !== 0) pos.add(p.number || p.name || "?");
-      }
-      if (pos.size) list.push({ level: "warning", message: `Pin(s) ${[...pos].join(", ")} are off the 5-unit grid — wires may not line up on diagrams.` });
+      const { off, crowded } = pinGridProblems(doc.pins);
+      if (off.length) list.push({ level: "warning", message: `Pin(s) ${off.join(", ")} are off the ${PIN_GRID}-unit drawing grid — wires to them will jog sideways on diagrams.` });
+      if (crowded.length) list.push({ level: "warning", message: `Pins ${crowded.map((c) => c.join(" & ")).join(", ")} are closer than ${PIN_GRID} units — they can't all line up with the drawing grid. Space pins ${PIN_GRID} or 20 units apart.` });
       setIssues(list);
     }, 150);
     return () => clearTimeout(t);
@@ -360,8 +383,8 @@ export function ValidationList({ issues, readOnly }: { issues: Issue[]; readOnly
           </li>
         ))}
       </ul>
-      {!readOnly && issues.some((i) => i.message.includes("5-unit grid")) && (
-        <Button size="sm" onClick={snapPinsToGrid}>
+      {!readOnly && issues.some((i) => i.message.includes("drawing grid")) && (
+        <Button size="sm" onClick={() => { const r = snapPinsToGrid(); (r.ok ? toast.success : toast.error)(r.message); }}>
           <Grid3x3 /> Snap pins to grid
         </Button>
       )}

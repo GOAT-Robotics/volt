@@ -704,8 +704,11 @@ export class Engine {
         const guides: { x?: number; y?: number } = {};
         if (!this.altDown && s.snapSettings.guides) {
           const gd = this.pinGuides(m.sel, d);
-          if (gd.x !== undefined) (d = { ...d, x: gd.dx! }), (guides.x = gd.x);
-          if (gd.y !== undefined) (d = { ...d, y: gd.dy! }), (guides.y = gd.y);
+          // a guide may only pull the component to another grid position — never off the grid,
+          // or its origin and every other pin end up between the dots
+          const onGrid = (v: number) => Math.abs(v - snapGrid(v, g)) < 1e-6;
+          if (gd.x !== undefined && onGrid(m.anchor.x + gd.dx!)) (d = { ...d, x: gd.dx! }), (guides.x = gd.x);
+          if (gd.y !== undefined && onGrid(m.anchor.y + gd.dy!)) (d = { ...d, y: gd.dy! }), (guides.y = gd.y);
         }
         if (d.x !== m.delta.x || d.y !== m.delta.y) {
           m.delta = d;

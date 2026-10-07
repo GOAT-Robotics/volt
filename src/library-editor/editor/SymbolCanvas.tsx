@@ -1,4 +1,5 @@
 "use client";
+import { PIN_GRID } from "./actions";
 import { useCallback, useEffect, useRef } from "react";
 import type { ElemInst, Orient, PinDef, Prim, Pt, Rect } from "@/core/model";
 import { CanvasPainter, measureText } from "@/core/render/canvas";
@@ -129,6 +130,15 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
     },
     [snap],
   );
+  /**
+   * Pins snap to the drawing grid (10) only — never to box centres or midpoints — because a
+   * placed component's origin lands on the drawing grid and every pin must too, or wires jog.
+   * Alt places freely.
+   */
+  const pinSnap = useCallback((p: Pt, alt?: boolean): OSnap => {
+    if (alt) return { p: { x: r1(p.x), y: r1(p.y) }, kind: "free" };
+    return { p: { x: Math.round(p.x / PIN_GRID) * PIN_GRID, y: Math.round(p.y / PIN_GRID) * PIN_GRID }, kind: "grid" };
+  }, []);
 
   /* ---------------------------- drawing ---------------------------- */
   const draw = useCallback(() => {
@@ -404,7 +414,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
     }
     // pin ghost
     if (st.tool === "pin" && mouse.current && ge.k === "none" && !readOnly) {
-      const p = smart(mouse.current, { on: true, forceGrid: true, alt: altKey.current }).p;
+      const p = pinSnap(mouse.current, altKey.current).p;
       const orient = st.toolOpts.pinOrient ?? autoOrient(p, bodyBox(doc.prims));
       const a = S(p), vv = stubVec(orient);
       const b = S({ x: p.x + vv.x * 4, y: p.y + vv.y * 4 });
@@ -776,7 +786,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
         return;
       }
       case "pin": {
-        const q = smart(p, { alt: e.altKey, on: true, forceGrid: true }).p;
+        const q = pinSnap(p, e.altKey).p;
         const orient = st.toolOpts.pinOrient ?? autoOrient(q, bodyBox(st.doc.prims));
         if (st.doc.pins.some((x) => x.x === q.x && x.y === q.y)) return;
         const number = nextPinNumber(st.doc.pins);
@@ -797,7 +807,7 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
     const st = useEd.getState();
     const ge = g.current;
     altKey.current = e.altKey;
-    const hs = smart(p, { alt: e.altKey, exclude: ge.k === "handle" ? ge.id : undefined, on: st.tool === "pin", forceGrid: st.tool === "pin" });
+    const hs = st.tool === "pin" ? pinSnap(p, e.altKey) : smart(p, { alt: e.altKey, exclude: ge.k === "handle" ? ge.id : undefined });
     const prevHint = hint.current;
     hint.current = st.tool !== "select" || ge.k === "handle" ? hs : null;
     if (prevHint?.kind !== hint.current?.kind || prevHint?.p.x !== hint.current?.p.x || prevHint?.p.y !== hint.current?.p.y) request();
@@ -814,6 +824,12 @@ export function SymbolCanvas({ apiRef, readOnly }: { apiRef?: React.MutableRefOb
         let dx = p.x - ge.start.x, dy = p.y - ge.start.y;
         if (!e.altKey && st.snap) (dx = Math.round(dx / st.grid) * st.grid), (dy = Math.round(dy / st.grid) * st.grid);
         if (e.shiftKey) Math.abs(dx) > Math.abs(dy) ? (dy = 0) : (dx = 0);
+        // moving pins: land the first selected pin on the drawing grid, whatever the editor grid
+        if (!e.altKey && st.snap) {
+          const p0 = st.gestureBase?.pins.find((q) => st.sel.includes(q.id));
+          if (p0) (dx = Math.round((p0.x + dx) / PIN_GRID) * PIN_GRID - p0.x), (dy = Math.round((p0.y + dy) / PIN_GRID) * PIN_GRID - p0.y);
+          if (e.shiftKey) Math.abs(dx) > Math.abs(dy) ? (dy = 0) : (dx = 0);
+        }
         if (!ge.moved && Math.hypot(dx, dy) * view.current.s < 2) return;
         ge.moved = true;
         const sel = new Set(st.sel);

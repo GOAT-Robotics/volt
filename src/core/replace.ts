@@ -71,3 +71,39 @@ export function replaceSymbol(doc: Doc, page: Page, el: ElemInst, def: ElementDe
   refreshAttached(doc, page, new Set([el.id]));
   return { moved, loose };
 }
+
+/**
+ * Point placed components at a newer revision of their library symbol without losing wires.
+ * Wire ends follow the pin with the same id; if that id is gone (pin redrawn in the element editor),
+ * the pin with the same number, then the same name; only when nothing matches does the end go free.
+ * Wire ends are then moved onto the pins' new positions (pins may have moved between revisions).
+ */
+export function updateInstancesDef(doc: Doc, oldDefIds: Set<string>, def: ElementDef): { instances: number; remapped: number; loose: number } {
+  ensureDef(doc, def);
+  const byId = new Map(def.pins.map((p) => [p.id, p]));
+  let instances = 0, remapped = 0, loose = 0;
+  for (const page of doc.pages) {
+    const touched = new Set<string>();
+    const oldOf = new Map<string, ElementDef | undefined>();
+    for (const e of page.elements)
+      if (oldDefIds.has(e.defId)) {
+        oldOf.set(e.id, doc.defs[e.defId]);
+        e.defId = def.id;
+        touched.add(e.id);
+        instances++;
+      }
+    if (!touched.size) continue;
+    for (const w of page.wires)
+      for (const k of ["a", "b"] as const) {
+        const end = w[k];
+        if (end.k !== "pin" || !touched.has(end.el) || byId.has(end.pin)) continue;
+        const old = oldOf.get(end.el)?.pins.find((p) => p.id === end.pin);
+        const num = old?.number?.trim(), name = old?.name?.trim();
+        const to = (num && def.pins.find((p) => p.number?.trim() === num)) || (name && def.pins.find((p) => p.name?.trim() === name)) || null;
+        if (to) ((w[k] = { k: "pin", el: end.el, pin: to.id }), remapped++);
+        else ((w[k] = { k: "free" }), loose++);
+      }
+    refreshAttached(doc, page, touched);
+  }
+  return { instances, remapped, loose };
+}

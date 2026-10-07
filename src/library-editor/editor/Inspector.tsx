@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { Draft } from "immer";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, FlipHorizontal2, FlipVertical2, MousePointerClick, RotateCw, Trash2 } from "lucide-react";
-import type { LineEnd, PinDef, Prim, PrimStyle } from "@/core/model";
+import { PIN_CLASSES, type LineEnd, type PinClass, type PinDef, type Prim, type PrimStyle } from "@/core/model";
+import { inferPinClass } from "@/core/pinclass";
 import { Button } from "@/components/ui/button";
 import { Switch, Kbd } from "@/components/ui/misc";
 import { INFO_KEYS, PIN_TYPES } from "@/lib/library/elmt-tools";
@@ -291,6 +292,7 @@ function PinInspector({ pin, readOnly }: { pin: PinDef; readOnly: boolean }) {
         <NumField label="X" value={pin.x} disabled={d} onChange={(v) => set("x", v)} />
         <NumField label="Y" value={pin.y} disabled={d} onChange={(v) => set("y", v)} />
       </div>
+      <PinClassField pin={pin} disabled={d} onChange={(c, v) => (set("cls", c), set("volts", v))} />
       <SelectField label="Type" value={pin.type || "Generic"} disabled={d} options={PIN_TYPES.map((t) => ({ v: t, l: t === "Generic" ? "Generic" : t === "Inner" ? "Inner (bridge side)" : "Outer (field side)" }))} onChange={(v) => set("type", v)} />
       <label className="flex items-center gap-2 text-xs">
         <Switch checked={!!pin.required} disabled={d} onCheckedChange={(v) => set("required", v)} aria-label="Must be connected" /> Must be connected (validation warns when left open)
@@ -298,3 +300,27 @@ function PinInspector({ pin, readOnly }: { pin: PinDef; readOnly: boolean }) {
     </div>
   );
 }
+
+/** Pin class (what the pin carries) + nominal voltage. Unset = inferred from the pin name. */
+export function PinClassField({ pin, disabled, onChange }: { pin: PinDef; disabled: boolean; onChange: (cls: PinClass | undefined, volts: number | undefined) => void }) {
+  const auto = inferPinClass(pin.name) ?? inferPinClass(pin.number);
+  const autoLabel = auto ? PIN_CLASSES.find((c) => c.id === auto)?.label.split(" — ")[0] : "none";
+  const c = pin.cls;
+  const hasVolts = c === "DC+" || c === "DC-" || c === "L" || c === "L1" || c === "L2" || c === "L3" || (!c && (auto === "DC+" || auto === "L"));
+  return (
+    <div className="space-y-1">
+      <div className="grid grid-cols-[1fr_5rem] gap-2">
+        <SelectField
+          label="Class (what it carries)"
+          value={(c ?? "") as PinClass | ""}
+          disabled={disabled}
+          options={[{ v: "" as const, l: `Auto from name (${autoLabel})` }, ...PIN_CLASSES.map((x) => ({ v: x.id, l: x.label }))]}
+          onChange={(v) => onChange((v || undefined) as PinClass | undefined, v && hasVoltsFor(v as PinClass) ? pin.volts : undefined)}
+        />
+        <TextField label="Volts" value={pin.volts === undefined ? "" : String(pin.volts)} disabled={disabled || !hasVolts} placeholder={hasVolts ? "e.g. 24" : "—"} onChange={(v) => onChange(c, v.trim() === "" || !Number.isFinite(Number(v)) ? undefined : Number(v))} />
+      </div>
+      <p className="text-2xs text-subtle">{c ? PIN_CLASSES.find((x) => x.id === c)?.hint : "Set it when the name doesn't say it."} The check flags L wired to N, + to 0 V, PE to live and power to signal pins; wire numbering uses it for the circuit class.</p>
+    </div>
+  );
+}
+const hasVoltsFor = (c: PinClass) => c === "DC+" || c === "DC-" || c === "L" || c === "L1" || c === "L2" || c === "L3";

@@ -29,3 +29,27 @@ describe("replace symbol", () => {
     expect(row.conn2[0].to).toEqual(["K1:1"]);
   });
 });
+
+describe("update instances to a new library revision", () => {
+  it("keeps wires on redrawn pins (matched by number) and moves their ends to the new pin position", async () => {
+    const { updateInstancesDef } = await import("../replace");
+    const { doc, page } = mkDoc();
+    const v1 = mkDef("psu@1", [
+      { id: "a", x: 0, y: 20, orient: "s", number: "4" },
+      { id: "b", x: 10, y: 20, orient: "s", number: "5" },
+    ]);
+    const ps = newElement(doc, page, v1, { x: 100, y: 100 });
+    const p4 = toScene(ps, v1.pins[0]);
+    addWire(page, { k: "pin", el: ps.id, pin: "a", p: p4 }, { k: "free", p: { x: p4.x, y: p4.y + 50 } }, [p4, { x: p4.x, y: p4.y + 50 }]);
+    // rev 2: pins redrawn (new ids), shorter leads (pin ends moved up 15 units)
+    const v2 = mkDef("psu@2", [
+      { id: "x", x: 0, y: 5, orient: "s", number: "4" },
+      { id: "y", x: 10, y: 5, orient: "s", number: "5" },
+    ]);
+    const r = updateInstancesDef(doc, new Set([ps.defId]), v2);
+    expect(r).toEqual({ instances: 1, remapped: 1, loose: 0 });
+    const w = page.wires[0];
+    expect(w.a).toEqual({ k: "pin", el: ps.id, pin: "x" });
+    expect(w.pts[0]).toEqual(toScene(ps, v2.pins[0]));
+  });
+});

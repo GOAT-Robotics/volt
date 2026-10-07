@@ -7,7 +7,8 @@
  * Nets are project wide: wires, junctions, mated connectors, folio reports (QET "next/previous
  * report" pairs), two-pin feed-through terminals and junction elements join them.
  */
-import type { Doc, ElemInst, ElementDef, Page, Wire, WireFunction } from "./model";
+import type { Doc, ElemInst, ElementDef, Page, PinDef, Wire, WireFunction } from "./model";
+import { pinClassOf, pinPotential, signalConflict } from "./pinclass";
 import { prefixFor } from "./numbering";
 import { matedPinPairs, isConnector } from "./mating";
 import { colorOf, sectionMm2, wireInfo, wiringOf } from "./wiring";
@@ -88,15 +89,9 @@ function potentialOfFunction(fn: WireFunction | undefined): Potential | null {
   }
 }
 
-/** potentials a pin name implies (only unambiguous names) */
-function potentialOfPin(name: string): Potential | null {
-  const t = name.trim().toUpperCase();
-  if (/^(PE|⏚|GND\/PE|PE\d?)$/.test(t)) return { kind: "PE", text: name };
-  if (t === "N") return { kind: "N", text: name };
-  if (/^(L1|L2|L3)$/.test(t)) return { kind: t as PotKind, text: name };
-  if (/^(\+|\+24V?|24V\+?|L\+|V\+|\+V)$/.test(t)) return { kind: "DC+", text: name };
-  if (/^(-|0V|M|L-|V-|-V|GND)$/.test(t)) return { kind: "DC0", text: name };
-  return null;
+/** potential a pin carries: its class set in the element editor, else what its name implies */
+function potentialOfPin(p: PinDef): Potential | null {
+  return pinPotential(p);
 }
 
 const AC_KINDS: PotKind[] = ["L1", "L2", "L3", "L"];
@@ -405,7 +400,7 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
   for (const [id, { e, def }] of idx) {
     if (!def || isReport(def) || isJunctionEl(def)) continue;
     for (const p of def.pins) {
-      const want = potentialOfPin(p.name || p.number);
+      const want = potentialOfPin(p);
       if (!want) continue;
       const n = netOfPin.get(`${id}/${p.id}`);
       if (!n) {
@@ -582,6 +577,43 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
     void wid;
   }
   // PE section against the phase conductors at each device
+  /* ---------- pins of different classes on one conductor (L on N, +V on 0 V, power on a data pin) ---------- */
+  for (const n of nets) {
+    if (n.pins.length < 2) continue;
+    const classed: { ref: PinRef; pd: PinDef; pot: Potential | null; cls: string }[] = [];
+    for (const r of n.pins) {
+      const x = idx.get(r.el);
+      if (!x?.def || isReport(x.def) || isJunctionEl(x.def)) continue;
+      const pd = x.def.pins.find((q) => q.id === r.pin);
+      const cls = pd && pinClassOf(pd);
+      if (pd && cls) classed.push({ ref: r, pd, pot: pinPotential(pd), cls });
+    }
+    const seen = new Set<string>();
+    for (let i = 0; i < classed.length; i++)
+      for (let j = i + 1; j < classed.length; j++) {
+        const a = classed[i], b = classed[j];
+        if (a.ref.el === b.ref.el) continue; // the self-short check reports pins of one device
+        const why = a.pot && b.pot ? conflict(a.pot, b.pot) : signalConflict(a.cls as never, b.cls as never);
+        if (!why) continue;
+        const key = [a.cls + (a.pot?.volts ?? ""), b.cls + (b.pot?.volts ?? "")].sort().join("|");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const sig = !(a.pot && b.pot);
+        const pe = why.includes("protective earth");
+        const anchorWire = n.wires[0]?.id;
+        const f: ErcFinding = {
+          level: sig ? "warning" : "error",
+          code: sig ? "erc.pinSignal" : pe ? "erc.peLive" : "erc.pinClass",
+          category: sig ? "wiring" : pe ? "safety" : "short",
+          message: `${pinName(a.ref.el, a.ref.pin)} (${a.cls}) is wired to ${pinName(b.ref.el, b.ref.pin)} (${b.cls}) — ${why}`,
+          suggestion: sig ? "Signal and data pins connect to signal pins only; supply them through the device's own supply pins." : "Pins of different classes must not share a conductor: connect L to L, N to N, PE to PE, + to +, 0 V to 0 V. Check the wire landed on the right terminal, or the pin class in the element editor.",
+          ids: [a.ref.el, b.ref.el, ...(anchorWire ? [anchorWire] : [])],
+        };
+        if (anchorWire) onWire({ ...f, ids: [anchorWire, a.ref.el, b.ref.el] }, anchorWire);
+        else onEl(f, a.ref.el);
+      }
+  }
+
   for (const [id, { def }] of idx) {
     if (!def || isTerminal(def) || isReport(def) || isJunctionEl(def)) continue;
     let phase = 0, pe: { mm2: number; wire: string } | null = null;
@@ -589,7 +621,7 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
       const n = netOfPin.get(`${id}/${p.id}`);
       if (!n) continue;
       const kinds = new Set(n.potentials.map((q) => q.kind));
-      const pinPe = potentialOfPin(p.name || p.number)?.kind === "PE";
+      const pinPe = potentialOfPin(p)?.kind === "PE";
       for (const s of n.sections) {
         if (kinds.has("PE") || pinPe) pe = !pe || s.mm2 < pe.mm2 ? { mm2: s.mm2, wire: s.wire } : pe;
         else if ([...kinds].some((k) => AC_KINDS.includes(k))) phase = Math.max(phase, s.mm2);

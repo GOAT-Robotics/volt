@@ -168,32 +168,51 @@ export function addPrims(prims: Prim[], select = true) {
   return eds;
 }
 
-/** Pin grid used by the validator and by QET diagrams: conductors attach on a 5-unit grid. */
-export const PIN_GRID = 5;
+/**
+ * Pin grid. Drawings use a 10-unit grid and a placed component's origin (hotspot) snaps to it,
+ * so a pin lands on the drawing grid only if its offset from the origin is a multiple of 10.
+ * Anything else makes every wire to that pin jog sideways.
+ */
+export const PIN_GRID = 10;
 const offGrid = (v: number) => Math.abs(v - Math.round(v / PIN_GRID) * PIN_GRID) > 1e-6;
 const snapG = (v: number) => Math.round(v / PIN_GRID) * PIN_GRID;
 
+/** Pins that are off the drawing grid, and pairs of pins too close together to both sit on it. */
+export function pinGridProblems(pins: { x: number; y: number; number: string; name: string }[]) {
+  const off = pins.filter((p) => offGrid(p.x) || offGrid(p.y)).map((p) => p.number || p.name || "?");
+  const targets = new Map<string, string[]>();
+  for (const p of pins) {
+    const k = `${snapG(p.x)},${snapG(p.y)}`;
+    targets.set(k, [...(targets.get(k) ?? []), p.number || p.name || "?"]);
+  }
+  const crowded = [...targets.values()].filter((v) => v.length > 1);
+  return { off, crowded };
+}
+
 /**
- * Put every pin on the 5-unit grid.
- * 1) Shift the whole symbol (graphics + pins) by the offset that lands the most pins on-grid —
- *    this keeps the drawing intact when the pins share a common offset (the usual case).
- * 2) Any pin still off-grid (odd pitch) is snapped individually, and line endpoints that touched
- *    that pin are dragged along so the lead still meets the pin.
+ * Put every pin on the drawing grid.
+ * 1) Shift the whole symbol by the offset that lands the most pins on-grid (drawing unchanged).
+ * 2) Snap the remaining pins one by one; a straight lead ending on the pin moves with it, so it
+ *    stays straight. Refuses when pins are closer than one grid step (they would merge): the
+ *    symbol then has to be redrawn wider.
  */
-export function snapPinsToGrid() {
+export function snapPinsToGrid(): { ok: boolean; message: string } {
   const st = useEd.getState();
   const pins = st.doc.pins;
-  if (!pins.some((p) => offGrid(p.x) || offGrid(p.y))) return;
-  const key = (dx: number, dy: number) => `${r1(dx)},${r1(dy)}`;
+  if (!pins.some((p) => offGrid(p.x) || offGrid(p.y))) return { ok: true, message: "All pins are already on the grid." };
   const votes = new Map<string, { dx: number; dy: number; n: number }>();
   for (const p of pins) {
     const dx = r1(snapG(p.x) - p.x), dy = r1(snapG(p.y) - p.y);
-    const k = key(dx, dy);
+    const k = `${dx},${dy}`;
     const v = votes.get(k) ?? { dx, dy, n: 0 };
     v.n++;
     votes.set(k, v);
   }
   const best = [...votes.values()].sort((a, b) => b.n - a.n || Math.hypot(a.dx, a.dy) - Math.hypot(b.dx, b.dy))[0];
+  const shifted = pins.map((p) => ({ ...p, x: r1(p.x + best.dx), y: r1(p.y + best.dy) }));
+  const { crowded } = pinGridProblems(shifted);
+  if (crowded.length)
+    return { ok: false, message: `Pins ${crowded.map((c) => c.join(" & ")).join(", ")} are closer than ${PIN_GRID} units — they can't all sit on the drawing grid. Redraw the symbol with pins ${PIN_GRID} (or 20) units apart.` };
   st.change((d) => {
     if (best.dx || best.dy) {
       for (const p of d.prims) translatePrim(p as Prim, best.dx, best.dy);
@@ -202,14 +221,25 @@ export function snapPinsToGrid() {
     const near = (ax: number, ay: number, bx: number, by: number) => Math.abs(ax - bx) < 0.5 && Math.abs(ay - by) < 0.5;
     for (const p of d.pins) {
       if (!offGrid(p.x) && !offGrid(p.y)) continue;
-      const ox = p.x, oy = p.y, nx = snapG(p.x), ny = snapG(p.y);
+      const ox = p.x, oy = p.y, nx = snapG(p.x), ny = snapG(p.y), dx = nx - ox, dy = ny - oy;
       for (const q of d.prims as Prim[]) {
         if (q.t !== "line") continue;
-        if (near(q.x1, q.y1, ox, oy)) (q.x1 = nx), (q.y1 = ny);
-        if (near(q.x2, q.y2, ox, oy)) (q.x2 = nx), (q.y2 = ny);
+        const at1 = near(q.x1, q.y1, ox, oy), at2 = near(q.x2, q.y2, ox, oy);
+        if (!at1 && !at2) continue;
+        const vertical = Math.abs(q.x1 - q.x2) < 0.5, horizontal = Math.abs(q.y1 - q.y2) < 0.5;
+        // keep a straight lead straight: slide it sideways, stretch it along its own axis
+        if (vertical) {
+          q.x1 = r1(q.x1 + dx); q.x2 = r1(q.x2 + dx);
+          if (at1) q.y1 = ny; else q.y2 = ny;
+        } else if (horizontal) {
+          q.y1 = r1(q.y1 + dy); q.y2 = r1(q.y2 + dy);
+          if (at1) q.x1 = nx; else q.x2 = nx;
+        } else if (at1) (q.x1 = nx), (q.y1 = ny);
+        else (q.x2 = nx), (q.y2 = ny);
       }
       p.x = nx;
       p.y = ny;
     }
-  }, "snap-pins");
+  });
+  return { ok: true, message: "Pins snapped to the drawing grid — check the leads still meet the body." };
 }

@@ -56,7 +56,30 @@ export type PinDef = {
   number: string;
   type: string; // Generic | Inner | Outer
   required?: boolean;
+  /**
+   * What the pin carries, for connection checks and wire classes: L / L1–L3 (AC phase), N, PE,
+   * DC+ / DC0 (0 V) / DC− and signal; "none" = deliberately unclassified (pass-through).
+   * Unset = inferred from the pin name ("L", "N", "PE", "+V", "0V" …).
+   */
+  cls?: PinClass;
+  /** nominal voltage for DC+ / DC− / L pins (24 for a 24 V output) */
+  volts?: number;
 };
+
+export type PinClass = "L" | "L1" | "L2" | "L3" | "N" | "PE" | "DC+" | "DC0" | "DC-" | "signal" | "none";
+export const PIN_CLASSES: { id: PinClass; label: string; hint: string }[] = [
+  { id: "L", label: "L — AC phase", hint: "Line / phase of single-phase AC" },
+  { id: "L1", label: "L1 — phase 1", hint: "Three-phase L1" },
+  { id: "L2", label: "L2 — phase 2", hint: "Three-phase L2" },
+  { id: "L3", label: "L3 — phase 3", hint: "Three-phase L3" },
+  { id: "N", label: "N — neutral", hint: "AC neutral" },
+  { id: "PE", label: "PE — protective earth", hint: "Protective earth / FG" },
+  { id: "DC+", label: "DC+ — positive", hint: "+V, +24 V …" },
+  { id: "DC0", label: "0 V — DC return", hint: "−V of a supply, 0 V, GND, M" },
+  { id: "DC-", label: "DC− — negative rail", hint: "A negative supply (−15 V), not 0 V" },
+  { id: "signal", label: "Signal / data", hint: "I/O, CAN, RS-485, encoder … must not meet power" },
+  { id: "none", label: "None (any)", hint: "Pass-through: terminals, contacts, fuses" },
+];
 
 export type ElementDef = {
   id: string; // stable key: library path or uuid

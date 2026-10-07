@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge, Switch, TabsContent, TabsList, TabsRoot, TabsTrigger } from "@/components/ui/misc";
 import type { WireClass, WireNumbering } from "@/core/model";
-import { applyWireNumbers, DEFAULT_CLASSES, formatWireLabel, planWireNumbers, PRESETS, wireNumberingOf } from "@/core/wirenumber";
+import { applyWireNumbers, DEFAULT_CLASSES, formatWireLabel, planWireNumbers, PRESETS, RESERVED_CLASS_LETTERS, wireNumberingOf } from "@/core/wirenumber";
 import { uid } from "@/core/ids";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +29,16 @@ export function WireNumberingDialog({ onClose }: { onClose: () => void }) {
   const plan = useMemo(() => planWireNumbers(doc, { mode, pageIds: scope === "page" ? [pageId] : undefined }, cfg), [doc, mode, scope, pageId, cfg]);
   const pageTitle = useMemo(() => new Map(doc.pages.map((p) => [p.id, p.title])), [doc.pages]);
   const example = (cls: string, ret = false, seg = "A") => formatWireLabel(cfg, { cls, n: 12, seg, ret, page: 3, col: 7, row: "C", size: "1.5" });
+  /** a class letter that is reserved (X = terminals), empty, or used twice */
+  const letterProblem = (c: WireClass): string | null =>
+    !c.letter
+      ? "Give the class a letter"
+      : RESERVED_CLASS_LETTERS.includes(c.letter)
+        ? `"${c.letter}" is the terminal-strip letter (X1:3) — wire numbers would read like terminals`
+        : c.letter === cfg.peLetter || c.letter === cfg.fallbackLetter || cfg.classes.some((o) => o !== c && o.letter === c.letter)
+          ? `"${c.letter}" is already used`
+          : null;
+  const badLetter = cfg.classes.find((c) => letterProblem(c));
   const badRegex = cfg.classes.find((c) => {
     if (!c.match) return false;
     try {
@@ -145,7 +155,7 @@ export function WireNumberingDialog({ onClose }: { onClose: () => void }) {
                 {cfg.classes.map((c, i) => (
                   <tr key={c.id}>
                     <td className="w-16 py-0.5 pr-1">
-                      <Input value={c.letter} disabled={!editable} className="font-mono" onChange={(e) => upClass(i, { letter: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) })} />
+                      <Input value={c.letter} disabled={!editable} title={letterProblem(c) ?? undefined} aria-invalid={!!letterProblem(c)} className={cn("font-mono", letterProblem(c) && "border-danger")} onChange={(e) => upClass(i, { letter: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) })} />
                     </td>
                     <td className="pr-1">
                       <Input value={c.name} disabled={!editable} onChange={(e) => upClass(i, { name: e.target.value })} />
@@ -173,6 +183,7 @@ export function WireNumberingDialog({ onClose }: { onClose: () => void }) {
                 ))}
               </tbody>
             </table>
+            {badLetter && <p className="mt-1 text-2xs text-danger">{letterProblem(badLetter)}</p>}
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <Button size="xs" variant="secondary" disabled={!editable} onClick={() => setCfg((x) => ({ ...x, classes: [...x.classes, { id: uid(), letter: "", name: "", kind: "dc" }] }))}>
                 <Plus /> Add class
@@ -287,10 +298,10 @@ export function WireNumberingDialog({ onClose }: { onClose: () => void }) {
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="secondary" disabled={!editable || !!badRegex} onClick={() => (save(), onClose())}>
+          <Button variant="secondary" disabled={!editable || !!badRegex || !!badLetter} onClick={() => (save(), onClose())}>
             Save settings
           </Button>
-          <Button variant="primary" disabled={!editable || !plan.changes.length || !!badRegex} onClick={apply}>
+          <Button variant="primary" disabled={!editable || !plan.changes.length || !!badRegex || !!badLetter} onClick={apply}>
             Apply {plan.changes.length} number{plan.changes.length === 1 ? "" : "s"}
           </Button>
         </DialogFooter>

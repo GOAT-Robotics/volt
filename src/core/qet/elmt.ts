@@ -18,7 +18,7 @@
  *    the same so every dyntext prim uses the top-left convention.
  *  - legacy <circle x y diameter>: bounding-square top-left + diameter → ellipse.
  */
-import type { ElementDef, LineEnd, Orient, PinDef, Prim, PrimStyle, Pt } from "../model";
+import { PIN_CLASSES, type ElementDef, type LineEnd, type Orient, type PinDef, type PinClass, type Prim, type PrimStyle, type Pt } from "../model";
 import { stableStringify } from "../stable-json";
 import {
   adopt,
@@ -271,7 +271,18 @@ function parsePin(e: XElement, index: number): PinDef {
     name,
     number: numberAttr ?? (numericLooking(name) ? name : ""),
     type: attr(e, "type", "Generic") || "Generic",
+    ...pinClassAttrs(e),
   };
+}
+
+/** Volt-only pin class (QElectroTech ignores unknown terminal attributes) */
+function pinClassAttrs(e: XElement): Pick<PinDef, "cls" | "volts"> {
+  const c = optAttr(e, "volt_class") as PinClass | undefined;
+  const v = optAttr(e, "volt_volts");
+  const out: Pick<PinDef, "cls" | "volts"> = {};
+  if (c && PIN_CLASSES.some((x) => x.id === c)) out.cls = c;
+  if (v !== undefined && v !== "" && Number.isFinite(Number(v))) out.volts = Number(v);
+  return out;
 }
 
 /** Tags inside <description> that we model. */
@@ -472,6 +483,10 @@ function writePin(doc: XDocument, p: PinDef, base: XElement | null): XElement {
     type: p.type || "Generic",
     uuid: /^t\d+$/.test(p.id) ? e.getAttribute("uuid") ?? undefined : `{${p.id}}`,
   });
+  if (p.cls) e.setAttribute("volt_class", p.cls);
+  else e.removeAttribute("volt_class");
+  if (p.volts !== undefined) e.setAttribute("volt_volts", String(p.volts));
+  else e.removeAttribute("volt_volts");
   if (p.number && p.number !== (p.name || p.number)) e.setAttribute("number", p.number);
   else if (e.hasAttribute("number") && numericLooking(p.name)) e.removeAttribute("number");
   return e;

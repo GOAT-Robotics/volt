@@ -29,6 +29,7 @@
 import type { Doc, ElementDef, Page, Wire, WireClass, WireFunction, WireNumbering } from "./model";
 import { indexElements, isTerminal, potentialOfLabel, projectNets, type ElIndex, type Potential, type ProjectNet } from "./erc";
 import { sectionMm2, AWG_SIZES, wireInfo, wiringOf } from "./wiring";
+import { pinPotential } from "./pinclass";
 
 export const DEFAULT_CLASSES: WireClass[] = [
   { id: "48v", letter: "A", name: "48 V DC", kind: "dc", volts: 48 },
@@ -36,7 +37,8 @@ export const DEFAULT_CLASSES: WireClass[] = [
   { id: "5v", letter: "C", name: "5 V DC", kind: "dc", volts: 5 },
   { id: "12v", letter: "D", name: "12 V DC", kind: "dc", volts: 12 },
   { id: "3v3", letter: "E", name: "3.3 V DC", kind: "dc", volts: 3.3 },
-  { id: "ac", letter: "X", name: "AC mains (230 / 400 V)", kind: "ac" },
+  // not "X": that is the terminal-strip letter (X1:3) and made AC wire numbers read like terminals
+  { id: "ac", letter: "AC", name: "AC mains (230 / 400 V)", kind: "ac" },
   { id: "sig", letter: "S", name: "Signal / data (CAN, RS-485, Ethernet, encoder …)", kind: "signal", match: "CAN|RS-?485|RS-?232|ETH|TX|RX|SDA|SCL|ENC|SIG|DATA|USB|LIN|D\\+|D-" },
 ];
 
@@ -45,8 +47,18 @@ export const PRESETS: Record<"harness" | "panel", Omit<WireNumbering, "classes">
   panel: { preset: "panel", format: "{class}{page}.{col}", segments: false, returnSuffix: "", peLetter: "PE", fallbackLetter: "W", defaultDc: "24v", defaultAc: "ac", start: 1, replacePotentialNames: false },
 };
 
+/** letters that must not be used for a class: they are IEC 81346-2 terminal / connector letters */
+export const RESERVED_CLASS_LETTERS = ["X"];
+
+const migrated = new WeakMap<WireNumbering, WireNumbering>();
 export function wireNumberingOf(doc: Pick<Doc, "wireNumbering">): WireNumbering {
-  return doc.wireNumbering ?? { ...PRESETS.harness, classes: DEFAULT_CLASSES };
+  const cfg = doc.wireNumbering;
+  if (!cfg) return { ...PRESETS.harness, classes: DEFAULT_CLASSES };
+  // projects saved with the old default AC letter "X" get "AC" (same object every call: parsers are cached per config)
+  if (!cfg.classes.some((c) => c.id === "ac" && c.letter === "X")) return cfg;
+  let m = migrated.get(cfg);
+  if (!m) migrated.set(cfg, (m = { ...cfg, classes: cfg.classes.map((c) => (c.id === "ac" && c.letter === "X" ? { ...c, letter: "AC" } : c)) }));
+  return m;
 }
 
 /* ------------------------------------------------------------------ */
@@ -297,6 +309,18 @@ export function classifyNets(doc: Doc, cfg: WireNumbering = wireNumberingOf(doc)
       const x = idx.get(p.el);
       const pd = x?.def?.pins.find((q) => q.id === p.pin);
       if (!pd) continue;
+      const who = `pin ${x!.e.info.label || x!.def!.name}:${pd.name || pd.number}`;
+      // a class set on the pin in the element editor decides; "none" = pass-through, says nothing
+      if (pd.cls) {
+        if (pd.cls === "none") continue;
+        if (pd.cls === "signal") add(n, cfg.classes.find((c) => c.kind === "signal")?.id ?? null, 4, `${who} (signal)`);
+        else {
+          const pp = pinPotential(pd);
+          if (pp) add(n, classForPotential(pp, cfg), pd.volts !== undefined ? 3 : 4, `${who} (${pd.cls}${pd.volts !== undefined ? ` ${pd.volts} V` : ""})`);
+          if (pd.cls === "DC0" || pd.cls === "N") ret.add(n);
+        }
+        if (pd.volts !== undefined || pd.cls !== "DC+") continue;
+      }
       // "+" / "-" outputs of a supply whose rating says the voltage ("24 V DC")
       const sign = (pd.name || pd.number || "").trim().toUpperCase();
       if (/^(\+|V\+|L\+|\+V|OUT\+|\+OUT)$/.test(sign) || /^(-|V-|L-|-V|OUT-|-OUT|0V|GND|M)$/.test(sign)) {
