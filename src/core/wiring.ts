@@ -120,9 +120,9 @@ export const WIRE_POTS: { id: WirePot; name: string; short: string }[] = [
   { id: "L3", name: "L3 — phase 3", short: "L3" },
   { id: "L", name: "L — AC phase", short: "L" },
   { id: "N", name: "N — neutral", short: "N" },
-  { id: "DC+", name: "+ — DC positive", short: "+" },
-  { id: "DC0", name: "0 V — DC return / GND", short: "0 V" },
-  { id: "DC-", name: "− — DC negative rail", short: "−" },
+  { id: "DC+", name: "+V (DC positive)", short: "+V" },
+  { id: "DC0", name: "0 V / GND (DC return)", short: "0 V" },
+  { id: "DC-", name: "−V (negative supply, e.g. −15 V — not GND)", short: "−V" },
   { id: "PE", name: "PE — protective earth", short: "PE" },
   { id: "signal", name: "Signal / data", short: "Signal" },
 ];

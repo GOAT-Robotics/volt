@@ -38,14 +38,14 @@ describe("potential + use replace the old function", () => {
 });
 
 describe("circuit detection", () => {
-  it("0 V of a 24 V supply: supply B, potential 0 V, return, control → blue", () => {
+  it("0 V of a 24 V supply: supply B, potential 0 V, return, power → black", () => {
     const { doc, page } = mkDoc();
     const psu = newElement(doc, page, dev("psu", "-V", "DC0", 24), { x: 100, y: 100 });
     psu.info.rating = "24 V DC";
     const load = newElement(doc, page, dev("load", "1"), { x: 300, y: 100 });
     const w = wire(page, doc, psu, "p", load, "p");
     const c = circuitOf(doc, w.id)!;
-    expect(c).toMatchObject({ letter: "B", pot: "DC0", use: "control", isReturn: true, color: "BU" });
+    expect(c).toMatchObject({ letter: "B", pot: "DC0", use: "power", isReturn: true, suffix: true, color: "BK" });
     expect(c.supply?.id).toBe("24v");
   });
 
@@ -89,5 +89,38 @@ describe("signal buses", () => {
     const w = wire(page, doc, a, "p", c, "p");
     expect(checkElectrical(doc).some((f) => f.code === "erc.busMismatch")).toBe(false);
     expect(circuitOf(doc, w.id)).toMatchObject({ pot: "signal", sigs: [{ bus: "CAN", line: "H" }] });
+  });
+});
+
+describe("0 V / GND and negative supplies", () => {
+  const supplyDev = (id: string, name: string, cls: PinClass, rating: string, doc: Doc, page: Page, x: number) => {
+    const e = newElement(doc, page, dev(id, name, cls), { x, y: 100 });
+    e.info.rating = rating;
+    return e;
+  };
+  it("0 V is the return of its supply by default, its own letter when chosen", async () => {
+    const { planWireNumbers, PRESETS, DEFAULT_CLASSES } = await import("../wirenumber");
+    const { doc, page } = mkDoc();
+    const psu = supplyDev("psu", "-V", "DC0", "24 V DC", doc, page, 100);
+    const load = newElement(doc, page, dev("load", "1"), { x: 300, y: 100 });
+    const w = wire(page, doc, psu, "p", load, "p");
+    expect(planWireNumbers(doc, { mode: "all" }).changes.find((c) => c.wireId === w.id)?.to).toBe("B001AN");
+    doc.wireNumbering = { ...PRESETS.harness, classes: DEFAULT_CLASSES, gndMode: "letter", gndLetter: "G" };
+    expect(planWireNumbers({ ...doc }, { mode: "all" }).changes.find((c) => c.wireId === w.id)?.to).toBe("G001A");
+    expect(circuitOf({ ...doc }, w.id)).toMatchObject({ isGnd: true, suffix: false, pot: "DC0", letter: "G" });
+  });
+  it("a −15 V output belongs to the negative supply", () => {
+    const { doc, page } = mkDoc();
+    const psu = supplyDev("psu", "-15V", "DC-", "±15 V", doc, page, 100);
+    psu.info.rating = "";
+    doc.defs[psu.defId].pins[0].volts = 15;
+    const load = newElement(doc, page, dev("load", "1"), { x: 300, y: 100 });
+    const w = wire(page, doc, psu, "p", load, "p");
+    expect(circuitOf(doc, w.id)).toMatchObject({ letter: "F", pot: "DC-" });
+  });
+  it("48 / 24 / 12 V supplies default to power, logic supplies to control", async () => {
+    const { supplyUse, DEFAULT_CLASSES } = await import("../wirenumber");
+    expect(DEFAULT_CLASSES.map((c) => [c.letter, supplyUse(c)])).toEqual([["A", "power"], ["B", "power"], ["C", "control"], ["D", "power"], ["E", "control"], ["F", "control"], ["AC", "power"], ["S", undefined]]);
+    expect(supplyUse({ id: "x", letter: "X", name: "", kind: "dc", volts: 24 })).toBe("power");
   });
 });

@@ -12,7 +12,7 @@ import type { Doc, Page, Wire, WirePot, WireUse } from "@/core/model";
 import { COLORS, WIRE_POTS, WIRE_USES, assignCores, legacyCircuit, cableDesignation, circuitText, colorLabel, colorOf, makeCores, nextCableTag, sectionChoices, wireInfo, wirePot, wireUse, wiringOf } from "@/core/wiring";
 import { circuitOf, sigSummary } from "@/core/circuit";
 import { uid } from "@/core/ids";
-import { wireNumberingOf } from "@/core/wirenumber";
+import { GND_ID, gndLetterOf, wireNumberingOf } from "@/core/wirenumber";
 
 const MIXED = "\u0000mixed";
 
@@ -216,7 +216,7 @@ function CircuitSection({ wires, doc, editable, upd }: { wires: Wire[]; doc: Doc
   const pot = one((w) => wirePot(w));
   const use = one((w) => wireUse(w));
   const peOrSig = (pot === "PE" || pot === "signal") || (!pot && (c?.pot === "PE" || c?.pot === "signal"));
-  const supplyName = c?.supply ? `${c.supply.letter} · ${c.supply.name}` : c?.letter === cfg.peLetter ? `${cfg.peLetter} · Protective earth` : c ? `${c.letter} · not determined` : "";
+  const supplyName = c?.isGnd ? `${c.letter} · 0 V / GND${c.supply ? ` of ${c.supply.name}` : ""}` : c?.supply ? `${c.supply.letter} · ${c.supply.name}` : c?.letter === cfg.peLetter ? `${cfg.peLetter} · Protective earth` : c ? `${c.letter} · not determined` : "";
   const potName = c?.pot ? WIRE_POTS.find((x) => x.id === c.pot)?.short : "not determined";
   const useName = c?.use ? WIRE_USES.find((x) => x.id === c.use)?.name : "—";
   const sel = (v: string) => (v === MIXED ? MIXED : v);
@@ -238,6 +238,7 @@ function CircuitSection({ wires, doc, editable, upd }: { wires: Wire[]; doc: Doc
               {x.letter} · {x.name}
             </option>
           ))}
+          {gndLetterOf(cfg) && <option value={GND_ID}>{gndLetterOf(cfg)} · 0 V / GND (common)</option>}
           <option value="__pe">{cfg.peLetter} · Protective earth</option>
         </NativeSelect>
       </Row>
@@ -280,14 +281,14 @@ function CircuitSection({ wires, doc, editable, upd }: { wires: Wire[]; doc: Doc
       </Row>
       {c && (
         <p className="text-2xs text-subtle">
-          Number <b className="font-mono">{c.letter}…{c.isReturn && cfg.returnSuffix ? cfg.returnSuffix : ""}</b>
+          Number <b className="font-mono">{c.letter}…{c.suffix && cfg.returnSuffix ? cfg.returnSuffix : ""}</b>
           {c.color ? (
             <>
               {" "}· standard color <Swatch code={c.color} className="mx-0.5 align-[-2px]" />
               <b>{colorLabel(c.color, ws.standard)}</b>
             </>
           ) : null}
-          {c.isReturn ? " · return" : ""}
+          {c.isReturn ? (c.isGnd ? " · 0 V / GND" : " · return") : ""}
         </p>
       )}
     </Section>

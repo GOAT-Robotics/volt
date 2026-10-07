@@ -33,11 +33,12 @@ import { pinPotential } from "./pinclass";
 import { wirePot } from "./wiring";
 
 export const DEFAULT_CLASSES: WireClass[] = [
-  { id: "48v", letter: "A", name: "48 V DC", kind: "dc", volts: 48, use: "control" },
-  { id: "24v", letter: "B", name: "24 V DC", kind: "dc", volts: 24, use: "control" },
+  { id: "48v", letter: "A", name: "48 V DC", kind: "dc", volts: 48, use: "power" },
+  { id: "24v", letter: "B", name: "24 V DC", kind: "dc", volts: 24, use: "power" },
   { id: "5v", letter: "C", name: "5 V DC", kind: "dc", volts: 5, use: "control" },
-  { id: "12v", letter: "D", name: "12 V DC", kind: "dc", volts: 12, use: "control" },
+  { id: "12v", letter: "D", name: "12 V DC", kind: "dc", volts: 12, use: "power" },
   { id: "3v3", letter: "E", name: "3.3 V DC", kind: "dc", volts: 3.3, use: "control" },
+  { id: "m15v", letter: "F", name: "−15 V DC (negative supply)", kind: "dc", volts: -15, use: "control" },
   // not "X": that is the terminal-strip letter (X1:3) and made AC wire numbers read like terminals
   { id: "ac", letter: "AC", name: "AC mains (230 / 400 V)", kind: "ac", volts: 230, use: "power" },
   { id: "sig", letter: "S", name: "Signal / data (CAN, RS-485, Ethernet, encoder …)", kind: "signal", match: "CAN|RS-?485|RS-?232|ETH|TX|RX|SDA|SCL|ENC|SIG|DATA|USB|LIN|D\\+|D-" },
@@ -51,8 +52,13 @@ export const PRESETS: Record<"harness" | "panel", Omit<WireNumbering, "classes">
 /** the use of a supply's conductors when a wire doesn't say: its setting, else power for AC, control for DC */
 export function supplyUse(c: WireClass | undefined): "power" | "control" | undefined {
   if (!c) return undefined;
-  return c.use ?? (c.kind === "ac" ? "power" : c.kind === "dc" ? "control" : undefined);
+  // unset: AC and DC distribution of 12 V and more are power; logic supplies (5 V, 3.3 V) control
+  return c.use ?? (c.kind === "ac" ? "power" : c.kind === "dc" ? (c.volts === undefined || Math.abs(c.volts) >= 12 ? "power" : "control") : undefined);
 }
+
+export const GND_ID = "__gnd";
+/** the common ground letter, when 0 V is numbered on its own */
+export const gndLetterOf = (cfg: WireNumbering): string | null => (cfg.gndMode === "letter" ? cfg.gndLetter || "G" : null);
 
 /** letters that must not be used for a class: they are IEC 81346-2 terminal / connector letters */
 export const RESERVED_CLASS_LETTERS = ["X"];
@@ -78,7 +84,7 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** letters a class can be written with, longest first (so "PE" wins over "P") */
 function letters(cfg: WireNumbering) {
-  return [...new Set([...cfg.classes.map((c) => c.letter), cfg.peLetter, cfg.fallbackLetter].filter(Boolean))].sort((a, b) => b.length - a.length);
+  return [...new Set([...cfg.classes.map((c) => c.letter), cfg.peLetter, cfg.fallbackLetter, gndLetterOf(cfg) ?? ""].filter(Boolean))].sort((a, b) => b.length - a.length);
 }
 
 type Parser = { re: RegExp; groups: (keyof LabelParts)[] };
@@ -207,7 +213,7 @@ const segIndex = (s: string) => [...s].reduce((a, ch) => a * SEG_ALPHABET.length
 /* Classification                                                       */
 /* ------------------------------------------------------------------ */
 
-export type NetClass = { classId: string | null; letter: string; isReturn: boolean; isPe: boolean; source: string; conflict?: string };
+export type NetClass = { classId: string | null; letter: string; isReturn: boolean; isPe: boolean; isGnd?: boolean; /** with a common ground letter: the supply this 0 V belongs to */ baseId?: string; source: string; conflict?: string };
 
 const MULTI_POTENTIAL = /power supply|psu|alimentation|netzteil|converter|dc\/dc|dc-dc|transformer|transfo|regulator|ldo|buck|boost|inverter|drive|vfd|servo|plc|controller|module|i\/o|io-link|ecu|mcu|board|pcb|relay module|gateway|bms|battery|charger/;
 
@@ -245,11 +251,13 @@ function classForPotential(p: Potential, cfg: WireNumbering): string | null {
     return c?.id ?? cfg.defaultAc ?? cfg.classes.find((x) => x.kind === "ac")?.id ?? null;
   }
   if (p.volts !== undefined) {
-    const v = Math.abs(p.volts);
-    const c = cfg.classes.find((x) => x.kind === "dc" && x.volts !== undefined && Math.abs(x.volts - v) <= Math.max(0.15, x.volts * 0.05));
+    // a negative rail matches a negative supply (−15 V), a positive one a positive supply
+    const v = p.kind === "DC-" ? -Math.abs(p.volts) : Math.abs(p.volts);
+    const c = cfg.classes.find((x) => x.kind === "dc" && x.volts !== undefined && Math.abs(x.volts - v) <= Math.max(0.15, Math.abs(x.volts) * 0.05));
     if (c) return c.id;
   }
-  return cfg.defaultDc ?? cfg.classes.find((x) => x.kind === "dc")?.id ?? null;
+  if (p.kind === "DC-") return cfg.classes.find((x) => x.kind === "dc" && (x.volts ?? 0) < 0)?.id ?? cfg.defaultDc ?? null;
+  return cfg.defaultDc ?? cfg.classes.find((x) => x.kind === "dc" && (x.volts ?? 1) > 0)?.id ?? null;
 }
 
 /** supply implied by a potential set on the wire (the use alone says nothing about the supply) */
@@ -302,7 +310,7 @@ export function classifyNets(doc: Doc, cfg: WireNumbering = wireNumberingOf(doc)
     for (const { id } of n.wires) {
       const w = wires.get(id);
       if (!w) continue;
-      if (w.vclass && (byId.has(w.vclass) || w.vclass === "__pe")) add(n, w.vclass, 0, "set on the wire");
+      if (w.vclass && (byId.has(w.vclass) || w.vclass === "__pe" || (w.vclass === GND_ID && gndLetterOf(cfg)))) add(n, w.vclass, 0, "set on the wire");
       const lp = potentialOfLabel(w.label);
       if (lp) add(n, classForPotential(lp, cfg), 1, `rail ${w.label}`);
       const wp = wirePot(w);
@@ -310,7 +318,8 @@ export function classifyNets(doc: Doc, cfg: WireNumbering = wireNumberingOf(doc)
       add(n, classForPot(wp, cfg), 2, `potential ${wp} set on the wire`);
       const parsed = parseWireLabel(w.label, cfg);
       if (parsed?.cls) {
-        add(n, parsed.cls === cfg.peLetter ? "__pe" : letterToId.get(parsed.cls) ?? null, 3, `number ${w.label}`);
+        add(n, parsed.cls === cfg.peLetter ? "__pe" : parsed.cls === gndLetterOf(cfg) ? GND_ID : letterToId.get(parsed.cls) ?? null, 3, `number ${w.label}`);
+        if (parsed.cls === gndLetterOf(cfg)) ret.add(n);
         if (parsed.ret) ret.add(n);
       }
       if (w.label && !lp && !parsed) add(n, classByMatch(w.label, cfg), 3, `name ${w.label}`);
@@ -380,7 +389,7 @@ export function classifyNets(doc: Doc, cfg: WireNumbering = wireNumberingOf(doc)
   for (let i = 0; i < queue.length; i++) {
     const n = queue[i];
     const c = out.get(n)!;
-    if (c.isPe || !c.classId) continue;
+    if (c.isPe || c.isGnd || !c.classId) continue;
     for (const m of adj.get(n) ?? []) {
       if (out.has(m)) continue;
       out.set(m, mk(c.classId, ret.has(m), `through a device from ${c.letter}`));
@@ -390,10 +399,21 @@ export function classifyNets(doc: Doc, cfg: WireNumbering = wireNumberingOf(doc)
   // a 0 V / GND return whose supply could not be traced: the "DC of unknown voltage" class (B…N), not the fallback letter
   for (const n of nets) if (!out.has(n) && ret.has(n) && cfg.defaultDc && byId.has(cfg.defaultDc)) out.set(n, mk(cfg.defaultDc, true, "0 V / GND of unknown supply → DC of unknown voltage"));
   for (const n of nets) if (!out.has(n)) out.set(n, mk(null, ret.has(n), "not determined"));
-  return new Map([...res].map(([n, c]) => [n.id, c]));
+  // common ground letter: every DC return (not AC neutral) is numbered on its own, without the return suffix.
+  // Applied last, so supplies still propagate through devices (a coil's A2 0 V must not turn its A1 into ground)
+  const g = gndLetterOf(cfg);
+  const gnd = (c: NetClass): NetClass => {
+    if (!g || c.isPe) return c;
+    if (c.isGnd) return { ...c, letter: g, isReturn: false };
+    const k = c.classId ? byId.get(c.classId) : undefined;
+    if (c.isReturn && (!k || k.kind === "dc" || k.kind === "any")) return { ...c, classId: GND_ID, baseId: k?.id, letter: g, isReturn: false, isGnd: true, source: k ? `${c.source} — 0 V of ${k.name}` : c.source };
+    return c;
+  };
+  return new Map([...res].map(([n, c]) => [n.id, gnd(c)]));
 
   function mk(id: string | null, isReturn: boolean, source: string, conflict?: string): NetClass {
     if (id === "__pe") return { classId: "__pe", letter: cfg.peLetter, isReturn: false, isPe: true, source, conflict };
+    if (id === GND_ID) return { classId: GND_ID, letter: gndLetterOf(cfg) ?? cfg.fallbackLetter, isReturn: true, isPe: false, isGnd: true, source, conflict };
     const c = id ? byId.get(id) : undefined;
     return { classId: c?.id ?? null, letter: c?.letter ?? cfg.fallbackLetter, isReturn, isPe: false, source, conflict };
   }

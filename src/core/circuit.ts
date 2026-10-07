@@ -29,8 +29,12 @@ export type Circuit = {
   use: WireUse | null;
   useSource: string;
   useSet: boolean;
-  /** 0 V / N: the number gets the return suffix */
+  /** 0 V / N: a return conductor */
   isReturn: boolean;
+  /** the wire number carries the return suffix (…N); not with a common ground letter */
+  suffix: boolean;
+  /** numbered with the common ground letter */
+  isGnd: boolean;
   /** standard insulation colour for this standard (IEC 60757 code) */
   color?: string;
   /** bus lines of the signal pins on this conductor */
@@ -54,8 +58,8 @@ export function circuits(doc: Doc): Map<string, Circuit> {
   const out = new Map<string, Circuit>();
   for (const n of pn.nets) {
     const c = cls.get(n.id);
-    const supply = c?.classId && c.classId !== "__pe" ? byId.get(c.classId) ?? null : null;
-    const net = detectPot(n, idx, wires, c?.isPe ?? false, c?.isReturn ?? false, supply);
+    const supply = byId.get(c?.baseId ?? c?.classId ?? "") ?? null;
+    const net = c?.isGnd && !n.wires.some((x) => wires.get(x.id) && wirePot(wires.get(x.id)!)) ? { pot: "DC0" as WirePot, source: "0 V / GND circuit" } : detectPot(n, idx, wires, c?.isPe ?? false, c?.isReturn ?? false, supply);
     const netUse = n.wires.map((x) => wires.get(x.id)).map((w) => w && wireUse(w)).find(Boolean) as WireUse | undefined;
     const sigs: SigRef[] = [];
     for (const r of n.pins) {
@@ -80,7 +84,9 @@ export function circuits(doc: Doc): Map<string, Circuit> {
         use,
         useSource: uSet ? "set on the wire" : netUse ? "set on a wire of this conductor" : supply && use ? `default of ${supply.name}` : "",
         useSet: !!uSet,
-        isReturn: pot === "DC0" || pot === "N" || (c?.isReturn ?? false),
+        isReturn: pot === "DC0" || pot === "N" || (c?.isReturn ?? false) || !!c?.isGnd,
+        suffix: !!c?.isReturn && !c?.isGnd,
+        isGnd: !!c?.isGnd,
         color: standardColorFor(pot ?? undefined, use ?? undefined, std, supply?.kind),
         sigs,
       });
@@ -112,7 +118,7 @@ function detectPot(n: ProjectNet, idx: ReturnType<typeof indexElements>, wires: 
   if (power.length === 1) return { pot: power[0], source: pins.get(power[0])! };
   if (!power.length && pins.has("signal")) return { pot: "signal", source: pins.get("signal")! };
   if (supply?.kind === "signal") return { pot: "signal", source: supply.name };
-  if (supply?.kind === "dc") return { pot: isReturn ? "DC0" : "DC+", source: `${supply.name}${isReturn ? " return" : ""}` };
+  if (supply?.kind === "dc") return { pot: isReturn ? "DC0" : (supply.volts ?? 0) < 0 ? "DC-" : "DC+", source: `${supply.name}${isReturn ? " return" : ""}` };
   if (supply?.kind === "ac") return isReturn ? { pot: "N", source: `${supply.name} neutral` } : { pot: null, source: "" };
   return { pot: null, source: "" };
 }

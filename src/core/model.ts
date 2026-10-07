@@ -78,8 +78,8 @@ export const PIN_CLASSES: { id: PinClass; label: string; hint: string }[] = [
   { id: "N", label: "N — neutral", hint: "AC neutral" },
   { id: "PE", label: "PE — protective earth", hint: "Protective earth / FG" },
   { id: "DC+", label: "DC+ — positive", hint: "+V, +24 V …" },
-  { id: "DC0", label: "0 V — DC return", hint: "−V of a supply, 0 V, GND, M" },
-  { id: "DC-", label: "DC− — negative rail", hint: "A negative supply (−15 V), not 0 V" },
+  { id: "DC0", label: "0 V / GND — DC return", hint: "−V output of a supply, 0 V, GND, M" },
+  { id: "DC-", label: "−V — negative supply (not GND)", hint: "A negative voltage (−15 V), not 0 V / GND" },
   { id: "signal", label: "Signal / data", hint: "I/O, CAN, RS-485, encoder … must not meet power" },
   { id: "none", label: "None (any)", hint: "Pass-through: terminals, contacts, fuses" },
 ];
@@ -324,6 +324,14 @@ export type WireNumbering = {
   returnSuffix: string;
   /** class letters for protective earth and for circuits whose voltage cannot be determined */
   peLetter: string;
+  /**
+   * How 0 V / GND conductors are numbered: "return" = as the return of their supply (B013AN, the
+   * default); "letter" = one common ground letter for every DC return (G013A), for panels where all
+   * 0 V are bonded together.
+   */
+  gndMode?: "return" | "letter";
+  /** the common ground letter when gndMode is "letter" */
+  gndLetter?: string;
   fallbackLetter: string;
   classes: WireClass[];
   /** class used for DC / AC conductors of unknown voltage */
