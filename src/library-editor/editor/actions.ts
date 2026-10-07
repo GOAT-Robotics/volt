@@ -167,3 +167,49 @@ export function addPrims(prims: Prim[], select = true) {
   if (select) useEd.getState().setSel(eds.map((p) => p.id));
   return eds;
 }
+
+/** Pin grid used by the validator and by QET diagrams: conductors attach on a 5-unit grid. */
+export const PIN_GRID = 5;
+const offGrid = (v: number) => Math.abs(v - Math.round(v / PIN_GRID) * PIN_GRID) > 1e-6;
+const snapG = (v: number) => Math.round(v / PIN_GRID) * PIN_GRID;
+
+/**
+ * Put every pin on the 5-unit grid.
+ * 1) Shift the whole symbol (graphics + pins) by the offset that lands the most pins on-grid —
+ *    this keeps the drawing intact when the pins share a common offset (the usual case).
+ * 2) Any pin still off-grid (odd pitch) is snapped individually, and line endpoints that touched
+ *    that pin are dragged along so the lead still meets the pin.
+ */
+export function snapPinsToGrid() {
+  const st = useEd.getState();
+  const pins = st.doc.pins;
+  if (!pins.some((p) => offGrid(p.x) || offGrid(p.y))) return;
+  const key = (dx: number, dy: number) => `${r1(dx)},${r1(dy)}`;
+  const votes = new Map<string, { dx: number; dy: number; n: number }>();
+  for (const p of pins) {
+    const dx = r1(snapG(p.x) - p.x), dy = r1(snapG(p.y) - p.y);
+    const k = key(dx, dy);
+    const v = votes.get(k) ?? { dx, dy, n: 0 };
+    v.n++;
+    votes.set(k, v);
+  }
+  const best = [...votes.values()].sort((a, b) => b.n - a.n || Math.hypot(a.dx, a.dy) - Math.hypot(b.dx, b.dy))[0];
+  st.change((d) => {
+    if (best.dx || best.dy) {
+      for (const p of d.prims) translatePrim(p as Prim, best.dx, best.dy);
+      for (const p of d.pins) (p.x = r1(p.x + best.dx)), (p.y = r1(p.y + best.dy));
+    }
+    const near = (ax: number, ay: number, bx: number, by: number) => Math.abs(ax - bx) < 0.5 && Math.abs(ay - by) < 0.5;
+    for (const p of d.pins) {
+      if (!offGrid(p.x) && !offGrid(p.y)) continue;
+      const ox = p.x, oy = p.y, nx = snapG(p.x), ny = snapG(p.y);
+      for (const q of d.prims as Prim[]) {
+        if (q.t !== "line") continue;
+        if (near(q.x1, q.y1, ox, oy)) (q.x1 = nx), (q.y1 = ny);
+        if (near(q.x2, q.y2, ox, oy)) (q.x2 = nx), (q.y2 = ny);
+      }
+      p.x = nx;
+      p.y = ny;
+    }
+  }, "snap-pins");
+}

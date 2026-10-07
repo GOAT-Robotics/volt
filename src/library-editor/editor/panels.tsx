@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, AlertTriangle, CheckCircle2, Crosshair, ListOrdered, Plus, Trash2, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Crosshair, Grid3x3, ListOrdered, Plus, Trash2, X } from "lucide-react";
 import type { ElementDef, Orient } from "@/core/model";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/misc";
@@ -10,7 +10,7 @@ import { LINK_TYPES, validateDef, type Issue } from "@/lib/library/elmt-tools";
 import { elementSvg } from "@/lib/library/preview";
 import { useEd, defOf } from "./store";
 import { TextField, SelectField } from "./fields";
-import { centerOnOrigin } from "./actions";
+import { centerOnOrigin, snapPinsToGrid } from "./actions";
 
 /* ------------------------------------------------------------------ */
 /* Pin table                                                           */
@@ -360,6 +360,11 @@ export function ValidationList({ issues, readOnly }: { issues: Issue[]; readOnly
           </li>
         ))}
       </ul>
+      {!readOnly && issues.some((i) => i.message.includes("5-unit grid")) && (
+        <Button size="sm" onClick={snapPinsToGrid}>
+          <Grid3x3 /> Snap pins to grid
+        </Button>
+      )}
       {!readOnly && issues.some((i) => i.message.includes("origin")) && (
         <Button size="sm" onClick={centerOnOrigin}>
           <Crosshair /> Center on origin

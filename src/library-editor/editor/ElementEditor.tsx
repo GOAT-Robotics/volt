@@ -258,7 +258,7 @@ export function ElementEditor({ id, user }: { id: string; user: LibUser }) {
 
   const errors = issues.filter((i) => i.level === "error");
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <WorkflowBar
         d={detail}
         user={user}
@@ -279,7 +279,7 @@ export function ElementEditor({ id, user }: { id: string; user: LibUser }) {
           <Eye className="size-3.5" /> View only — use “Duplicate to my library” in the ⋯ menu to make your own editable copy.
         </div>
       )}
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         {/* tools */}
         <div className="flex w-11 shrink-0 flex-col items-center gap-0.5 border-r border-border bg-panel py-2" role="toolbar" aria-label="Drawing tools" aria-orientation="vertical">
           {TOOLS.map((t) => (
@@ -297,7 +297,7 @@ export function ElementEditor({ id, user }: { id: string; user: LibUser }) {
           </Tip>
         </div>
         {/* canvas */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <OptionsBar readOnly={readOnly} canvasApi={canvasApi} />
           <ContextMenu>
             <ContextMenuTrigger asChild disabled={readOnly || tool === "polygon"}>
@@ -355,7 +355,7 @@ export function ElementEditor({ id, user }: { id: string; user: LibUser }) {
         {/* right panel */}
         <aside className="flex w-[340px] shrink-0 flex-col border-l border-border bg-panel" aria-label="Element properties">
           <TabsRoot value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="px-2">
+            <TabsList className="overflow-x-auto px-2 [scrollbar-width:none] [&>*]:shrink-0 [&>*]:whitespace-nowrap">
               <TabsTrigger value="props">Properties</TabsTrigger>
               <TabsTrigger value="pins">Pins</TabsTrigger>
               <TabsTrigger value="meta">Details</TabsTrigger>
@@ -429,7 +429,7 @@ function OptionsBar({ readOnly, canvasApi }: { readOnly: boolean; canvasApi: Rea
   const canUndo = st.past.length > 0, canRedo = st.future.length > 0;
   const hasSel = st.sel.length > 0;
   return (
-    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-panel px-2 text-2xs" role="toolbar" aria-label="Canvas options">
+    <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden whitespace-nowrap border-b border-border bg-panel px-2 text-2xs [scrollbar-width:none] [&>*]:shrink-0" role="toolbar" aria-label="Canvas options">
       {!readOnly && (
         <>
           <Button size="icon-sm" variant="ghost" disabled={!canUndo} onClick={st.undo} aria-label="Undo" title="Undo (Ctrl+Z)">
