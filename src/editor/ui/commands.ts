@@ -423,7 +423,7 @@ export const COMMANDS: Command[] = [
   { id: "titleBlockEditor", label: "Edit title block template…", section: "Page", run: (ui) => ui.openDialog("titleBlock") },
   { id: "styles", label: "Global styles…", section: "Project", keys: "⌘⇧S", run: (ui) => ui.openDialog("styles") },
   { id: "numbering", label: "Automatic numbering…", section: "Project", run: (ui) => ui.openDialog("numbering") },
-  { id: "wireNumbers", label: "Wire numbering… (automatic wire labels by voltage class)", section: "Project", keys: "⌘⇧L", run: (ui) => ui.openDialog("wireNumbers") },
+  { id: "wireNumbers", label: "Wire numbering… (automatic wire labels by supply)", section: "Project", keys: "⌘⇧L", run: (ui) => ui.openDialog("wireNumbers") },
   { id: "wireLabels", label: "Print wire labels… (harness markers, Brother P-touch, PDF)", section: "Project", run: (ui, s) => ui.openDialog("wireLabels", { scope: s.sel.wires.length ? "selection" : "all" }) },
   {
     id: "wireNumbersNew",

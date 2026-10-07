@@ -6,8 +6,9 @@
  */
 import type { PinClass, PinDef } from "./model";
 import type { Potential } from "./erc";
+import { inferSig, type SigRef } from "./signals";
 
-type PinLike = Pick<PinDef, "name" | "number"> & Partial<Pick<PinDef, "cls" | "volts">>;
+type PinLike = Pick<PinDef, "name" | "number"> & Partial<Pick<PinDef, "cls" | "volts" | "sig">>;
 
 /** class implied by a pin name alone (only names that cannot mean anything else) */
 export function inferPinClass(raw: string | undefined): PinClass | null {
@@ -20,6 +21,7 @@ export function inferPinClass(raw: string | undefined): PinClass | null {
   if (/^(\+|\+\d+(\.\d+)?V?|\d+(\.\d+)?V\+?|L\+|V\+|\+V|\+VO|OUT\+|\+OUT|VCC|VIN\+?)$/.test(t)) return "DC+";
   if (/^(-|0V|M|L-|V-|-V|-VO|OUT-|-OUT|GND|VIN-)$/.test(t)) return "DC0";
   if (/^(CAN[_-]?[HL]|CANH|CANL|TXD?|RXD?|SDA|SCL|D\+|D-|RS-?485[_-]?[AB]?|RS-?232|ENC[_-]?[AB]?[+-]?|SIG|DATA)$/.test(t)) return "signal";
+  if (inferSig(raw)) return "signal";
   return null;
 }
 
@@ -32,6 +34,7 @@ function voltsOfName(raw: string | undefined): number | undefined {
 /** the effective class of a pin: explicit, else inferred from name / number (null = none / unknown) */
 export function pinClassOf(p: PinLike): PinClass | null {
   if (p.cls) return p.cls === "none" ? null : p.cls;
+  if (p.sig) return "signal";
   return inferPinClass(p.name) ?? inferPinClass(p.number);
 }
 
@@ -54,4 +57,10 @@ export function signalConflict(a: PinClass, b: PinClass): string | null {
   if (a === "signal" && POWER.includes(b)) return `a signal pin is connected to a ${b === "DC+" ? "DC +" : b} supply pin`;
   if (b === "signal" && POWER.includes(a)) return `a signal pin is connected to a ${a === "DC+" ? "DC +" : a} supply pin`;
   return null;
+}
+
+/** bus + line of a signal pin: set in the element editor, else recognised from its name (null = not a bus pin) */
+export function pinSigOf(p: PinLike): SigRef | null {
+  if (pinClassOf(p) !== "signal") return null;
+  return p.sig ?? inferSig(p.name) ?? inferSig(p.number);
 }

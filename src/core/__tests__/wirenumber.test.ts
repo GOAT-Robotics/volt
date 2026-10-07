@@ -123,7 +123,7 @@ describe("planWireNumbers", () => {
     w[2].label = "0V";
     applyWireNumbers(doc, planWireNumbers(doc, { mode: "all" }));
     expect(w[2].label).toBe("B002AN");
-    expect(w[2].fn).toBe("dc0V");
+    expect(w[2].pot).toBe("DC0");
     // and the next run still knows it is a 24 V return
     expect(planWireNumbers(doc, { mode: "new" }).changes).toEqual([]);
   });

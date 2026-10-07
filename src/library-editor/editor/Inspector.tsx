@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef } from "react";
 import type { Draft } from "immer";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, FlipHorizontal2, FlipVertical2, MousePointerClick, RotateCw, Trash2 } from "lucide-react";
 import { PIN_CLASSES, type LineEnd, type PinClass, type PinDef, type Prim, type PrimStyle } from "@/core/model";
-import { inferPinClass } from "@/core/pinclass";
+import { inferPinClass, pinClassOf } from "@/core/pinclass";
+import { BUSES, busById, inferSig, type BusId, type SigRef } from "@/core/signals";
 import { Button } from "@/components/ui/button";
 import { Switch, Kbd } from "@/components/ui/misc";
 import { INFO_KEYS, PIN_TYPES } from "@/lib/library/elmt-tools";
@@ -293,6 +294,7 @@ function PinInspector({ pin, readOnly }: { pin: PinDef; readOnly: boolean }) {
         <NumField label="Y" value={pin.y} disabled={d} onChange={(v) => set("y", v)} />
       </div>
       <PinClassField pin={pin} disabled={d} onChange={(c, v) => (set("cls", c), set("volts", v))} />
+      {pinClassOf(pin) === "signal" && <PinBusField pin={pin} disabled={d} onChange={(sig) => set("sig", sig)} />}
       <SelectField label="Type" value={pin.type || "Generic"} disabled={d} options={PIN_TYPES.map((t) => ({ v: t, l: t === "Generic" ? "Generic" : t === "Inner" ? "Inner (bridge side)" : "Outer (field side)" }))} onChange={(v) => set("type", v)} />
       <label className="flex items-center gap-2 text-xs">
         <Switch checked={!!pin.required} disabled={d} onCheckedChange={(v) => set("required", v)} aria-label="Must be connected" /> Must be connected (validation warns when left open)
@@ -324,3 +326,33 @@ export function PinClassField({ pin, disabled, onChange }: { pin: PinDef; disabl
   );
 }
 const hasVoltsFor = (c: PinClass) => c === "DC+" || c === "DC-" || c === "L" || c === "L1" || c === "L2" || c === "L3";
+
+/** Bus and line of a signal pin (CAN H, RS-485 A, UART TX …). Unset = recognised from the name. */
+function PinBusField({ pin, disabled, onChange }: { pin: PinDef; disabled: boolean; onChange: (sig: SigRef | undefined) => void }) {
+  const auto = inferSig(pin.name) ?? inferSig(pin.number);
+  const cur = pin.sig;
+  const bus = busById(cur?.bus ?? auto?.bus);
+  return (
+    <div className="space-y-1">
+      <div className="grid grid-cols-2 gap-2">
+        <SelectField
+          label="Bus"
+          value={(cur?.bus ?? "") as BusId | ""}
+          disabled={disabled}
+          options={[{ v: "" as const, l: auto ? `Auto (${busById(auto.bus)?.name})` : "Auto (none)" }, ...BUSES.map((b) => ({ v: b.id, l: b.name }))]}
+          onChange={(v) => onChange(v ? { bus: v as BusId, line: busById(v)!.lines.includes(cur?.line ?? auto?.line ?? "") ? (cur?.line ?? auto?.line)! : busById(v)!.lines[0] } : undefined)}
+        />
+        <SelectField
+          label="Line"
+          value={cur?.line ?? ""}
+          disabled={disabled || !cur}
+          options={cur ? (bus?.lines ?? []).map((l) => ({ v: l, l })) : [{ v: "", l: auto ? `Auto (${auto.line})` : "—" }]}
+          onChange={(v) => cur && onChange({ bus: cur.bus, line: v })}
+        />
+      </div>
+      <p className="text-2xs text-subtle">
+        The check connects bus lines line to line (CAN H–H, RS-485 A–A, I²C SDA–SDA) and crosses point-to-point serial (UART / RS-232 TX → RX). The pin-to-pin map is what harnesses are built from.
+      </p>
+    </div>
+  );
+}

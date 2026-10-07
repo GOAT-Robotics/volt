@@ -1,5 +1,5 @@
 "use client";
-/** Automatic wire numbering: scheme, voltage classes, preview and apply. */
+/** Automatic wire numbering: scheme, supplies, preview and apply. */
 import { useMemo, useState } from "react";
 import { Plus, Trash2, Info } from "lucide-react";
 import { useEditor } from "../../store";
@@ -67,13 +67,13 @@ export function WireNumberingDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         title="Automatic wire numbering"
-        description="Groups conductors into circuits, detects each circuit's voltage system and gives every wire an identifier for the drawing, ferrules and harness labels. Locked numbers are never changed."
+        description="Groups conductors into circuits, detects each circuit's supply and gives every wire an identifier for the drawing, ferrules and harness labels. Locked numbers are never changed."
         wide="xl"
       >
         <TabsRoot value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="scheme">Scheme</TabsTrigger>
-            <TabsTrigger value="classes">Voltage classes</TabsTrigger>
+            <TabsTrigger value="classes">Supplies</TabsTrigger>
             <TabsTrigger value="preview">
               Preview {plan.changes.length > 0 && <Badge tone="accent" className="ml-1">{plan.changes.length}</Badge>}
             </TabsTrigger>
@@ -147,6 +147,7 @@ export function WireNumberingDialog({ onClose }: { onClose: () => void }) {
                   <th className="text-left font-medium">Name</th>
                   <th className="text-left font-medium">Kind</th>
                   <th className="text-left font-medium">Volts</th>
+                  <th className="text-left font-medium" title="Colour of its conductors when a wire doesn't say: power → black, control → red (AC) / blue (DC)">Default use</th>
                   <th className="text-left font-medium">Also matches names (regex)</th>
                   <th />
                 </tr>
@@ -171,11 +172,18 @@ export function WireNumberingDialog({ onClose }: { onClose: () => void }) {
                     <td className="w-20 pr-1">
                       <Input type="number" value={c.volts ?? ""} disabled={!editable || c.kind === "signal"} onChange={(e) => upClass(i, { volts: e.target.value === "" ? undefined : Number(e.target.value) })} />
                     </td>
+                    <td className="w-28 pr-1">
+                      <NativeSelect value={c.use ?? (c.kind === "ac" ? "power" : c.kind === "dc" ? "control" : "")} disabled={!editable || c.kind === "signal"} onChange={(e) => upClass(i, { use: (e.target.value || undefined) as WireClass["use"] })} aria-label="Default use">
+                        <option value="">—</option>
+                        <option value="power">Power</option>
+                        <option value="control">Control</option>
+                      </NativeSelect>
+                    </td>
                     <td className="pr-1">
                       <Input value={c.match ?? ""} disabled={!editable} className={cn("font-mono", badRegex === c && "border-danger")} placeholder="e.g. CAN|RS485" onChange={(e) => upClass(i, { match: e.target.value || undefined })} />
                     </td>
                     <td>
-                      <Button variant="ghost" size="icon-sm" disabled={!editable} onClick={() => setCfg((x) => ({ ...x, classes: x.classes.filter((_, k) => k !== i) }))} aria-label="Remove class">
+                      <Button variant="ghost" size="icon-sm" disabled={!editable} onClick={() => setCfg((x) => ({ ...x, classes: x.classes.filter((_, k) => k !== i) }))} aria-label="Remove supply">
                         <Trash2 />
                       </Button>
                     </td>
@@ -186,7 +194,7 @@ export function WireNumberingDialog({ onClose }: { onClose: () => void }) {
             {badLetter && <p className="mt-1 text-2xs text-danger">{letterProblem(badLetter)}</p>}
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <Button size="xs" variant="secondary" disabled={!editable} onClick={() => setCfg((x) => ({ ...x, classes: [...x.classes, { id: uid(), letter: "", name: "", kind: "dc" }] }))}>
-                <Plus /> Add class
+                <Plus /> Add supply
               </Button>
               <Button size="xs" variant="ghost" disabled={!editable} onClick={() => setCfg((x) => ({ ...x, classes: structuredClone(DEFAULT_CLASSES) }))}>
                 Reset to defaults
@@ -215,8 +223,9 @@ export function WireNumberingDialog({ onClose }: { onClose: () => void }) {
               </label>
             </div>
             <p className="mt-3 text-2xs text-subtle">
-              A circuit's class comes from, in this order: the class set on a wire (Conductor panel), rail names (+24V, 0V, L1, N, PE, 230VAC), the conductor function, existing numbers, pin names of the
-              connected devices (supply outputs “+24V”, a “+” output of a supply rated 24 V …), and is then carried through fuses, switches, contacts, coils and other two-terminal devices — not through power supplies, converters or modules.
+              A supply is a voltage system: its letter starts every wire number of its circuits (B012A), its default use gives the standard colour. A conductor's supply comes from, in this order: the supply set on the wire (Circuit panel), rail names (+24V, 0V, L1, N, PE, 230VAC), the potential set on the wire, existing numbers, pins of the
+              connected devices (pin classes, supply outputs “+24V”, a “+” output of a supply rated 24 V …), and is then carried through fuses, switches, contacts, coils and other two-terminal devices — not through power supplies, converters or modules.
+              0 V / GND and N are the return of their supply: same letter, return suffix ({cfg.returnSuffix || "none"}). PE always gets {cfg.peLetter}.
             </p>
           </TabsContent>
 

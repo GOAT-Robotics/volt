@@ -11,7 +11,7 @@
  *
  * Colour codes are IEC 60757 (BK, BN, RD, …); NFPA drawings show the usual US abbreviations.
  */
-import type { Cable, CableCore, Doc, Page, Wire, WireEnd, WireFunction, WiringSettings, WiringStandard } from "./model";
+import type { Cable, CableCore, Doc, Page, Wire, WireEnd, WireFunction, WirePot, WireUse, WiringSettings, WiringStandard } from "./model";
 
 export const DEFAULT_WIRING: WiringSettings = { standard: "iec", showColor: true, showSection: true, tick: true, colorize: false, weightBySection: false };
 export const wiringOf = (doc: Pick<Doc, "wiring">): WiringSettings => ({ ...DEFAULT_WIRING, ...(doc.wiring ?? {}) });
@@ -109,6 +109,100 @@ const STD_COLORS: Record<WiringStandard, Record<WireFunction, string>> = {
 };
 
 export const standardColor = (fn: WireFunction | undefined, std: WiringStandard): string | undefined => (fn ? STD_COLORS[std][fn] : undefined);
+
+/* ------------------------------------------------------------------ */
+/* Potential + use (the conductor's circuit role)                       */
+/* ------------------------------------------------------------------ */
+
+export const WIRE_POTS: { id: WirePot; name: string; short: string }[] = [
+  { id: "L1", name: "L1 — phase 1", short: "L1" },
+  { id: "L2", name: "L2 — phase 2", short: "L2" },
+  { id: "L3", name: "L3 — phase 3", short: "L3" },
+  { id: "L", name: "L — AC phase", short: "L" },
+  { id: "N", name: "N — neutral", short: "N" },
+  { id: "DC+", name: "+ — DC positive", short: "+" },
+  { id: "DC0", name: "0 V — DC return / GND", short: "0 V" },
+  { id: "DC-", name: "− — DC negative rail", short: "−" },
+  { id: "PE", name: "PE — protective earth", short: "PE" },
+  { id: "signal", name: "Signal / data", short: "Signal" },
+];
+export const WIRE_USES: { id: WireUse; name: string; hint: string }[] = [
+  { id: "power", name: "Power", hint: "Main / load circuit — black" },
+  { id: "control", name: "Control", hint: "Control circuit — red (AC) / blue (DC)" },
+  { id: "external", name: "External supply", hint: "Interlock circuit fed from outside, live with the main switch off — orange" },
+];
+
+/** what a pre-2026-10 "function" meant */
+export function legacyCircuit(fn: WireFunction | undefined): { pot?: WirePot; use?: WireUse } {
+  switch (fn) {
+    case "power":
+      return { use: "power" };
+    case "L1":
+    case "L2":
+    case "L3":
+    case "N":
+      return { pot: fn, use: "power" };
+    case "PE":
+      return { pot: "PE" };
+    case "acControl":
+      return { pot: "L", use: "control" };
+    case "dcControl":
+      return { pot: "DC+", use: "control" };
+    case "dc0V":
+      return { pot: "DC0", use: "control" };
+    case "interlock":
+      return { use: "external" };
+    case "signal":
+      return { pot: "signal" };
+    default:
+      return {};
+  }
+}
+/** potential set on the wire (or implied by its legacy function); undefined = automatic */
+export const wirePot = (w: Pick<Wire, "pot" | "fn">): WirePot | undefined => w.pot ?? legacyCircuit(w.fn).pot;
+/** use set on the wire (or implied by its legacy function); undefined = the supply's default */
+export const wireUse = (w: Pick<Wire, "use" | "fn">): WireUse | undefined => w.use ?? legacyCircuit(w.fn).use;
+
+/**
+ * Standard insulation colour for a potential + use (IEC 60204-1 13.2.4 / NFPA 79 16.2 / JIS B 9960-1):
+ * PE green-yellow; N light blue (white in NFPA / JIS); external supplies orange; phases of power
+ * circuits brown / black / grey (IEC 60445) or black; AC control red; DC control blue; power black;
+ * NFPA grounded DC (0 V) white-blue; signal violet (house convention).
+ */
+export function standardColorFor(pot: WirePot | undefined, use: WireUse | undefined, std: WiringStandard, kind?: "ac" | "dc" | "signal" | "any"): string | undefined {
+  if (pot === "PE") return std === "nfpa" ? "GN" : "GNYE";
+  if (pot === "N") return std === "iec" ? "LBU" : "WH";
+  if (pot === "signal" || kind === "signal") return "VT";
+  if (use === "external") return "OG";
+  const ac = pot === "L" || pot === "L1" || pot === "L2" || pot === "L3" ? true : pot ? false : kind === "ac" ? true : kind === "dc" ? false : undefined;
+  if (pot === "DC0" && std === "nfpa") return "WHBU";
+  if (use === "power" || (use === undefined && (pot === "L1" || pot === "L2" || pot === "L3"))) {
+    if (std === "iec" && pot === "L1") return "BN";
+    if (std === "iec" && pot === "L3") return "GY";
+    return "BK";
+  }
+  if (use === "control") return ac === undefined ? undefined : ac ? "RD" : "BU";
+  return undefined;
+}
+
+/** the legacy function id for a potential + use (QElectroTech "function" text, wire lists) */
+export function functionFor(pot: WirePot | undefined, use: WireUse | undefined): WireFunction | undefined {
+  if (pot === "PE") return "PE";
+  if (pot === "signal") return "signal";
+  if (use === "external") return "interlock";
+  if (pot === "L1" || pot === "L2" || pot === "L3" || pot === "N") return use === "control" ? "acControl" : pot;
+  if (pot === "DC0") return use === "power" ? "power" : "dc0V";
+  if (pot === "DC+" || pot === "DC-") return use === "power" ? "power" : "dcControl";
+  if (pot === "L") return use === "power" ? "power" : use === "control" ? "acControl" : undefined;
+  return use === "power" ? "power" : undefined;
+}
+
+/** "0 V · Control", "L1 · Power", "PE" */
+export function circuitText(pot: WirePot | undefined, use: WireUse | undefined): string {
+  const p = pot ? WIRE_POTS.find((x) => x.id === pot)?.short : undefined;
+  const u = use && pot !== "PE" && pot !== "signal" ? WIRE_USES.find((x) => x.id === use)?.name : undefined;
+  return [p, u].filter(Boolean).join(" · ");
+}
 
 /** QET stores the function as free text: accept our ids and names. */
 export function functionOf(text: string | undefined): WireFunction | undefined {
@@ -237,7 +331,10 @@ export function wireInfo(doc: Pick<Doc, "wiring" | "cables">, w: Wire): WireInfo
   let color: string | undefined, colorSource: WireInfo["colorSource"];
   if (w.insulation?.trim()) (color = w.insulation.trim()), (colorSource = "wire");
   else if (core?.color) (color = core.color), (colorSource = "core");
-  else if (w.fn) (color = standardColor(w.fn, std)), (colorSource = "standard");
+  else {
+    const sc = standardColorFor(wirePot(w), wireUse(w), std);
+    if (sc) (color = sc), (colorSource = "standard");
+  }
   return { color, colorSource, look: colorOf(color), section: w.section?.trim() || cable?.section || undefined, cable, core: w.core };
 }
 
@@ -342,7 +439,7 @@ export function assignCores(doc: Pick<Doc, "cables" | "pages">, cable: Cable, wi
   const isEarthCore = (n: string) => colorOf(cable.cores.find((c) => c.name === n)?.color ?? n)?.code === "GNYE";
   for (const w of order) {
     w.cable = cable.tag;
-    const wantsEarth = w.fn === "PE" || colorOf(w.insulation)?.code === "GNYE";
+    const wantsEarth = wirePot(w) === "PE" || colorOf(w.insulation)?.code === "GNYE";
     const pick = free.find((n) => isEarthCore(n) === wantsEarth) ?? (wantsEarth ? undefined : free.find((n) => !isEarthCore(n)));
     if (pick) {
       w.core = pick;

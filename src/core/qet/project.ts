@@ -46,7 +46,7 @@ import type {
   WireEnd,
 } from "../model";
 import { DEFAULT_TB, newDoc, newPage } from "../doc";
-import { FUNCTIONS, functionOf } from "../wiring";
+import { functionFor, functionOf, legacyCircuit, wirePot, wireUse } from "../wiring";
 import { rotOrient, toScene } from "../geometry";
 import { uid } from "../ids";
 import { stableStringify } from "../stable-json";
@@ -841,7 +841,7 @@ function importDiagram(ctx: ImportCtx, diag: XElement, di: number): Page {
     if (attrs.conductor_color?.trim()) w.insulation = attrs.conductor_color;
     if (attrs.conductor_section?.trim()) w.section = attrs.conductor_section;
     const fn = functionOf(attrs.function);
-    if (fn) w.fn = fn;
+    if (fn) Object.assign(w, legacyCircuit(fn));
     page.wires.push(w);
     tallyChildren(ctx, "conductor", c, CONDUCTOR_MODELED);
   });
@@ -1596,7 +1596,9 @@ function writeDiagram(ctx: ExportCtx, diag: XElement, page: Page, order: number)
     };
     setText("conductor_color", w.insulation);
     setText("conductor_section", w.section);
-    if (functionOf(attr(c, "function")) !== w.fn) setText("function", w.fn ? FUNCTIONS.find((f) => f.id === w.fn)?.id : "");
+    // QElectroTech has one free-text "function": write the closest legacy id for potential + use
+    const fnOut = functionFor(wirePot(w), wireUse(w));
+    if (functionOf(attr(c, "function")) !== fnOut) setText("function", fnOut ?? "");
     for (const [k, v] of [["core", w.core], ["end_a", w.endLabels?.a], ["end_b", w.endLabels?.b]] as const) {
       if (v) setText(k, v);
       else if (c.hasAttribute(k)) c.removeAttribute(k);

@@ -99,7 +99,7 @@ describe("project files and checks", () => {
     const w = addWire(page, { k: "pin", el: k1.id, pin: "t", p: { x: 105, y: 85 } }, { k: "pin", el: k2.id, pin: "t", p: { x: 305, y: 85 } }, [{ x: 105, y: 85 }, { x: 105, y: 45 }, { x: 305, y: 45 }, { x: 305, y: 85 }])!;
     Object.assign(w, { insulation: "BU", section: "0.75 mm²", fn: "dcControl", cable: "W3", core: "2" });
     const back = importQet(exportQet(doc).xml, "t.qet").doc.pages[0].wires[0];
-    expect(back).toMatchObject({ insulation: "BU", section: "0.75 mm²", fn: "dcControl", cable: "W3", core: "2" });
+    expect(back).toMatchObject({ insulation: "BU", section: "0.75 mm²", pot: "DC+", use: "control", cable: "W3", core: "2" });
   });
 
   it("flags green-yellow on non-PE wires and PE wires in another colour", () => {

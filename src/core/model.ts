@@ -2,6 +2,7 @@
  * Volt document model. Isomorphic (browser + server), JSON-serialisable.
  * Coordinates are QElectroTech scene units (1 unit = 1 px at 100% zoom; grid 10).
  */
+import type { SigRef } from "./signals";
 
 export type Pt = { x: number; y: number };
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -64,6 +65,8 @@ export type PinDef = {
   cls?: PinClass;
   /** nominal voltage for DC+ / DC− / L pins (24 for a 24 V output) */
   volts?: number;
+  /** signal pins: bus and line (CAN H, RS-485 A, UART TX …); unset = recognised from the name */
+  sig?: SigRef;
 };
 
 export type PinClass = "L" | "L1" | "L2" | "L3" | "N" | "PE" | "DC+" | "DC0" | "DC-" | "signal" | "none";
@@ -271,7 +274,15 @@ export type Wire = {
   cable?: string;
   /** core designation inside the cable ("1", "BN", …) */
   core?: string;
-  /** circuit function — drives the standard insulation colour */
+  /**
+   * Potential the conductor carries (same list as pin classes): L / L1–L3 / N, DC + / 0 V / −,
+   * PE or signal. Unset = detected from rails, pins and the supply. With `use` it gives the
+   * standard insulation colour; 0 V and N make the wire number a return (…N).
+   */
+  pot?: WirePot;
+  /** what the circuit is for: power, control, or an external / interlock supply (orange). Unset = the supply's default */
+  use?: WireUse;
+  /** @deprecated pre-2026-10 "function"; read through wirePot / wireUse, never written */
   fn?: WireFunction;
   /** insulation colour code as entered (IEC 60757 "BK", "GNYE", or e.g. "BLK", "black") */
   insulation?: string;
@@ -284,7 +295,7 @@ export type Wire = {
   group?: GroupRef;
   /** wire number set by hand: automatic wire numbering never changes it */
   labelLocked?: boolean;
-  /** voltage / circuit class for automatic wire numbering (id of a WireClass), overriding detection */
+  /** supply (id of a WireClass, "__pe" = protective earth) this conductor belongs to; unset = detected. Gives the wire-number letter */
   vclass?: string;
   qet?: { idx?: number; attrs?: Record<string, string> };
 };
@@ -294,7 +305,13 @@ export type Wire = {
  * voltage system at a glance (e.g. A = 48 V DC, B = 24 V DC, C = 5 V DC). kind/volts drive detection
  * from rail names, conductor functions and pin names; `match` (regex) catches signal names (CAN_H …).
  */
-export type WireClass = { id: string; letter: string; name: string; kind: "dc" | "ac" | "signal" | "any"; volts?: number; match?: string };
+/**
+ * A supply (voltage system) of the project: its wire-number letter, AC / DC / signal, nominal
+ * voltage, and the default use of its conductors (power → black, control → red AC / blue DC).
+ */
+export type WireClass = { id: string; letter: string; name: string; kind: "dc" | "ac" | "signal" | "any"; volts?: number; match?: string; use?: "power" | "control" };
+export type WirePot = Exclude<PinClass, "none">;
+export type WireUse = "power" | "control" | "external";
 
 /** Automatic wire numbering (Volt-only, stored with the project). */
 export type WireNumbering = {

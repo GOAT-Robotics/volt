@@ -1,5 +1,5 @@
 "use client";
-/** Conductor information of one or more wires: function, insulation color, cross-section, cable & core. */
+/** Circuit (supply, potential, use) and conductor information (insulation color, cross-section, cable & core) of one or more wires. */
 import { useMemo } from "react";
 import { useEditor } from "../store";
 import { useEditorUI } from "./context";
@@ -8,10 +8,11 @@ import { NativeSelect } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getPage } from "@/core/ops";
 import { computeNets } from "@/core/topology";
-import type { Doc, Page, Wire, WireFunction } from "@/core/model";
-import { COLORS, FUNCTIONS, assignCores, cableDesignation, colorLabel, colorOf, makeCores, nextCableTag, sectionChoices, standardColor, wireInfo, wiringOf } from "@/core/wiring";
+import type { Doc, Page, Wire, WirePot, WireUse } from "@/core/model";
+import { COLORS, WIRE_POTS, WIRE_USES, assignCores, legacyCircuit, cableDesignation, circuitText, colorLabel, colorOf, makeCores, nextCableTag, sectionChoices, wireInfo, wirePot, wireUse, wiringOf } from "@/core/wiring";
+import { circuitOf, sigSummary } from "@/core/circuit";
 import { uid } from "@/core/ids";
-import { wireClassOf, wireNumberingOf } from "@/core/wirenumber";
+import { wireNumberingOf } from "@/core/wirenumber";
 
 const MIXED = "\u0000mixed";
 
@@ -36,7 +37,6 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
     const v = get(wires[0]);
     return wires.every((w) => get(w) === v) ? v : MIXED;
   };
-  const fn = same((w) => w.fn ?? "");
   const insulation = same((w) => w.insulation ?? "");
   const section = same((w) => w.section ?? "");
   const cable = same((w) => w.cable ?? "");
@@ -50,12 +50,14 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
     for (const p of doc.pages) for (const w of p.wires) if (w.cable === cableObj.tag && w.core && !ids.has(w.id)) m.set(w.core, (m.get(w.core) ?? 0) + 1);
     return m;
   }, [doc.pages, cableObj, ids]);
-  const std = standardColor(fn === MIXED || !fn ? undefined : (fn as WireFunction), ws.standard);
+  // the standard colour of this conductor's circuit (potential + use, set or detected)
+  const circ = single ? circuitOf(doc, single.id) : undefined;
+  const std = circ?.color;
 
   const setCable = (v: string) => {
     if (v === "__new") {
       const tag = nextCableTag(doc);
-      const earth = wires.some((w) => w.fn === "PE" || colorOf(w.insulation)?.code === "GNYE");
+      const earth = wires.some((w) => wirePot(w) === "PE" || colorOf(w.insulation)?.code === "GNYE");
       const n = Math.max(2, wires.length);
       s().apply("New cable", (d) => {
         const c = { id: uid(), tag, cores: makeCores(n, n <= 5 ? "colors" : "numbered", earth), section: section !== MIXED && section ? section : undefined };
@@ -81,7 +83,10 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
     s().apply("Apply conductor data to net", (d) => {
       for (const w of getPage(d, page.id).wires) {
         if (!others.has(w.id) || w.id === single.id) continue;
-        w.fn = single.fn;
+        w.pot = wirePot(single);
+        w.use = wireUse(single);
+        w.fn = undefined;
+        w.vclass = single.vclass;
         w.insulation = single.insulation;
         w.section = single.section;
       }
@@ -90,6 +95,8 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
   };
 
   return (
+    <>
+    <CircuitSection wires={wires} doc={doc} editable={editable} upd={upd} />
     <Section title="Conductor" actions={<button className="text-2xs text-accent hover:underline" onClick={() => ui.openDialog("wiring")}>{ws.standard === "nfpa" ? "NFPA 79" : ws.standard === "jis" ? "JIS" : "IEC"} · settings</button>}>
       <datalist id="volt-wire-colors">
         {COLORS.map((c) => (
@@ -103,24 +110,13 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
           <option key={x} value={x} />
         ))}
       </datalist>
-      <ClassRow wires={wires} doc={doc} editable={editable} onSet={(v) => upd("Circuit class", (w) => (w.vclass = v || undefined))} />
-      <Row label="Function">
-        <NativeSelect value={fn === MIXED ? "" : fn} disabled={!editable} onChange={(e) => upd("Wire function", (w) => (w.fn = (e.target.value || undefined) as WireFunction | undefined))} aria-label="Wire function">
-          <option value="">{fn === MIXED ? "Mixed" : "—"}</option>
-          {FUNCTIONS.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </NativeSelect>
-      </Row>
       <Row
         label="Color"
         hint={
           insulation === "" && single && info?.color
-            ? `${info.colorSource === "core" ? `From cable core ${single.core}` : `Standard for this function`}: ${colorLabel(info.color, ws.standard)} (${info.look?.name ?? info.color})`
+            ? `${info.colorSource === "core" ? `From cable core ${single.core}` : `Standard for ${circuitText(circ?.pot ?? undefined, circ?.use ?? undefined)}`}: ${colorLabel(info.color, ws.standard)} (${info.look?.name ?? info.color})`
             : insulation === "" && std
-              ? `Standard: ${colorLabel(std, ws.standard)}`
+              ? `Standard for ${circuitText(circ?.pot ?? undefined, circ?.use ?? undefined)}: ${colorLabel(std, ws.standard)} — type it to put it on the wire`
               : undefined
         }
       >
@@ -194,11 +190,117 @@ export function ConductorSection({ wires, page, doc, editable }: { wires: Wire[]
       )}
       {single && editable && (
         <Button size="xs" variant="secondary" onClick={applyToNet}>
-          Apply function, color and size to the whole net
+          Apply circuit, color and size to the whole net
         </Button>
       )}
     </Section>
+    </>
   );
+}
+
+/**
+ * Supply → wire-number letter; Potential → return suffix, connection checks; Use → with the
+ * potential, the standard colour. Each "Automatic" shows what was detected and where from.
+ */
+function CircuitSection({ wires, doc, editable, upd }: { wires: Wire[]; doc: Doc; editable: boolean; upd: (label: string, fn: (w: Wire, d: Doc) => void) => void }) {
+  const ui = useEditorUI();
+  const cfg = wireNumberingOf(doc);
+  const ws = wiringOf(doc);
+  const single = wires.length === 1 ? wires[0] : null;
+  const c = single ? circuitOf(doc, single.id) : undefined;
+  const one = <T,>(get: (w: Wire) => T | undefined): T | "" | typeof MIXED => {
+    const v = get(wires[0]) ?? "";
+    return wires.every((w) => (get(w) ?? "") === v) ? (v as T | "") : MIXED;
+  };
+  const supply = one((w) => w.vclass);
+  const pot = one((w) => wirePot(w));
+  const use = one((w) => wireUse(w));
+  const peOrSig = (pot === "PE" || pot === "signal") || (!pot && (c?.pot === "PE" || c?.pot === "signal"));
+  const supplyName = c?.supply ? `${c.supply.letter} · ${c.supply.name}` : c?.letter === cfg.peLetter ? `${cfg.peLetter} · Protective earth` : c ? `${c.letter} · not determined` : "";
+  const potName = c?.pot ? WIRE_POTS.find((x) => x.id === c.pot)?.short : "not determined";
+  const useName = c?.use ? WIRE_USES.find((x) => x.id === c.use)?.name : "—";
+  const sel = (v: string) => (v === MIXED ? MIXED : v);
+  return (
+    <Section
+      title="Circuit"
+      actions={
+        <button className="text-2xs text-accent hover:underline" onClick={() => ui.openDialog("wireNumbers")}>
+          Supplies · numbering
+        </button>
+      }
+    >
+      <Row label="Supply" hint={c && !c.supplySet ? `Detected from ${c.supplySource}.` : undefined}>
+        <NativeSelect value={sel(supply)} disabled={!editable} onChange={(e) => e.target.value !== MIXED && upd("Wire supply", (w) => (w.vclass = e.target.value || undefined))} aria-label="Supply">
+          {supply === MIXED && <option value={MIXED}>Mixed</option>}
+          <option value="">Automatic{c && !c.supplySet ? ` (${supplyName})` : ""}</option>
+          {cfg.classes.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.letter} · {x.name}
+            </option>
+          ))}
+          <option value="__pe">{cfg.peLetter} · Protective earth</option>
+        </NativeSelect>
+      </Row>
+      <Row label="Potential" hint={c && !c.potSet && c.potSource ? `Detected from ${c.potSource}.` : undefined}>
+        <NativeSelect
+          value={sel(pot)}
+          disabled={!editable}
+          onChange={(e) => e.target.value !== MIXED && upd("Wire potential", (w) => (fromLegacy(w), (w.pot = (e.target.value || undefined) as WirePot | undefined)))}
+          aria-label="Potential"
+        >
+          {pot === MIXED && <option value={MIXED}>Mixed</option>}
+          <option value="">Automatic{c && !c.potSet ? ` (${potName})` : ""}</option>
+          {WIRE_POTS.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+            </option>
+          ))}
+        </NativeSelect>
+      </Row>
+      {c?.sigs.length ? (
+        <Row label="Bus lines">
+          <span className="text-xs">{sigSummary(c.sigs)}</span>
+        </Row>
+      ) : null}
+      <Row label="Use" hint={peOrSig ? "Not used for PE and signal conductors." : c && !c.useSet && c.useSource ? `From the ${c.useSource}.` : undefined}>
+        <NativeSelect
+          value={sel(use)}
+          disabled={!editable || peOrSig}
+          onChange={(e) => e.target.value !== MIXED && upd("Wire use", (w) => (fromLegacy(w), (w.use = (e.target.value || undefined) as WireUse | undefined)))}
+          aria-label="Use"
+        >
+          {use === MIXED && <option value={MIXED}>Mixed</option>}
+          <option value="">Automatic{c && !c.useSet ? ` (${useName})` : ""}</option>
+          {WIRE_USES.map((x) => (
+            <option key={x.id} value={x.id} title={x.hint}>
+              {x.name}
+            </option>
+          ))}
+        </NativeSelect>
+      </Row>
+      {c && (
+        <p className="text-2xs text-subtle">
+          Number <b className="font-mono">{c.letter}…{c.isReturn && cfg.returnSuffix ? cfg.returnSuffix : ""}</b>
+          {c.color ? (
+            <>
+              {" "}· standard color <Swatch code={c.color} className="mx-0.5 align-[-2px]" />
+              <b>{colorLabel(c.color, ws.standard)}</b>
+            </>
+          ) : null}
+          {c.isReturn ? " · return" : ""}
+        </p>
+      )}
+    </Section>
+  );
+}
+
+/** an old "function" becomes potential + use before either is edited */
+function fromLegacy(w: Wire) {
+  if (!w.fn) return;
+  const l = legacyCircuit(w.fn);
+  w.pot ??= l.pot;
+  w.use ??= l.use;
+  w.fn = undefined;
 }
 
 /** "black" / "blk" / "gn/ye" → the standard code; anything unknown is kept as typed. */
@@ -216,39 +318,3 @@ export function normSection(v: string, std: "iec" | "nfpa" | "jis"): string | un
   return t.replace(/\s*mm2$/i, " mm²").replace(/\s*sqmm$/i, " mm²");
 }
 
-/** voltage / circuit class for automatic wire numbering: detected, or set on the wire */
-function ClassRow({ wires, doc, editable, onSet }: { wires: Wire[]; doc: Doc; editable: boolean; onSet: (v: string) => void }) {
-  const ui = useEditorUI();
-  const cfg = wireNumberingOf(doc);
-  const single = wires.length === 1 ? wires[0] : null;
-  const detected = useMemo(() => (single ? wireClassOf(doc, single.id, cfg) : null), [doc, single, cfg]);
-  const v = wires.every((w) => (w.vclass ?? "") === (wires[0].vclass ?? "")) ? wires[0].vclass ?? "" : MIXED;
-  const name = (id: string | null) => (id === "__pe" ? "Protective earth" : cfg.classes.find((c) => c.id === id)?.name ?? "Unclassified");
-  return (
-    <Row
-      label="Circuit class"
-      hint={
-        detected && !single?.vclass ? (
-          <>
-            Detected: <b>{detected.letter}</b> {name(detected.classId)} ({detected.source}){detected.isReturn ? " · return" : ""}
-            {detected.conflict ? ` — ${detected.conflict}` : ""}.{" "}
-            <button className="text-accent hover:underline" onClick={() => ui.openDialog("wireNumbers")}>
-              Number wires…
-            </button>
-          </>
-        ) : undefined
-      }
-    >
-      <NativeSelect value={v === MIXED ? MIXED : v} disabled={!editable} onChange={(e) => onSet(e.target.value === MIXED ? "" : e.target.value)} aria-label="Circuit class">
-        {v === MIXED && <option value={MIXED}>Mixed</option>}
-        <option value="">Automatic{detected && !single?.vclass ? ` (${detected.letter})` : ""}</option>
-        {cfg.classes.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.letter} · {c.name}
-          </option>
-        ))}
-        <option value="__pe">{cfg.peLetter} · Protective earth</option>
-      </NativeSelect>
-    </Row>
-  );
-}

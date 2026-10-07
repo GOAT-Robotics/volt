@@ -7,8 +7,10 @@
  * Nets are project wide: wires, junctions, mated connectors, folio reports (QET "next/previous
  * report" pairs), two-pin feed-through terminals and junction elements join them.
  */
-import type { Doc, ElemInst, ElementDef, Page, PinDef, Wire, WireFunction } from "./model";
-import { pinClassOf, pinPotential, signalConflict } from "./pinclass";
+import type { Doc, ElemInst, ElementDef, Page, PinDef, Wire } from "./model";
+import { pinClassOf, pinPotential, pinSigOf, signalConflict } from "./pinclass";
+import { sigConflict, sigText } from "./signals";
+import { wirePot, wireUse } from "./wiring";
 import { prefixFor } from "./numbering";
 import { matedPinPairs, isConnector } from "./mating";
 import { colorOf, sectionMm2, wireInfo, wiringOf } from "./wiring";
@@ -74,19 +76,11 @@ function potentialOfName0(raw: string): Potential | null {
   return null;
 }
 
-function potentialOfFunction(fn: WireFunction | undefined): Potential | null {
-  switch (fn) {
-    case "L1":
-    case "L2":
-    case "L3":
-    case "N":
-    case "PE":
-      return { kind: fn, text: fn };
-    case "dc0V":
-      return { kind: "DC0", text: "0 V DC" };
-    default:
-      return null;
-  }
+/** potential set on a wire (Potential field, or a legacy function) */
+function potentialOfWire(w: Pick<Wire, "pot" | "fn">): Potential | null {
+  const p = wirePot(w);
+  if (!p || p === "signal") return null;
+  return { kind: p, text: p === "DC0" ? "0 V DC" : p === "DC+" ? "+ DC" : p === "DC-" ? "− DC" : p };
 }
 
 /** potential a pin carries: its class set in the element editor, else what its name implies */
@@ -224,7 +218,7 @@ export function projectNets(doc: Doc, idx: ElIndex = indexElements(doc)): { nets
       if (label && !n.labels.some((x) => x.toLowerCase() === label.toLowerCase())) n.labels.push(label);
       const pl = potentialOfLabel(label);
       if (pl) n.potentials.push({ ...pl, from: "label", wire: w.id });
-      const pf = potentialOfFunction(w.fn);
+      const pf = potentialOfWire(w);
       if (pf) n.potentials.push({ ...pf, from: "function", wire: w.id });
       const info = wireInfo(doc, w);
       const mm2 = sectionMm2(info.section);
@@ -510,7 +504,7 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
     const info = wireInfo(doc, w);
     const code = info.look?.code ?? colorOf(info.color)?.code;
     if (!code || info.colorSource === "standard") continue;
-    const kind = potentialOfFunction(w.fn)?.kind ?? potentialOfLabel(w.label)?.kind;
+    const kind = potentialOfWire(w)?.kind ?? potentialOfLabel(w.label)?.kind;
     if (std === "iec" && kind === "N" && !["BU", "LBU"].includes(code))
       onWire({ level: "warning", code: "erc.nColor", category: "wiring", message: `Neutral conductor${w.label ? ` ${w.label}` : ""} is ${code}; IEC 60445 / 60204-1 require light blue`, suggestion: "Use a light-blue (LBU) conductor for N.", ids: [wid] }, wid);
     if (std === "iec" && kind && AC_KINDS.includes(kind) && ["BU", "LBU", "GNYE"].includes(code))
@@ -518,20 +512,21 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
   }
 
   /* ---------- cross-sections ---------- */
-  const powerFn: WireFunction[] = ["power", "L1", "L2", "L3", "N"];
-  const controlFn: WireFunction[] = ["acControl", "dcControl", "dc0V", "interlock"];
+  // power: Use = power, or a phase / neutral with no use given; control: control or external supply
+  const isPowerWire = (w: Wire) => { const u = wireUse(w), p = wirePot(w); return u === "power" || (!u && (p === "L1" || p === "L2" || p === "L3" || p === "N")); };
+  const isControlWire = (w: Wire) => { const u = wireUse(w); return u === "control" || u === "external"; };
   let missingPower = 0;
   let firstMissing: string | null = null;
   const anySection = [...wireById.values()].some(({ w }) => wireInfo(doc, w).section);
   for (const [wid, { w }] of wireById) {
     const s = sectionMm2(wireInfo(doc, w).section);
     if (s === null) {
-      if (w.fn && powerFn.includes(w.fn)) (missingPower++, (firstMissing ??= wid));
+      if (isPowerWire(w)) (missingPower++, (firstMissing ??= wid));
       continue;
     }
-    if (w.fn && powerFn.includes(w.fn) && s < 0.75)
+    if (isPowerWire(w) && s < 0.75)
       onWire({ level: "warning", code: "erc.sectionMinPower", category: "section", message: `Power conductor${w.label ? ` ${w.label}` : ""} is ${fmtS(s)} — below the 0.75 mm² minimum for power circuits (IEC 60204-1 Table 5)`, suggestion: "Use at least 0.75 mm² (1.5 mm² is typical for power wiring).", ids: [wid] }, wid);
-    if (w.fn && controlFn.includes(w.fn) && s < 0.2)
+    if (isControlWire(w) && s < 0.2)
       onWire({ level: "warning", code: "erc.sectionMinControl", category: "section", message: `Control conductor${w.label ? ` ${w.label}` : ""} is ${fmtS(s)} — below the 0.2 mm² minimum (IEC 60204-1 Table 5)`, suggestion: "Use at least 0.2 mm² inside enclosures (0.5–0.75 mm² is common).", ids: [wid] }, wid);
   }
   if (missingPower && anySection && firstMissing)
@@ -593,20 +588,28 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
       for (let j = i + 1; j < classed.length; j++) {
         const a = classed[i], b = classed[j];
         if (a.ref.el === b.ref.el) continue; // the self-short check reports pins of one device
-        const why = a.pot && b.pot ? conflict(a.pot, b.pot) : signalConflict(a.cls as never, b.cls as never);
+        // signal ↔ signal: bus and line must match (CAN H ↔ H, UART TX ↔ RX); otherwise potentials
+        const sa = a.cls === "signal" ? pinSigOf(a.pd) : null, sb = b.cls === "signal" ? pinSigOf(b.pd) : null;
+        const kind: "bus" | "signal" | "pot" = sa && sb ? "bus" : a.pot && b.pot ? "pot" : "signal";
+        const why = kind === "bus" ? sigConflict(sa!, sb!) : kind === "pot" ? conflict(a.pot!, b.pot!) : signalConflict(a.cls as never, b.cls as never);
         if (!why) continue;
-        const key = [a.cls + (a.pot?.volts ?? ""), b.cls + (b.pot?.volts ?? "")].sort().join("|");
+        const da = sa ? sigText(sa) : a.cls, db = sb ? sigText(sb) : b.cls;
+        const key = kind === "bus" ? [da, db].sort().join("|") : [a.cls + (a.pot?.volts ?? ""), b.cls + (b.pot?.volts ?? "")].sort().join("|");
         if (seen.has(key)) continue;
         seen.add(key);
-        const sig = !(a.pot && b.pot);
         const pe = why.includes("protective earth");
         const anchorWire = n.wires[0]?.id;
         const f: ErcFinding = {
-          level: sig ? "warning" : "error",
-          code: sig ? "erc.pinSignal" : pe ? "erc.peLive" : "erc.pinClass",
-          category: sig ? "wiring" : pe ? "safety" : "short",
-          message: `${pinName(a.ref.el, a.ref.pin)} (${a.cls}) is wired to ${pinName(b.ref.el, b.ref.pin)} (${b.cls}) — ${why}`,
-          suggestion: sig ? "Signal and data pins connect to signal pins only; supply them through the device's own supply pins." : "Pins of different classes must not share a conductor: connect L to L, N to N, PE to PE, + to +, 0 V to 0 V. Check the wire landed on the right terminal, or the pin class in the element editor.",
+          level: kind === "signal" ? "warning" : "error",
+          code: kind === "bus" ? "erc.busMismatch" : kind === "signal" ? "erc.pinSignal" : pe ? "erc.peLive" : "erc.pinClass",
+          category: kind === "pot" ? (pe ? "safety" : "short") : "wiring",
+          message: `${pinName(a.ref.el, a.ref.pin)} (${da}) is wired to ${pinName(b.ref.el, b.ref.pin)} (${db}) — ${why}`,
+          suggestion:
+            kind === "bus"
+              ? "Bus lines connect line to line (CAN H–H, RS-485 A–A, I²C SDA–SDA); point-to-point serial crosses over (UART / RS-232 TX → RX). Check the wiring or the pin's bus / line in the element editor."
+              : kind === "signal"
+                ? "Signal and data pins connect to signal pins only; supply them through the device's own supply pins."
+                : "Pins of different classes must not share a conductor: connect L to L, N to N, PE to PE, + to +, 0 V to 0 V. Check the wire landed on the right terminal, or the pin class in the element editor.",
           ids: [a.ref.el, b.ref.el, ...(anchorWire ? [anchorWire] : [])],
         };
         if (anchorWire) onWire({ ...f, ids: [anchorWire, a.ref.el, b.ref.el] }, anchorWire);
@@ -717,7 +720,7 @@ export function netlistText(doc: Doc, maxChars = 180_000): { text: string; keys:
       const k = `W${++wn}`;
       keys.wires.set(id, k);
       const i = wireInfo(doc, w);
-      return `${k}=${w.label || "·"}${w.fn ? ` ${w.fn}` : ""}${i.color ? ` ${i.color}` : ""}${i.section ? ` ${i.section}` : ""}${w.cable ? ` cable ${w.cable}:${w.core ?? "?"}` : ""}${w.a.k === "free" || w.b.k === "free" ? " FREE-END" : ""}`;
+      return `${k}=${w.label || "·"}${wirePot(w) || wireUse(w) ? ` ${[wirePot(w), wireUse(w)].filter(Boolean).join("/")}` : ""}${i.color ? ` ${i.color}` : ""}${i.section ? ` ${i.section}` : ""}${w.cable ? ` cable ${w.cable}:${w.core ?? "?"}` : ""}${w.a.k === "free" || w.b.k === "free" ? " FREE-END" : ""}`;
     });
     const pins = net.pins.map((p) => {
       const x = idx.get(p.el);

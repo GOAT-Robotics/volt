@@ -26,19 +26,20 @@
  * get the next free numbers (harness labels are printed). "Renumber all" re-sequences everything
  * (closing gaps). Locked numbers are never touched.
  */
-import type { Doc, ElementDef, Page, Wire, WireClass, WireFunction, WireNumbering } from "./model";
+import type { Doc, ElementDef, Page, Wire, WireClass, WireNumbering, WirePot } from "./model";
 import { indexElements, isTerminal, potentialOfLabel, projectNets, type ElIndex, type Potential, type ProjectNet } from "./erc";
 import { sectionMm2, AWG_SIZES, wireInfo, wiringOf } from "./wiring";
 import { pinPotential } from "./pinclass";
+import { wirePot } from "./wiring";
 
 export const DEFAULT_CLASSES: WireClass[] = [
-  { id: "48v", letter: "A", name: "48 V DC", kind: "dc", volts: 48 },
-  { id: "24v", letter: "B", name: "24 V DC", kind: "dc", volts: 24 },
-  { id: "5v", letter: "C", name: "5 V DC", kind: "dc", volts: 5 },
-  { id: "12v", letter: "D", name: "12 V DC", kind: "dc", volts: 12 },
-  { id: "3v3", letter: "E", name: "3.3 V DC", kind: "dc", volts: 3.3 },
+  { id: "48v", letter: "A", name: "48 V DC", kind: "dc", volts: 48, use: "control" },
+  { id: "24v", letter: "B", name: "24 V DC", kind: "dc", volts: 24, use: "control" },
+  { id: "5v", letter: "C", name: "5 V DC", kind: "dc", volts: 5, use: "control" },
+  { id: "12v", letter: "D", name: "12 V DC", kind: "dc", volts: 12, use: "control" },
+  { id: "3v3", letter: "E", name: "3.3 V DC", kind: "dc", volts: 3.3, use: "control" },
   // not "X": that is the terminal-strip letter (X1:3) and made AC wire numbers read like terminals
-  { id: "ac", letter: "AC", name: "AC mains (230 / 400 V)", kind: "ac" },
+  { id: "ac", letter: "AC", name: "AC mains (230 / 400 V)", kind: "ac", volts: 230, use: "power" },
   { id: "sig", letter: "S", name: "Signal / data (CAN, RS-485, Ethernet, encoder …)", kind: "signal", match: "CAN|RS-?485|RS-?232|ETH|TX|RX|SDA|SCL|ENC|SIG|DATA|USB|LIN|D\\+|D-" },
 ];
 
@@ -46,6 +47,12 @@ export const PRESETS: Record<"harness" | "panel", Omit<WireNumbering, "classes">
   harness: { preset: "harness", format: "{class}{n:3}{seg}{ret}", segments: true, returnSuffix: "N", peLetter: "PE", fallbackLetter: "W", defaultDc: "24v", defaultAc: "ac", start: 1, replacePotentialNames: true },
   panel: { preset: "panel", format: "{class}{page}.{col}", segments: false, returnSuffix: "", peLetter: "PE", fallbackLetter: "W", defaultDc: "24v", defaultAc: "ac", start: 1, replacePotentialNames: false },
 };
+
+/** the use of a supply's conductors when a wire doesn't say: its setting, else power for AC, control for DC */
+export function supplyUse(c: WireClass | undefined): "power" | "control" | undefined {
+  if (!c) return undefined;
+  return c.use ?? (c.kind === "ac" ? "power" : c.kind === "dc" ? "control" : undefined);
+}
 
 /** letters that must not be used for a class: they are IEC 81346-2 terminal / connector letters */
 export const RESERVED_CLASS_LETTERS = ["X"];
@@ -245,19 +252,21 @@ function classForPotential(p: Potential, cfg: WireNumbering): string | null {
   return cfg.defaultDc ?? cfg.classes.find((x) => x.kind === "dc")?.id ?? null;
 }
 
-function classForFunction(fn: WireFunction | undefined, cfg: WireNumbering): string | null {
-  switch (fn) {
+/** supply implied by a potential set on the wire (the use alone says nothing about the supply) */
+function classForPot(pot: WirePot | undefined, cfg: WireNumbering): string | null {
+  switch (pot) {
     case "PE":
       return "__pe";
+    case "L":
     case "L1":
     case "L2":
     case "L3":
     case "N":
-    case "power":
-    case "acControl":
       return cfg.defaultAc ?? cfg.classes.find((x) => x.kind === "ac")?.id ?? null;
-    case "dcControl":
-      return cfg.defaultDc ?? null;
+    case "DC+":
+    case "DC0":
+    case "DC-":
+      return cfg.defaultDc ?? cfg.classes.find((x) => x.kind === "dc")?.id ?? null;
     case "signal":
       return cfg.classes.find((x) => x.kind === "signal")?.id ?? null;
     default:
@@ -296,8 +305,9 @@ export function classifyNets(doc: Doc, cfg: WireNumbering = wireNumberingOf(doc)
       if (w.vclass && (byId.has(w.vclass) || w.vclass === "__pe")) add(n, w.vclass, 0, "set on the wire");
       const lp = potentialOfLabel(w.label);
       if (lp) add(n, classForPotential(lp, cfg), 1, `rail ${w.label}`);
-      if (lp?.kind === "DC0" || lp?.kind === "N" || w.fn === "dc0V" || w.fn === "N") ret.add(n);
-      add(n, classForFunction(w.fn, cfg), 2, `function ${w.fn}`);
+      const wp = wirePot(w);
+      if (lp?.kind === "DC0" || lp?.kind === "N" || wp === "DC0" || wp === "N") ret.add(n);
+      add(n, classForPot(wp, cfg), 2, `potential ${wp} set on the wire`);
       const parsed = parseWireLabel(w.label, cfg);
       if (parsed?.cls) {
         add(n, parsed.cls === cfg.peLetter ? "__pe" : letterToId.get(parsed.cls) ?? null, 3, `number ${w.label}`);
@@ -377,6 +387,8 @@ export function classifyNets(doc: Doc, cfg: WireNumbering = wireNumberingOf(doc)
       queue.push(m);
     }
   }
+  // a 0 V / GND return whose supply could not be traced: the "DC of unknown voltage" class (B…N), not the fallback letter
+  for (const n of nets) if (!out.has(n) && ret.has(n) && cfg.defaultDc && byId.has(cfg.defaultDc)) out.set(n, mk(cfg.defaultDc, true, "0 V / GND of unknown supply → DC of unknown voltage"));
   for (const n of nets) if (!out.has(n)) out.set(n, mk(null, ret.has(n), "not determined"));
   return new Map([...res].map(([n, c]) => [n.id, c]));
 
@@ -396,7 +408,7 @@ export type WireNumberPlan = {
   changes: WireLabelChange[];
   circuits: { key: string; letter: string; className: string; label: string; wires: number; source: string; conflict?: string; isReturn: boolean }[];
   /** extra conductor data to keep the potential when a rail name is replaced */
-  keep: { wireId: string; pageId: string; fn?: WireFunction; vclass?: string }[];
+  keep: { wireId: string; pageId: string; pot?: WirePot; vclass?: string }[];
   stats: { circuits: number; wires: number; changed: number; locked: number; unclassified: number };
 };
 
@@ -545,8 +557,8 @@ export function planWireNumbers(doc: Doc, opts: { mode: "new" | "all"; pageIds?:
       // a rail name being replaced: keep its meaning as conductor function / class
       const lp = potentialOfLabel(from);
       if (lp) {
-        const fn: WireFunction | undefined = w.fn ?? (lp.kind === "DC0" ? "dc0V" : lp.kind === "PE" ? "PE" : lp.kind === "N" ? "N" : ["L1", "L2", "L3"].includes(lp.kind) ? (lp.kind as WireFunction) : lp.kind === "DC+" ? "dcControl" : undefined);
-        keep.push({ wireId: wid, pageId: page.id, fn, vclass: w.vclass ?? (c.classId ?? undefined) });
+        const pot: WirePot | undefined = wirePot(w) ?? (lp.kind === "PEN" ? "PE" : (lp.kind as WirePot));
+        keep.push({ wireId: wid, pageId: page.id, pot, vclass: w.vclass ?? (c.classId ?? undefined) });
       }
     }
   }
@@ -567,7 +579,7 @@ export function applyWireNumbers(doc: Doc, plan: Pick<WireNumberPlan, "changes" 
   for (const k of plan.keep) {
     const w = at.get(k.wireId);
     if (!w) continue;
-    if (k.fn && !w.fn) w.fn = k.fn;
+    if (k.pot && !wirePot(w)) w.pot = k.pot;
     if (k.vclass && !w.vclass) w.vclass = k.vclass;
   }
   for (const c of plan.changes) {

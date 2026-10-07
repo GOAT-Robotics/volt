@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, AlertTriangle, CheckCircle2, Crosshair, Grid3x3, ListOrdered, Plus, Trash2, X } from "lucide-react";
 import { PIN_CLASSES, type ElementDef, type Orient } from "@/core/model";
-import { inferPinClass } from "@/core/pinclass";
+import { inferPinClass, pinSigOf } from "@/core/pinclass";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/misc";
 import { inputCls } from "@/components/ui/input";
@@ -101,7 +101,7 @@ export function PinTable({ readOnly }: { readOnly: boolean }) {
                             onChange={(e) => set(p.id, "cls", e.target.value || undefined)}
                             className={cn(inputCls, "h-6 w-[4.5rem] px-1", !p.cls && "text-subtle")}
                           >
-                            <option value="">{auto ? `Auto·${auto === "DC0" ? "0V" : auto === "signal" ? "Sig" : auto}` : "Auto"}</option>
+                            <option value="">{auto ? `Auto·${auto === "DC0" ? "0V" : auto === "signal" ? (() => { const g = pinSigOf(p); return g ? `${g.bus} ${g.line}` : "Sig"; })() : auto}` : "Auto"}</option>
                             {PIN_CLASSES.map((c) => (
                               <option key={c.id} value={c.id} title={c.label}>
                                 {c.id === "DC0" ? "0V" : c.id === "signal" ? "Signal" : c.id === "none" ? "None" : c.id}

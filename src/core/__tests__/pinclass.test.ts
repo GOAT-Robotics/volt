@@ -98,3 +98,14 @@ describe("AC class letter", () => {
     expect(wireNumberingOf({ wireNumbering: old })).toBe(cfg); // stable object (parser cache)
   });
 });
+
+describe("0 V / GND", () => {
+  it("a GND return with no traceable supply gets the default DC class and the return suffix", () => {
+    const { doc, page } = mkDoc();
+    const a = newElement(doc, page, dev("a", "GND"), { x: 100, y: 100 });
+    const b = newElement(doc, page, dev("b", "1"), { x: 300, y: 100 });
+    wire(page, doc, a, "p", b, "p");
+    const c = [...classifyNets(doc).values()][0];
+    expect(c).toMatchObject({ classId: "24v", letter: "B", isReturn: true });
+  });
+});

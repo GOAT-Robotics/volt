@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Switch, Checkbox } from "@/components/ui/misc";
 import type { Cable, Doc, WiringSettings, WiringStandard } from "@/core/model";
-import { wireEndLabel, STANDARDS, FUNCTIONS, cableDesignation, colorLabel, colorOf, makeCores, sectionChoices, standardColor, wireInfo, wiringOf, type CoreScheme } from "@/core/wiring";
+import { wireEndLabel, STANDARDS, WIRE_POTS, WIRE_USES, cableDesignation, colorLabel, colorOf, makeCores, sectionChoices, standardColorFor, wireInfo, wiringOf, type CoreScheme } from "@/core/wiring";
+import { circuitOf, sigSummary } from "@/core/circuit";
 import { uid } from "@/core/ids";
 import { cn } from "@/lib/utils";
 import { Swatch, normSection } from "../Conductor";
@@ -88,11 +89,20 @@ export function WiringDialog({ onClose }: { onClose: () => void }) {
                 >
                   <p className="text-xs font-medium">{STANDARDS[k].name}</p>
                   <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1">
-                    {(["power", "acControl", "dcControl", "N", "PE", "interlock"] as const).map((f) => {
-                      const c = standardColor(f, k)!;
+                    {(
+                      [
+                        ["Power", undefined, "power"],
+                        ["AC control", "L", "control"],
+                        ["DC control", "DC+", "control"],
+                        ["Neutral N", "N", undefined],
+                        ["PE", "PE", undefined],
+                        ["External supply", undefined, "external"],
+                      ] as const
+                    ).map(([label, pot, use]) => {
+                      const c = standardColorFor(pot, use, k)!;
                       return (
-                        <span key={f} className="flex items-center gap-1 text-2xs text-muted">
-                          <Swatch code={c} /> {FUNCTIONS.find((x) => x.id === f)!.name.replace(/ \(.*\)/, "").replace("Protective earth ", "")}
+                        <span key={label} className="flex items-center gap-1 text-2xs text-muted">
+                          <Swatch code={c} /> {label}
                         </span>
                       );
                     })}
@@ -101,7 +111,7 @@ export function WiringDialog({ onClose }: { onClose: () => void }) {
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-2xs text-subtle">A wire's color comes from, in order: its own color, its cable core, then the standard color for its function. Changing the standard updates standard colors only.</p>
+            <p className="mt-1.5 text-2xs text-subtle">A wire's color comes from, in order: its own color, its cable core, then the standard color of its circuit (potential + use, in the wire's Circuit panel). Changing the standard updates standard colors only.</p>
           </section>
 
           <section>
@@ -299,14 +309,14 @@ function endText(doc: Doc, pageIdx: number, end: import("@/core/model").WireEnd)
 
 function wireListRows(doc: Doc): string[][] {
   const ws = wiringOf(doc);
-  const rows = [["Page", "Wire", "From", "To", "Name at start", "Name at end", "Function", "Color", "Cross-section", "Cable", "Core"]];
+  const rows = [["Page", "Wire", "From", "To", "Name at start", "Name at end", "Supply", "Potential", "Use", "Bus lines", "Color", "Cross-section", "Cable", "Core"]];
   const pages = [...doc.pages].sort((a, b) => a.order - b.order);
   pages.forEach((p) => {
     const idx = doc.pages.indexOf(p);
     for (const w of p.wires) {
       const i = wireInfo(doc, w);
       const numberAtEnds = (ws.numberAt ?? "middle") !== "middle";
-      rows.push([p.title, w.label ?? "", endText(doc, idx, w.a), endText(doc, idx, w.b), wireEndLabel(doc, p, w, "a", numberAtEnds, !!ws.destination), wireEndLabel(doc, p, w, "b", numberAtEnds, !!ws.destination), FUNCTIONS.find((f) => f.id === w.fn)?.name ?? "", i.color ? colorLabel(i.color, ws.standard) : "", i.section ?? "", w.cable ?? "", w.core ?? ""]);
+      rows.push([p.title, w.label ?? "", endText(doc, idx, w.a), endText(doc, idx, w.b), wireEndLabel(doc, p, w, "a", numberAtEnds, !!ws.destination), wireEndLabel(doc, p, w, "b", numberAtEnds, !!ws.destination), ...circuitCols(doc, w.id), i.color ? colorLabel(i.color, ws.standard) : "", i.section ?? "", w.cable ?? "", w.core ?? ""]);
     }
   });
   return rows;
@@ -340,4 +350,11 @@ function downloadCsv(name: string, rows: string[][]) {
   a.download = name.replace(/[\\/:*?"<>|]/g, "_");
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Supply, Potential, Use, Bus lines columns of the wire list (set or detected) */
+function circuitCols(doc: Doc, wireId: string): string[] {
+  const c = circuitOf(doc, wireId);
+  if (!c) return ["", "", "", ""];
+  return [c.supply ? `${c.supply.letter} · ${c.supply.name}` : c.letter, (c.pot && WIRE_POTS.find((x) => x.id === c.pot)?.short) || "", (c.use && WIRE_USES.find((x) => x.id === c.use)?.name) || "", sigSummary(c.sigs)];
 }
