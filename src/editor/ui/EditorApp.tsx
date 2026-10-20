@@ -248,7 +248,7 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
         return;
       }
       if (/^[1-5]$/.test(e.key) && useEditor.getState().tool === "shape") return run(`draw-${["rect", "ellipse", "line", "polygon", "polyline"][Number(e.key) - 1]}`);
-      const map: Record<string, string> = { s: "tool-shape", v: "tool-select", w: e.shiftKey ? "connect" : "tool-wire", t: "tool-text", h: "tool-pan", c: e.shiftKey ? "toggleComments" : "tool-comment", r: e.shiftKey ? "rotateCcw" : "rotate", x: "mirror", f: e.shiftKey ? "fitPage" : "fit", z: "zoomSel", "0": "zoom100", g: "grid", n: "selectNet", l: "followLabel", "+": "zoomIn", "=": "zoomIn", "-": "zoomOut", "?": "shortcuts", "]": "scaleUp", "[": "scaleDown" };
+      const map: Record<string, string> = { s: e.shiftKey ? "straighten" : "tool-shape", v: "tool-select", w: e.shiftKey ? "connect" : "tool-wire", t: "tool-text", h: "tool-pan", c: e.shiftKey ? "toggleComments" : "tool-comment", r: e.shiftKey ? "rotateCcw" : "rotate", x: "mirror", f: e.shiftKey ? "fitPage" : "fit", z: "zoomSel", "0": "zoom100", g: "grid", n: "selectNet", l: "followLabel", "+": "zoomIn", "=": "zoomIn", "-": "zoomOut", "?": "shortcuts", "]": "scaleUp", "[": "scaleDown" };
       const id = map[e.key === "?" ? "?" : k];
       if (id) run(id);
     };

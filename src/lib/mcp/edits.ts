@@ -12,6 +12,7 @@ import { clearMate, guessGender, isConnector, matedPinPairs, setMate, type Gende
 import { isReportDef, linkReports, unlinkReport, looksLikeArrow } from "@/core/reports";
 import { replaceSymbol as replaceSymbolCore } from "@/core/replace";
 import { convertShapesToWires, isOpenPath } from "@/core/shapes";
+import { despike, gridFriendlyScales, offGridComponents, straightenWires } from "@/core/straighten";
 import { computeNets } from "@/core/topology";
 import { wireNumberingOf } from "@/core/wirenumber";
 import { planRenumber, duplicateRefs, type RefChange } from "@/core/numbering";
@@ -459,7 +460,10 @@ export function arrangeComponents(doc: Doc, refs: string[], a: Arrange): string 
   }
   if (a.rotate !== undefined || a.rotation !== undefined) done.push(a.rotation !== undefined ? `rotation ${turn(a.rotation) * 90}°` : `rotated ${turn(a.rotate!) * 90}° clockwise`);
   if (a.mirrored !== undefined) done.push(a.mirrored ? "mirrored" : "not mirrored");
-  if (a.scale !== undefined) done.push(`size ${a.scale} %`);
+  if (a.scale !== undefined) {
+    const off = parts.filter((x) => offGridComponents(doc, getPage(doc, x.page.id)).some((q) => q.id === x.e.id));
+    done.push(`size ${a.scale} %${off.length ? ` (pins of ${off.map((x) => refOf(doc, x)).join(", ")} are now off the grid, so wires to them bend — grid-friendly sizes: ${gridFriendlyScales(doc, draftOf(doc, off[0])).slice(0, 6).join(", ")} %)` : ""}`);
+  }
   if (a.hidden !== undefined) done.push(a.hidden ? "hidden" : "shown");
   if (a.locked !== undefined) done.push(a.locked ? "locked" : "unlocked");
   if (a.align || a.distribute) {
@@ -864,7 +868,8 @@ export function routeWire(doc: Doc, wireRef: string, o: { points?: Pt[]; reroute
   }
   if (!done.length) throw new EditError("Give points, reroute or reconnect");
   cleanupJunctions(pg);
-  return `Wire ${short(id)}: ${done.join("; ")}`;
+  const after = w();
+  return `Wire ${short(id)}: ${done.join("; ")}${after ? `; path ${after.pts.map((p) => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`).join(" ")}` : ""}`;
 }
 
 /** Turn lines drawn as shapes into wires (as "Convert lines to wires" in the editor). */
@@ -963,6 +968,52 @@ export function setCable(doc: Doc, tag: string | undefined, p: CablePatch): stri
   }
   if (!out.length) throw new EditError("Nothing to change");
   return `${created ? "" : `Cable ${cable.tag}: `}${out.join("; ")}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Straightening                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Straighten wires on a page: line the given components up with what they are wired to (a mated
+ * plug and socket drawn together move as one; sizes that put pins off the grid are corrected), then
+ * draw every wire that can be straight as a straight line. Without components nothing moves and
+ * only the wires are redrawn.
+ */
+export function straighten(doc: Doc, pageRef: string, o: { components?: string[] | "all"; wires?: string[]; reroute?: boolean; fixSizes?: boolean }): string {
+  const pg = getPage(doc, findPage(doc, pageRef).id);
+  const move = o.components === "all" ? pg.elements.filter((e) => !e.locked).map((e) => e.id) : o.components?.length ? partsOf(doc, o.components).filter((x) => x.page.id === pg.id).map((x) => x.e.id) : [];
+  if (o.components && o.components !== "all" && o.components.length && !move.length) throw new EditError(`None of those components is on page ${sheetNo(doc, pg)}`);
+  const wires = o.wires?.length ? [...new Set(o.wires.flatMap((w) => findWires(doc, w).filter((x) => x.page.id === pg.id).map((x) => x.w.id)))] : undefined;
+  const r = straightenWires(doc, pg, { move, wires, reroute: o.reroute, fixSizes: o.fixSizes });
+  const name = (id: string) => {
+    const e = pg.elements.find((x) => x.id === id);
+    return e ? refOf(doc, { e, def: doc.defs[e.defId] }) : short(id);
+  };
+  const bent = pg.wires.filter((w) => !(w.a.k === "junction" && w.b.k === "junction" && w.a.j === w.b.j) && despike(simplify(w.pts)).length > 2);
+  const lines = [
+    `Page ${sheetNo(doc, pg)}: ${r.straight.length} wire${r.straight.length === 1 ? "" : "s"} straight${r.rerouted.length ? `, ${r.rerouted.length} re-routed` : ""}${r.tidied.length ? `, ${r.tidied.length} tidied` : ""}; ${bent.length} wire${bent.length === 1 ? "" : "s"} on the page still bend`,
+    r.resized.length ? `Resized so their pins are on the grid: ${r.resized.map((x) => `${name(x.id)} ${x.from} % → ${x.to} %`).join(", ")}` : "",
+    r.moved.length ? `Moved (${r.moved.length}): ${r.moved.slice(0, 15).map((m) => `${name(m.id)} by (${m.dx}, ${m.dy}) — ${m.lined} of ${m.of} wire${m.of === 1 ? "" : "s"} in line`).join("; ")}${r.moved.length > 15 ? ` … +${r.moved.length - 15}` : ""}` : "",
+    stayedText(r.stayed, name),
+    r.blocked.length ? `Left bent because a straight line would cross a symbol: ${r.blocked.map((id) => { const w = pg.wires.find((q) => q.id === id); return `${w?.label || "·"} ${short(id)}`; }).join(", ")}${o.reroute ? "" : " (reroute: true gives them the fewest bends)"}` : "",
+    r.offGrid.length ? `Pins off the grid (wires to them cannot be straight): ${r.offGrid.map((x) => { const e = pg.elements.find((q) => q.id === x.id)!; const ok = gridFriendlyScales(doc, e); return `${name(x.id)} at ${Math.round(x.scale * 100)} %${ok.length ? ` (on the grid at ${ok.slice(0, 6).join(", ")} %)` : ""}`; }).join("; ")}` : "",
+    bent.length && bent.length <= 30 ? `Still bending: ${bent.map((w) => `${w.label || "·"} ${short(w.id)}`).join(", ")}` : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+/** components that did not move, grouped by why (a page-wide run would otherwise list every one) */
+function stayedText(stayed: { id: string; why: string }[], name: (id: string) => string): string {
+  if (!stayed.length) return "";
+  const by = new Map<string, string[]>();
+  for (const x of stayed) {
+    const why = x.why.startsWith("already in line") ? "already in line" : /moving would take one out of line/.test(x.why) ? "moving would take a straight wire out of line" : x.why;
+    by.set(why, [...(by.get(why) ?? []), name(x.id)]);
+  }
+  const list = (n: string[]) => (n.length > 12 ? `${n.slice(0, 12).join(", ")} … +${n.length - 12}` : n.join(", "));
+  if (stayed.length <= 6) return `Stayed: ${stayed.map((x) => `${name(x.id)} (${x.why})`).join("; ")}`;
+  return `Stayed (${stayed.length}): ${[...by].sort((a, b) => b[1].length - a[1].length).map(([why, n]) => `${why} (${n.length}): ${list(n)}`).join("; ")}`;
 }
 
 export { AddressError };

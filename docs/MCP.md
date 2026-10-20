@@ -66,7 +66,7 @@ project memberships, checked by the same code as the web app (`loadProject`, `lo
 
 ## Tools
 
-68 tools, grouped like the editor. Read tools carry `readOnlyHint`; everything that changes a drawing
+69 tools, grouped like the editor. Read tools carry `readOnlyHint`; everything that changes a drawing
 needs an edit token and a working version.
 
 | Area | Read | Change |
@@ -74,7 +74,7 @@ needs an edit token and a working version.
 | Projects & reading | `list_projects`, `get_project`, `get_drawing` (start here), `list_components`, `get_component` (all parts, mates, arrow links, block, library source, what every pin connects to), `list_wires`, `get_netlist`, `render_page` (PNG) | — |
 | Review | `check_drawing`, `list_comments` | `add_comment`, `reply_to_comment`, `set_comment_status` |
 | Components | — | `place_component` (rotation, mirrored, scale), `move_component`, `arrange_components` (rotate, mirror, resize, lock, hide, align, distribute), `style_components` (pin numbers / names, info lines and placement, reference direction, symbol colour, outline box, text styles, reset, project default), `rename_component`, `set_component_data` (incl. BOM quantity / unit / inclusion, custom fields), `renumber_components`, `mate_connectors` (plug ↔ socket), `link_offpage_arrows`, `replace_symbol`, `set_symbol_pins` (number, name, pin class, volts), `copy_components`, `delete_component` |
-| Wires & cables | `list_cables` | `connect_pins`, `draw_wire` (pins, T onto a wire, junction, free point, via points), `route_wire` (path, re-route, reconnect an end), `set_wire` (number, potential, use, supply, colour, section, cable / core, end markers, label position, bus, line style, apply to the net), `number_wires`, `convert_lines_to_wires`, `set_cable`, `delete_wires` |
+| Wires & cables | `list_cables` | `connect_pins`, `draw_wire` (pins, T onto a wire, junction, free point, via points), `route_wire` (path, re-route, reconnect an end), `set_wire` (number, potential, use, supply, colour, section, cable / core, end markers, label position, bus, line style, apply to the net), `straighten_wires` (line components up with what they connect to, fix sizes that put pins off the grid, draw straight; `preview` = picture only), `number_wires`, `convert_lines_to_wires`, `set_cable`, `delete_wires` |
 | Terminals | `get_terminal_strips` | `edit_terminal_strip` (create, rename, order, renumber, types, levels, bridges, part numbers, spares, move between strips, delete), `place_terminals` |
 | Pages & annotations | `list_page_items` | `add_page` (drawing, cover, contents, terminal diagrams, copy), `update_page` (name, position, type, border, title block, terminal diagram, archive), `delete_page`, `set_cover_sheet`, `add_text`, `add_shape` (shapes and pictures), `update_item`, `delete_items`, `edit_title_block_template` |
 | Project settings | `get_settings` | `update_settings` (properties, revisions, numbering rules, wire numbering and supplies, wiring display, styles), `update_project` (name, number, description, tags) |
@@ -90,6 +90,20 @@ have not published). Publishing to the organization stays in Library, with its a
 
 Prompts: `review_drawing` (engineering review posted as comments), `fix_connectors` (mate plugs and
 sockets, proper connector symbols and part data) and `fix_naming`.
+
+### Straightening wires
+
+`straighten_wires` is the editor's *Straighten wires* (⇧S): with `components` (references, or `all`
+for every unlocked one on the page) each is shifted along its pins' axis by the amount that puts the
+most of its wires in line with their other ends, never taking a straight wire out of line, never onto
+another component, never more than 100 units (moving further is a layout decision). A plug and socket
+mated at the same place move together, and chains (arrow → connector → device) line up in order.
+Components drawn at a size that puts their pins off the grid (146 %, say) get the nearest
+grid-friendly size when that lines up more wires (`fix_sizes: false` keeps sizes). Then every wire
+that can be straight is drawn straight — unless the line would cross a symbol or run along another
+wire — and doubled-back stubs are dropped; `reroute: true` also gives the rest the route with the
+fewest bends that crosses no symbol and no more wires than now. Without `components` nothing moves.
+The answer says what moved, what stayed and why, and which wires still bend.
 
 ### Undo
 

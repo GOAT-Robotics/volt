@@ -23,6 +23,7 @@ import {
 import { newPage } from "@/core/doc";
 import { newCover } from "@/core/render/cover";
 import { convertShapesToWires, isOpenPath } from "@/core/shapes";
+import { straightenWires, type StraightenResult } from "@/core/straighten";
 import { uid } from "@/core/ids";
 
 export type Command = {
@@ -236,6 +237,21 @@ export const COMMANDS: Command[] = [
       run: (_, s) => void s.apply(`Align ${a}`, (d) => alignSel(d, s, a)),
     }),
   ),
+  {
+    id: "straighten",
+    label: "Straighten wires (line the selected components up with what they connect to)",
+    section: "Arrange",
+    keys: "⇧S",
+    enabled: editable,
+    run: (ui, s) => straighten(ui, s, s.sel.elements.length ? s.sel.elements : [], s.sel.elements.length || !s.sel.wires.length ? undefined : s.sel.wires),
+  },
+  {
+    id: "straightenPage",
+    label: "Straighten all wires on this page (lines components up)",
+    section: "Page",
+    enabled: editable,
+    run: (ui, s) => straighten(ui, s, s.page().elements.filter((e) => !e.locked).map((e) => e.id)),
+  },
   { id: "distH", label: "Distribute horizontally", section: "Arrange", enabled: (s) => editable(s) && s.sel.elements.length > 2, run: (_, s) => void s.apply("Distribute", (d) => distribute(d, s, "x")) },
   { id: "distV", label: "Distribute vertically", section: "Arrange", enabled: (s) => editable(s) && s.sel.elements.length > 2, run: (_, s) => void s.apply("Distribute", (d) => distribute(d, s, "y")) },
   {
@@ -533,6 +549,24 @@ export const COMMANDS: Command[] = [
   { id: "submit", label: "Submit for review…", section: "Review", enabled: editable, run: (ui) => ui.openDialog("submit") },
   { id: "shortcuts", label: "Keyboard shortcuts", section: "Help", keys: "?", run: (ui) => ui.openDialog("shortcuts") },
 ];
+
+function straighten(ui: EditorUI, s: EditorStore, move: string[], wires?: string[]) {
+  let r: StraightenResult | null = null;
+  // wires picked on their own may also take a route with fewer bends
+  s.apply("Straighten wires", (d) => void (r = straightenWires(d, getPage(d, s.pageId), { move, wires, reroute: !!wires?.length })));
+  const res = r as StraightenResult | null;
+  if (!res) return;
+  const name = (id: string) => s.page().elements.find((e) => e.id === id)?.info.label || "a component";
+  const parts = [
+    `${res.straight.length} wire${res.straight.length === 1 ? "" : "s"} straight`,
+    res.moved.length ? `${res.moved.length} component${res.moved.length === 1 ? "" : "s"} lined up` : "",
+    res.resized.length ? `${res.resized.map((x) => `${name(x.id)} ${x.from} → ${x.to} %`).join(", ")} (pins onto the grid)` : "",
+    res.rerouted.length ? `${res.rerouted.length} rerouted with fewer bends` : "",
+    res.blocked.length ? `${res.blocked.length} left bent (a straight line would cross a symbol)` : "",
+  ].filter(Boolean);
+  const hint = !res.moved.length && !move.length ? " — select the components that may move to line them up" : res.offGrid.length ? ` — ${res.offGrid.map((x) => name(x.id)).join(", ")}: pins off the grid at ${Math.round(res.offGrid[0].scale * 100)} %` : "";
+  ui.toast(parts.join(" · ") + hint, { undo: true });
+}
 
 export function runCommand(id: string, ui: EditorUI) {
   const c = COMMANDS.find((x) => x.id === id);

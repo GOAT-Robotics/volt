@@ -28,6 +28,7 @@ import { endAddress, wireEndLabel, wiringOf } from "@/core/wiring";
 import { ROLE_LABELS } from "@/core/styles";
 import { DEFAULT_FRAME, docStyles, tbTemplate, wireTextAnchor } from "@/core/render/scene";
 import { templateVariables } from "@/core/titleblock-edit";
+import { gridFriendlyScales } from "@/core/straighten";
 import { symbolThumb } from "../thumb";
 import { pinDegree } from "../engine/snap";
 import { polylineLength } from "@/core/geometry";
@@ -410,6 +411,9 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
   const [showAll, setShowAll] = useState(false);
   const [newKey, setNewKey] = useState("");
   if (!def) return <p className="p-3 text-xs text-danger">Definition missing.</p>;
+  // a scaled symbol whose pins miss the grid (while other sizes would hit it) is why its wires bend
+  const friendly = e.scale && e.scale !== 1 && def.pins.length ? gridFriendlyScales(doc, e) : [];
+  const pinsOffGrid = friendly.length > 0 && !friendly.includes(Math.round((e.scale ?? 1) * 100));
   const infoKeys = [...new Set(["label", "comment", "function", "location", ...Object.keys(def.info), ...Object.keys(e.info)])];
   const visibleKeys = (showAll ? [...new Set([...infoKeys, ...COMMON_INFO])] : infoKeys).filter((k) => !COMPONENT_INFO.some((c) => c.key === k) && !BOM_KEYS.includes(k));
   return (
@@ -584,6 +588,11 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
         </Row>
         <Row label="Locked">
           <Switch checked={!!e.locked} disabled={!editable} onCheckedChange={(v) => upd("Lock", (x) => (x.locked = v))} />
+        </Row>
+        <Row label="Wires" hint={pinsOffGrid ? `At ${Math.round((e.scale ?? 1) * 100)} % the pins are off the grid, so wires to them bend; straightening picks a nearby size that puts them on it when that lines up more wires` : undefined}>
+          <Button size="xs" variant="secondary" disabled={!editable || e.locked} onClick={() => runCommand("straighten", ui)} title="Move this component so its wires run straight to what they connect to">
+            Straighten
+          </Button>
         </Row>
       </Section>
       <Section title={`Pins (${def.pins.length})`} actions={<PinToggles e={e} editable={editable} styles={styles} upd={upd} />}>
@@ -1196,6 +1205,9 @@ function MultiInspector() {
             </Button>
             <Button size="xs" onClick={() => run("resetOverrides")}>
               Reset overrides
+            </Button>
+            <Button size="xs" onClick={() => run("straighten")} title="Line the selected components up with what they are wired to, then draw the wires straight">
+              Straighten wires
             </Button>
           </div>
         )}

@@ -8,7 +8,7 @@ import { collectStrips } from "@/core/terminals";
 import { toScene } from "@/core/geometry";
 import type { Doc } from "@/core/model";
 import { allElements, findComponent, findComponents, findPage, findPin, findWires, sheets, short } from "../doc";
-import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, replaceSymbols, routeWire, setCable, setSymbolPins, setWires, styleComponents } from "../edits";
+import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, replaceSymbols, routeWire, setCable, setSymbolPins, setWires, straighten, styleComponents } from "../edits";
 import { addPage, addShape, addText, deleteItems, deletePage, editTitleBlock, pageItemsText, setCover, updateItem, updatePage } from "../sheets";
 import { cablesText, editStrip, placeStripTerminals, reportCsv, reportTable, settingsText, stripsText, updateSettings } from "../project";
 
@@ -141,6 +141,19 @@ describe("MCP: wires", () => {
     expect(findPage(r2.doc, 1).junctions.length).toBe(before + 1);
     expect(r2.out.text).toMatch(/QF4:p1 → wire/);
     expect(() => edit(base, (d) => drawWire(d, { pin: "K2@1:p1" }, { pin: "K5@3:p1" }))).toThrow(/page/);
+  });
+
+  it("straightens wires and says what stayed bent and why", () => {
+    const base = edit(load(), (d) => arrangeComponents(d, ["K2@1"], { scale: 146 })).doc;
+    const k2 = findComponent(base, "K2@1").e;
+    const r = edit(base, (d) => straighten(d, "1", { components: ["K2@1"] }));
+    expect(r.out).toMatch(/^Page 1: \d+ wires? straight; \d+ wires on the page still bend/);
+    expect(r.out).toMatch(/Stayed: K2 \(1 of 2 wires in line/);
+    expect(r.out).toMatch(/Pins off the grid .*K2 at 146 %/);
+    expect(() => edit(base, (d) => straighten(d, "1", { components: ["K2@2"] }))).toThrow();
+    // only redraw: nothing moves
+    const only = edit(base, (d) => straighten(d, "1", {}));
+    expect(findComponent(only.doc, "K2@1").e).toMatchObject({ x: k2.x, y: k2.y, scale: k2.scale });
   });
 
   it("re-routes, sets a path and reconnects", () => {

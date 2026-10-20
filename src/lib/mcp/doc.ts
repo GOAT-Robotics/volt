@@ -16,8 +16,9 @@ import { validateDoc } from "@/core/validate";
 import { gridRef } from "@/core/xref";
 import { wireInfo, wiringOf, STANDARDS, wirePot, wireUse } from "@/core/wiring";
 import { wireNumberingOf } from "@/core/wirenumber";
-import { toScene } from "@/core/geometry";
+import { rotOrient, toScene } from "@/core/geometry";
 import { collectStrips } from "@/core/terminals";
+import { gridFriendlyScales, offGridComponents } from "@/core/straighten";
 
 export class AddressError extends Error {}
 
@@ -304,7 +305,7 @@ export function wireLine(doc: Doc, page: Page, w: Wire) {
   return `${short(w.id)} | ${sheetNo(doc, page)} | ${w.label || "·"}${w.labelLocked ? " (locked)" : ""} | ${endText(doc, page, w, "a")} → ${endText(doc, page, w, "b")} | ${circ || "-"} | ${[i.color, i.section].filter(Boolean).join(" ") || "-"}${w.cable ? ` | cable ${w.cable}:${w.core ?? "?"}` : ""}`;
 }
 
-export function wiresText(doc: Doc, o: { page?: Page; query?: string; unnumbered?: boolean; limit?: number } = {}): string {
+export function wiresText(doc: Doc, o: { page?: Page; query?: string; unnumbered?: boolean; limit?: number; points?: boolean } = {}): string {
   const q = o.query?.trim().toLowerCase();
   let list = allWires(doc).filter((x) => !o.page || x.page === o.page);
   if (o.unnumbered) list = list.filter((x) => !x.w.label);
@@ -312,8 +313,8 @@ export function wiresText(doc: Doc, o: { page?: Page; query?: string; unnumbered
   const limit = o.limit ?? 400;
   return [
     `${list.length} wire${list.length === 1 ? "" : "s"}${list.length > limit ? ` (first ${limit}; narrow with page or query)` : ""}`,
-    "id | page | number | from → to | potential/use | colour section | cable",
-    ...list.slice(0, limit).map((x) => wireLine(doc, x.page, x.w)),
+    `id | page | number | from → to | potential/use | colour section | cable${o.points ? " | path (x,y …)" : ""}`,
+    ...list.slice(0, limit).map((x) => wireLine(doc, x.page, x.w) + (o.points ? ` | path ${x.w.pts.map((p) => `${fmt(p.x)},${fmt(p.y)}`).join(" ")}${x.w.pts.length > 2 ? ` (${x.w.pts.length - 2} bend${x.w.pts.length === 3 ? "" : "s"})` : ""}` : "")),
   ].join("\n");
 }
 
@@ -359,7 +360,8 @@ export function componentText(doc: Doc, parts: Located[]): string {
         const w = page?.wires.find((q) => q.id === r.id);
         return w ? `${w.label || "·"} ${short(w.id)}` : "";
       }).filter(Boolean) ?? [];
-      out.push(`  pin ${pinLabel(pin, x.def)}${pin.name && pin.name !== pin.number ? ` (${pin.name})` : ""}: ${others.length ? others.join(", ") : "not connected"}${ws.length ? ` — wires ${ws.slice(0, 8).join(", ")}${ws.length > 8 ? " …" : ""}` : ""}`);
+      const at = toScene(x.e, pin);
+      out.push(`  pin ${pinLabel(pin, x.def)}${pin.name && pin.name !== pin.number ? ` (${pin.name})` : ""} at (${fmt(at.x)}, ${fmt(at.y)}) facing ${ORIENT_NAME[rotOrient(pin.orient, x.e.rot, x.e.mirror)]}: ${others.length ? others.join(", ") : "not connected"}${ws.length ? ` — wires ${ws.slice(0, 8).join(", ")}${ws.length > 8 ? " …" : ""}` : ""}`);
     }
   }
   return out.join("\n");
@@ -409,6 +411,14 @@ export function checksText(doc: Doc): { text: string; errors: number; warnings: 
   const rows = [
     ...erc.map((f) => ({ level: f.level, text: `[${f.category}] ${f.message}${f.suggestion ? ` → ${f.suggestion}` : ""}`, ids: f.ids })),
     ...val.map((i) => ({ level: i.level, text: `[drawing] ${i.message}`, ids: i.ids })),
+    // drawn at a size that puts the pins off the grid: wires to them cannot be straight
+    ...sheets(doc).flatMap((p) =>
+      offGridComponents(doc, p).map((x) => {
+        const e = p.elements.find((q) => q.id === x.id)!;
+        const ok = gridFriendlyScales(doc, e);
+        return { level: "info" as const, text: `[layout] drawn at ${Math.round(x.scale * 100)} %, its pins are off the grid — wires to it bend${ok.length ? `; on the grid at ${ok.slice(0, 5).join(", ")} %` : ""} (straighten_wires fixes size and alignment)`, ids: [x.id] };
+      }),
+    ),
   ];
   const order = { error: 0, warning: 1, info: 2 } as const;
   rows.sort((a, b) => order[a.level] - order[b.level]);
@@ -421,5 +431,8 @@ export function checksText(doc: Doc): { text: string; errors: number; warnings: 
   ].join("\n");
   return { text, errors, warnings };
 }
+
+const ORIENT_NAME = { n: "up", e: "right", s: "down", w: "left" } as const;
+const fmt = (v: number) => String(Math.round(v * 10) / 10);
 
 export { pinLabel, toScene };

@@ -5,9 +5,12 @@
  */
 import "server-only";
 import { z } from "zod";
-import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, replaceSymbols, routeWire, setCable, setSymbolPins, styleComponents, type EndSpec } from "./edits";
+import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, replaceSymbols, routeWire, setCable, setSymbolPins, straighten, styleComponents, type EndSpec } from "./edits";
 import { cablesText } from "./project";
-import { colour, component, editDrawing, guard, page, point, readVersion, symbolFor, tool, version, type Tool } from "./kit";
+import { colour, component, editDrawing, guard, immer, page, point, readVersion, symbolFor, tool, version, vName, type Tool } from "./kit";
+import { approxMeasure, pageToSvg } from "@/core/render/svg";
+import { svgToPng } from "../og/raster";
+import type { Doc } from "@/core/model";
 import { findComponents, findPage, positionOf } from "./doc";
 
 const components = z.array(z.string()).min(1).max(500).describe('Component references ("K1", "K1@2", "#1a2b3c4d"); a reference with several parts means all of them');
@@ -165,6 +168,35 @@ export const DRAWING_TOOLS: Tool[] = [
       editDrawing(env, x.version, "draw_wire", (d) =>
         guard(() => drawWire(d, x.from as EndSpec, x.to as EndSpec, { page: x.page, via: x.via, number: x.number }).text),
       ),
+  }),
+  tool({
+    name: "straighten_wires",
+    title: "Straighten wires",
+    area: "Wires & cables",
+    description:
+      "Remove needless bends: line components up with what they are wired to — each is shifted up / down (or left / right, at most 100 units) by the amount that puts the most of its wires in line, never taking a straight wire out of line; a mated plug and socket drawn together move as one; chains such as arrow → connector → device line up in order; nothing is moved onto another component — then draw every wire that can be straight as a straight line (not through a symbol, not along another wire). Components drawn at a size that puts their pins off the grid (e.g. 146 %) get the grid-friendly size that lines up the most wires (fix_sizes, default on). components: which may move (all = every unlocked one on the page); none = only redraw wires. reroute: give the wires that still cannot be straight the fewest bends. preview: picture of the result, nothing saved.",
+    access: "edit",
+    input: z.object({
+      version,
+      page,
+      components: z.union([z.array(z.string()).min(1).max(500), z.literal("all")]).optional(),
+      wires: z.array(z.string()).max(2000).optional().describe("Only these wires (ids or numbers)"),
+      reroute: z.boolean().optional(),
+      fix_sizes: z.boolean().optional(),
+      preview: z.boolean().optional(),
+    }),
+    run: async (x, env) => {
+      const opts = { components: x.components, wires: x.wires, reroute: x.reroute, fixSizes: x.fix_sizes };
+      if (x.preview) {
+        const { a, doc } = await readVersion(env, x.version);
+        let out = "";
+        const next = immer.produce(doc, (d: Doc) => void (out = guard(() => straighten(d, x.page, opts))));
+        const pg = guard(() => findPage(next, x.page));
+        const png = svgToPng(pageToSvg(next, pg, { measure: approxMeasure, lod: 100, background: "#ffffff" }), 1800);
+        return { content: [{ type: "image", data: Buffer.from(png).toString("base64"), mimeType: "image/png" }, { type: "text", text: `Preview (not saved) of ${vName(a)}:\n${out}` }] };
+      }
+      return editDrawing(env, x.version, "straighten_wires", (d) => guard(() => straighten(d, x.page, opts)));
+    },
   }),
   tool({
     name: "route_wire",

@@ -80,6 +80,7 @@ The standard library, blocks and title blocks install automatically when the con
   - Each end is attached to a pin, a junction or nothing (dangling).
   - Wires that cross never connect.
   - Moving or rotating a component re-routes its wires so they stay attached.
+  - **Straighten wires** (⇧S, the inspector's *Straighten* button, or *Straighten all wires on this page* in the command palette) removes needless bends: the selected components shift so their wires run straight to what they connect to (a mated plug and socket move together; nothing moves onto another component or takes a straight wire out of line), a symbol drawn at a size that puts its pins off the grid gets a grid-friendly size, and every wire that can be straight is redrawn straight. With only wires selected it redraws them with the fewest bends. One undo reverts it.
   - Dropping a component so its pin lands on a free wire end connects them. The connection points are highlighted before you drop.
 - **Tools and panels.**
   - Tools: select, wire (orthogonal, click to add corners, Space flips the bend), text, shapes, pan, comment.

@@ -139,7 +139,7 @@ const CORE_TOOLS: Tool[] = [
   tool({
     name: "get_component",
     title: "Component details",
-    description: "One component (all parts of the device: coil and contacts, other sheets) with its data and what every pin is connected to (terminals and wire numbers).",
+    description: "One component (all parts of the device: coil and contacts, other sheets) with its data, position, and for every pin its position, the direction it faces and what it is connected to (terminals and wire numbers).",
     access: "read",
     area: "Projects & reading",
     annotations: { readOnlyHint: true },
@@ -156,10 +156,10 @@ const CORE_TOOLS: Tool[] = [
     access: "read",
     area: "Projects & reading",
     annotations: { readOnlyHint: true },
-    input: z.object({ version, page: page.optional(), query: z.string().optional().describe("Text in number, ends, colour …"), unnumbered: z.boolean().optional().describe("Only wires without a number"), limit: z.number().int().min(1).max(5000).optional() }),
-    run: async ({ version: v, page: pg, query, unnumbered, limit }, env) => {
+    input: z.object({ version, page: page.optional(), query: z.string().optional().describe("Text in number, ends, colour …"), unnumbered: z.boolean().optional().describe("Only wires without a number"), points: z.boolean().optional().describe("Also the path of each wire (scene coordinates) and its number of bends"), limit: z.number().int().min(1).max(5000).optional() }),
+    run: async ({ version: v, page: pg, query, unnumbered, points, limit }, env) => {
       const { doc } = await readVersion(env, v);
-      return guard(() => wiresText(doc, { page: pg !== undefined ? findPage(doc, pg) : undefined, query, unnumbered, limit }));
+      return guard(() => wiresText(doc, { page: pg !== undefined ? findPage(doc, pg) : undefined, query, unnumbered, points, limit }));
     },
   }),
   tool({

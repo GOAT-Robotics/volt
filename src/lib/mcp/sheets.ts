@@ -467,8 +467,8 @@ export function pageItemsText(doc: Doc, pageRef: string): string {
   lines.push("", `Shapes and pictures (${p.shapes.length}) — id | kind | from → to | style`);
   for (const s of p.shapes) lines.push(`${short(s.id)} | ${s.image ? `picture ${s.image.name ?? s.image.type}` : s.kind === "polygon" && s.closed === false ? "polyline" : s.kind} | ${at(s.pts[0])} → ${at(s.pts[s.pts.length - 1])}${s.pts.length > 2 ? ` (${s.pts.length} points)` : ""} | ${s.color} ${s.width}${s.dash !== "solid" ? " " + s.dash : ""}${s.fill ? ` fill ${s.fill}` : ""}`);
   const deg = (id: string) => p.wires.filter((w) => (w.a.k === "junction" && w.a.j === id) || (w.b.k === "junction" && w.b.j === id)).length;
-  lines.push("", `Junctions (${p.junctions.length}) — id | at | wires`);
-  for (const j of p.junctions) lines.push(`${short(j.id)} | ${at(j)} | ${deg(j.id)}`);
+  lines.push("", `Junctions (${p.junctions.length}) — id | at | x, y | wires`);
+  for (const j of p.junctions) lines.push(`${short(j.id)} | ${at(j)} | ${j.x}, ${j.y} | ${deg(j.id)}`);
   return lines.join("\n");
 }
 
