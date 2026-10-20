@@ -9,7 +9,8 @@ import type { TitleBlockLogo } from "@/core/model";
 import { base64ToBytes, logoSize } from "@/core/logos";
 import { standardTitleBlocks } from "../titleblocks";
 import { layoutTemplate, usableLayouts } from "../titleblock-layouts";
-import { addPage, addShape, addText, deleteItems, deletePage, editTitleBlock, pageItemsText, setCover, updateItem, updatePage, type TbOp } from "./sheets";
+import { addPage, addShape, addText, connectShapes, deleteItems, deletePage, editTitleBlock, pageItemsText, setCover, updateItem, updatePage, type TbOp } from "./sheets";
+import { BOX_PRESETS } from "@/core/shape-presets";
 import { colour, editDrawing, guard, page, point, readVersion, tool, ToolError, version, type Env, type Tool } from "./kit";
 import type { Doc } from "@/core/model";
 import { cellArea, findPage } from "./doc";
@@ -55,6 +56,17 @@ async function templateFor(env: Env, doc: Doc, name: string) {
 }
 
 const position = { cell: z.string().optional().describe("Border cell, e.g. 3C"), x: z.number().optional(), y: z.number().optional() };
+/** how the text in a shape looks */
+const shapeTextStyle = z.object({
+  size: z.number().min(2).max(144).nullable().optional().describe("pt (null = the project's annotation size)"),
+  colour: z.string().max(40).nullable().optional(),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  align: z.enum(["left", "center", "right"]).optional(),
+  valign: z.enum(["top", "middle", "bottom"]).optional(),
+});
+const labelStyleOf = (t: z.infer<typeof shapeTextStyle> | undefined) => (t ? { size: t.size, colour: t.colour, bold: t.bold, italic: t.italic, align: t.align, valign: t.valign } : undefined);
+
 const textStyle = {
   role: z.string().optional().describe("Text style role (annotation by default; pageTitle for headings) — see get_settings styles"),
   size: z.number().min(2).max(144).optional().describe("Font size in pt"),
@@ -189,28 +201,42 @@ export const SHEET_TOOLS: Tool[] = [
   }),
   tool({
     name: "add_shape",
-    title: "Draw a shape or place a picture",
+    title: "Draw a shape, text box or arrow — or place a picture",
     area: "Pages & annotations",
-    description: "Draw on a page: rect / ellipse (two opposite corners), line (two points), polyline / polygon (points) — e.g. a dashed box around a group of devices (an enclosure or a safety function) — with colour, line width, dash and fill; or place a picture (logo, photo) fitted in a rectangle (two corners; its height follows the picture). Points are scene units (render_page tells the cell size).",
+    description:
+      "Draw on a page — for block diagrams and overviews as well as frames around devices. Boxes take two opposite corners (points, or from_cell / to_cell): rect, textbox (a box made for text), rounded, ellipse, diamond, hexagon, triangle, parallelogram, cylinder, document. Paths take points: line, arrow (two points = straight, more = bent), polyline, polygon. text = what is written inside a box (it wraps at the box's width) or on a line (a label at its middle), with the markup of text boxes (**bold**, *italic*, \"- \" bullets, \"# \" heading, new lines); text_style sets size / colour / bold / italic / alignment. from_item + to_item (shape ids from list_page_items) draw an arrow from one box to the other, side to side, without points. Also: line colour, width (0 = no outline, text boxes only), dash, fill, radius (rounded corners), arrows on lines. A picture (logo, photo) sits fitted in a rectangle (two corners; its height follows the picture). Points are scene units (render_page gives the cell size).",
     access: "edit",
     input: z.object({
       version,
-      page,
-      kind: z.enum(["rect", "ellipse", "line", "polyline", "polygon", "picture"]),
+      page: page.optional().describe("Needed unless from_item / to_item give it"),
+      kind: z.enum([...BOX_PRESETS, "line", "arrow", "polyline", "polygon", "picture"]),
       points: z.array(point).min(2).max(500).optional(),
-      from_cell: z.string().optional().describe("Instead of points for rect / ellipse / line / picture: the cell of the first corner"),
+      from_cell: z.string().optional().describe("Instead of points for boxes / line / picture: the cell of the first corner"),
       to_cell: z.string().optional().describe("…and of the opposite corner"),
+      from_item: z.string().optional().describe("arrow / line: start at this shape (id from list_page_items)…"),
+      to_item: z.string().optional().describe("…and end at this one"),
+      text: z.string().max(5000).optional(),
+      text_style: shapeTextStyle.optional(),
       colour: colour.optional(),
       width: z.number().min(0).max(20).optional(),
       dash: z.enum(["solid", "dashed", "dotted", "dashdot"]).optional(),
       fill: z.string().max(40).optional(),
+      radius: z.number().min(0).max(500).optional().describe("Rounded corners (rect)"),
+      arrows: z.enum(["end", "start", "both", "none"]).optional().describe("Arrow heads on a line / polyline (an arrow has one at its end)"),
       closed: z.boolean().optional(),
       picture: pictureInput.optional(),
     }),
     run: async (x, env) => {
       const pic = x.picture ? picture(x.picture) : undefined;
+      const look = { colour: x.colour, width: x.width, dash: x.dash, fill: x.fill, closed: x.closed, picture: pic, label: x.text, labelStyle: labelStyleOf(x.text_style), arrows: x.arrows, radius: x.radius };
       return editDrawing(env, x.version, "add_shape", (d) =>
         guard(() => {
+          if (x.from_item || x.to_item) {
+            if (!x.from_item || !x.to_item) throw new ToolError("Give both from_item and to_item");
+            if (x.kind !== "arrow" && x.kind !== "line") throw new ToolError("from_item / to_item draw an arrow or a line");
+            return connectShapes(d, x.from_item, x.to_item, { ...look, kind: x.kind });
+          }
+          if (x.page === undefined) throw new ToolError("Give the page");
           let pts = x.points;
           if (!pts && x.from_cell && x.to_cell) {
             const pg = findPage(d, x.page);
@@ -219,8 +245,8 @@ export const SHEET_TOOLS: Tool[] = [
             const g = d.grid?.size || 10;
             pts = [{ x: Math.min(a.a.x, c.a.x) + g / 2, y: Math.min(a.a.y, c.a.y) + g / 2 }, { x: Math.max(a.b.x, c.b.x) - g / 2, y: Math.max(a.b.y, c.b.y) - g / 2 }];
           }
-          if (!pts) throw new ToolError("Give points, or from_cell and to_cell");
-          return addShape(d, x.page, x.kind, pts, { colour: x.colour, width: x.width, dash: x.dash, fill: x.fill, closed: x.closed, picture: pic });
+          if (!pts) throw new ToolError("Give points, from_cell and to_cell, or (arrows) from_item and to_item");
+          return addShape(d, x.page, x.kind, pts, look);
         }),
       );
     },
@@ -229,7 +255,7 @@ export const SHEET_TOOLS: Tool[] = [
     name: "update_item",
     title: "Change a text, shape or picture",
     area: "Pages & annotations",
-    description: "Change a free text (content, style, box) or a drawn shape / picture (colour, width, dash, fill, points, picture) by its id from list_page_items, or move it (to a cell / x,y, or by dx/dy).",
+    description: "Change a free text (content, style, box) or a drawn shape / picture by its id from list_page_items: a shape's text (text, \"\" removes it) and text_style, outline (rect ↔ rounded ↔ diamond …), radius, arrows, colour, width, dash, fill, points, picture — or move it (to a cell / x,y, or by dx/dy).",
     access: "edit",
     input: z.object({
       version,
@@ -242,6 +268,10 @@ export const SHEET_TOOLS: Tool[] = [
       closed: z.boolean().optional(),
       points: z.array(point).min(2).max(500).optional(),
       picture: z.union([pictureInput, z.literal("none")]).optional(),
+      text_style: shapeTextStyle.optional().describe("Shapes: how their text looks (size / colour / bold / italic / align / valign; null resets size or colour)"),
+      outline: z.enum(BOX_PRESETS).optional().describe("Boxes: switch to another outline (rect, textbox, rounded, ellipse, diamond …)"),
+      radius: z.number().min(0).max(500).optional().describe("Rectangles: rounded corners (0 = square)"),
+      arrows: z.enum(["end", "start", "both", "none"]).optional().describe("Lines / polylines: arrow heads"),
       move_to: z.object(position).optional(),
       dx: z.number().optional(),
       dy: z.number().optional(),
@@ -267,6 +297,11 @@ export const SHEET_TOOLS: Tool[] = [
             closed: x.closed,
             points: x.points,
             picture: pic,
+            label: x.text,
+            labelStyle: labelStyleOf(x.text_style),
+            outline: x.outline,
+            radius: x.radius,
+            arrows: x.arrows,
             at: x.move_to,
             dx: x.dx,
             dy: x.dy,

@@ -7,6 +7,7 @@ import "server-only";
 import { z } from "zod";
 import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, replaceSymbols, routeWire, setCable, setSymbolPins, straighten, styleComponents, type EndSpec } from "./edits";
 import { cablesText } from "./project";
+import { moveCableTag, moveLabels, type LabelWhich } from "./labels";
 import { colour, component, editDrawing, guard, immer, page, point, readVersion, symbolFor, tool, version, vName, type Tool } from "./kit";
 import { approxMeasure, pageToSvg } from "@/core/render/svg";
 import { svgToPng } from "../og/raster";
@@ -61,6 +62,32 @@ export const DRAWING_TOOLS: Tool[] = [
       distribute: z.enum(["horizontal", "vertical"]).optional(),
     }),
     run: async (x, env) => editDrawing(env, x.version, "arrange_components", (d) => guard(() => arrangeComponents(d, x.components, { rotate: x.rotate, rotation: x.rotation, mirrored: x.mirrored, scale: x.scale, locked: x.locked, hidden: x.hidden, align: x.align, distribute: x.distribute }))),
+  }),
+  tool({
+    name: "move_labels",
+    title: "Move a component's labels",
+    area: "Components",
+    description:
+      "Move where a component's texts sit: the reference (its name — for an off-page arrow the name it is linked by), the description lines (name, rating, part number, manufacturer and other info texts), an off-page arrow's cross-reference (\"5-3B\", where the conductor continues) and a connector's counterpart label. side = right / left / above / below the symbol (several labels stack in that order); dx / dy = shift from where they are now (scene units; + is right / down); reset = back to the default places. components = references (all parts they name; \"X@3\" for the one on page 3), or \"all\" with page (only_arrows: just the off-page arrows there) — e.g. every arrow on a sheet in one call. The labels follow the component when it moves.",
+    access: "edit",
+    input: z.object({
+      version,
+      components: z.union([z.array(z.string()).min(1).max(1000), z.literal("all")]),
+      labels: z
+        .array(z.enum(["reference", "name", "description", "xref", "cross_reference", "mate", "all"]))
+        .optional()
+        .describe("Which labels (default all): reference (= name), description, xref (= cross_reference), mate"),
+      side: z.enum(["right", "left", "above", "below"]).optional(),
+      dx: z.number().min(-2000).max(2000).optional(),
+      dy: z.number().min(-2000).max(2000).optional(),
+      reset: z.boolean().optional(),
+      page: page.optional().describe("Only the parts on this page (needed with components \"all\")"),
+      only_arrows: z.boolean().optional(),
+    }),
+    run: async (x, env) => {
+      const which = (x.labels ?? ["all"]).map((l) => (l === "name" ? "reference" : l === "cross_reference" ? "xref" : l)) as LabelWhich[];
+      return editDrawing(env, x.version, "move_labels", (d) => guard(() => moveLabels(d, x.components, which, { side: x.side, dx: x.dx, dy: x.dy, reset: x.reset, page: x.page === undefined ? undefined : String(x.page), onlyArrows: x.only_arrows })));
+    },
   }),
   tool({
     name: "style_components",
@@ -230,6 +257,26 @@ export const DRAWING_TOOLS: Tool[] = [
       const { doc } = await readVersion(env, v);
       return cablesText(doc);
     },
+  }),
+  tool({
+    name: "move_cable_tag",
+    title: "Move a cable's tag",
+    area: "Wires & cables",
+    description:
+      "Move a cable's tag (\"W1 · 4G1,5\") and the mark that crosses its wires: along = where the mark sits on the run the cable's wires share (0 = start, 1 = end; or at = the x / y coordinate along them), side = the tag above / below / left / right of the mark, dx / dy = shift the tag from where it is now (scene units), reset = automatic again. page = the sheet (needed to slide the mark of a cable drawn on several sheets; without it the tag moves on every sheet).",
+    access: "edit",
+    input: z.object({
+      version,
+      cable: z.string().describe("Cable tag, e.g. W15"),
+      page: page.optional(),
+      along: z.number().min(0).max(1).optional(),
+      at: z.number().optional(),
+      side: z.enum(["above", "below", "left", "right"]).optional(),
+      dx: z.number().min(-2000).max(2000).optional(),
+      dy: z.number().min(-2000).max(2000).optional(),
+      reset: z.boolean().optional(),
+    }),
+    run: async (x, env) => editDrawing(env, x.version, "move_cable_tag", (d) => guard(() => moveCableTag(d, x.cable, { page: x.page === undefined ? undefined : String(x.page), along: x.along, at: x.at, side: x.side, dx: x.dx, dy: x.dy, reset: x.reset }))),
   }),
   tool({
     name: "set_cable",

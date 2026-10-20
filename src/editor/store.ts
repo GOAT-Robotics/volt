@@ -12,7 +12,8 @@ setAutoFreeze(false);
 
 export type Tool = "select" | "wire" | "text" | "pan" | "comment" | "place" | "shape";
 /** what the shape tool draws */
-export type DrawKind = "rect" | "ellipse" | "line" | "polygon" | "polyline";
+/** what the shape tool draws: box shapes (text box, rounded box, flowchart forms …) and paths (line, arrow, polygon, polyline) */
+export type DrawKind = import("@/core/shape-presets").ShapePreset;
 export type DrawStyle = { color: string; width: number; dash: "solid" | "dashed" | "dotted" | "dashdot"; fill: string | null };
 
 /** One undo step: id-addressed operations (stay valid when others edit at the same time). */

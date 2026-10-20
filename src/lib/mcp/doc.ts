@@ -19,6 +19,9 @@ import { wireNumberingOf } from "@/core/wirenumber";
 import { rotOrient, toScene } from "@/core/geometry";
 import { collectStrips } from "@/core/terminals";
 import { gridFriendlyScales, offGridComponents } from "@/core/straighten";
+import { componentLabels } from "@/core/label-place";
+import { docStyles } from "@/core/render/scene";
+import { approxMeasure } from "@/core/render/svg";
 
 export class AddressError extends Error {}
 
@@ -341,6 +344,13 @@ export function componentText(doc: Doc, parts: Located[]): string {
     if (isReport(x.def)) {
       const ls = (x.e.links ?? []).map((id) => idx.get(id)).filter((o): o is NonNullable<typeof o> => !!o);
       out.push(`  off-page arrow (${x.def!.linkType === "next_report" ? "going" : "coming"}): ${ls.length ? `linked to ${ls.map((o) => `${refOf(doc, o)}@${sheetNo(doc, o.page)}·${cell(doc, o.page, o.e) || "?"}`).join(", ")}` : "NOT LINKED — the conductor ends here"}`);
+    }
+    // where its texts sit (move_labels moves them)
+    const labels = componentLabels(doc, x.page, x.e, docStyles(doc), approxMeasure);
+    if (labels.length) {
+      const word = { reference: "reference", description: "description", xref: "cross-reference", mate: "counterpart label" } as const;
+      const kinds = [...new Set(labels.map((l) => l.kind))];
+      out.push(`  labels: ${kinds.map((k) => { const b = labels.filter((l) => l.kind === k).map((l) => l.box); const x0 = Math.min(...b.map((r) => r.x)), y0 = Math.min(...b.map((r) => r.y)), x1 = Math.max(...b.map((r) => r.x + r.w)), y1 = Math.max(...b.map((r) => r.y + r.h)); return `${word[k]} ${Math.round(x0)},${Math.round(y0)}–${Math.round(x1)},${Math.round(y1)}`; }).join("; ")}`);
     }
     if (x.e.group) out.push(`  part of block "${x.e.group.name}" rev ${x.e.group.revision} (${x.e.group.mode})`);
     if (x.def?.source?.libraryElementId) out.push(`  symbol from the library: ${x.def.source.libraryElementId} rev ${x.def.source.revision ?? "?"}`);

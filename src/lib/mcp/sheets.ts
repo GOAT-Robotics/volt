@@ -4,7 +4,9 @@
  * drawn shapes and pictures, and title block templates. Same rules as the editor; no server
  * dependencies (unit tested).
  */
-import type { CoverSheet, Doc, FreeText, LineStyle, Page, Pt, Shape, TextRole, TextStyle, TitleBlockLogo, TitleBlockTemplate } from "@/core/model";
+import type { CoverSheet, Doc, FreeText, LineStyle, Page, Pt, Shape, ShapeLabel, TextRole, TextStyle, TitleBlockLogo, TitleBlockTemplate } from "@/core/model";
+import { boxPresetOf, boxShape, isBoxPreset, pathShape, setBoxPreset, shapeName, type BoxPreset, type ShapePreset } from "@/core/shape-presets";
+import { connectorBetween, isOpenPath } from "@/core/shape-geom";
 import { TEXT_ROLES } from "@/core/model";
 import { newPage } from "@/core/doc";
 import { getPage, deleteSelection, mkSel, moveSelection } from "@/core/ops";
@@ -342,14 +344,57 @@ export type ShapePatch = {
   closed?: boolean;
   points?: Pt[];
   picture?: (TitleBlockLogo & { name?: string }) | null;
+  /** text inside the shape / on the line ("" removes it) */
+  label?: string;
+  labelStyle?: { size?: number | null; colour?: string | null; bold?: boolean; italic?: boolean; align?: ShapeLabel["align"]; valign?: ShapeLabel["valign"] };
+  arrows?: "start" | "end" | "both" | "none";
+  /** box shapes: switch the outline (rect, rounded, ellipse, diamond …) */
+  outline?: BoxPreset;
+  radius?: number;
 };
 
-/** Draw a rectangle, ellipse, line, polyline or polygon — or place a picture in a rectangle. */
-export function addShape(doc: Doc, pageRef: string, kind: "rect" | "ellipse" | "line" | "polyline" | "polygon" | "picture", pts: Pt[], x: ShapePatch): string {
+export type AddShapeKind = ShapePreset | "picture";
+
+/** text and arrows of a shape, from a patch */
+function applyLabelAndArrows(s: Shape, x: ShapePatch) {
+  if (x.label !== undefined) {
+    const text = x.label.replace(/\s+$/, "");
+    if (text) s.label = { ...(s.label ?? {}), text };
+    else if (s.label) {
+      if (isOpenPath(s)) delete s.label;
+      else s.label.text = "";
+    }
+  }
+  if (x.labelStyle) {
+    const st = x.labelStyle;
+    const l: ShapeLabel = { text: "", ...(s.label ?? {}) };
+    if (st.size !== undefined) l.size = st.size ?? undefined;
+    if (st.colour !== undefined) l.color = st.colour ?? undefined;
+    if (st.bold !== undefined) l.bold = st.bold || undefined;
+    if (st.italic !== undefined) l.italic = st.italic || undefined;
+    if (st.align !== undefined) l.align = st.align === "center" ? undefined : st.align;
+    if (st.valign !== undefined) l.valign = st.valign === "middle" ? undefined : st.valign;
+    for (const k of Object.keys(l) as (keyof ShapeLabel)[]) if (l[k] === undefined) delete l[k];
+    s.label = l;
+  }
+  if (x.arrows !== undefined) {
+    if (!isOpenPath(s)) throw new EditError("Arrow heads go on lines and open polylines");
+    if (x.arrows === "none") delete s.arrows;
+    else s.arrows = { ...(x.arrows !== "end" ? { start: true } : {}), ...(x.arrows !== "start" ? { end: true } : {}) };
+  }
+}
+
+/**
+ * Draw a shape — a box (rectangle, text box, rounded box, ellipse, diamond, hexagon, triangle,
+ * parallelogram, cylinder, document) from two corners, a line / arrow / polyline / polygon through
+ * points — or place a picture in a rectangle; optionally with text inside / on it.
+ */
+export function addShape(doc: Doc, pageRef: string, kind: AddShapeKind, pts: Pt[], x: ShapePatch): string {
   const p = getPage(doc, findPage(doc, pageRef).id);
-  const need = kind === "polyline" || kind === "polygon" ? 2 : 2;
-  if (pts.length < need) throw new EditError(kind === "rect" || kind === "ellipse" || kind === "picture" ? "Give two opposite corners" : "Give at least two points");
-  if ((kind === "rect" || kind === "ellipse" || kind === "line" || kind === "picture") && pts.length !== 2) throw new EditError(`A ${kind} takes exactly two points`);
+  const box = kind === "picture" || isBoxPreset(kind);
+  if (pts.length < 2) throw new EditError(box ? "Give two opposite corners" : "Give at least two points");
+  if ((box || kind === "line") && pts.length !== 2) throw new EditError(`A ${kind} takes exactly two points`);
+  if (kind === "polygon" && pts.length < 3) throw new EditError("A polygon takes at least three points");
   let points = pts;
   if (kind === "picture") {
     if (!x.picture) throw new EditError("Give the picture (base64 PNG, JPG or SVG)");
@@ -359,20 +404,27 @@ export function addShape(doc: Doc, pageRef: string, kind: "rect" | "ellipse" | "
     const w = Math.abs(c.x - a.x);
     if (n && w) points = [{ x: Math.min(a.x, c.x), y: Math.min(a.y, c.y) }, { x: Math.min(a.x, c.x) + w, y: Math.min(a.y, c.y) + Math.round((w * n.h) / n.w) }];
   }
-  const sh: Shape = {
-    id: uid(),
-    kind: kind === "polyline" ? "polygon" : kind === "picture" ? "rect" : kind,
-    pts: points,
-    color: x.colour ?? "#111827",
-    width: x.width ?? (kind === "picture" ? 0 : 1),
-    dash: x.dash ?? "solid",
-    fill: kind === "line" || kind === "polyline" ? null : x.fill ?? null,
-  };
-  if (kind === "polyline") sh.closed = false;
-  if (kind === "polygon" && x.closed === false) sh.closed = false;
+  const [a, c] = points;
+  if (box && (Math.abs(a.x - c.x) < 1 || Math.abs(a.y - c.y) < 1)) throw new EditError("The two corners must differ in x and in y");
+  const look = { color: x.colour ?? "#111827", width: x.width ?? (kind === "picture" ? 0 : 1), dash: x.dash ?? ("solid" as const), fill: x.fill ?? null };
+  const sh: Shape = kind === "picture" ? boxShape(uid(), "rect", a, c, look) : isBoxPreset(kind) ? boxShape(uid(), kind, a, c, look) : pathShape(uid(), kind, points, look);
+  if (kind === "polygon" && x.closed === false) ((sh.closed = false), (sh.fill = null));
   if (kind === "picture" && x.picture) sh.image = x.picture;
+  if (x.radius !== undefined && sh.kind === "rect" && !sh.form) sh.radius = x.radius || undefined;
+  if (sh.width === 0 && !sh.label && !sh.image && !x.label) throw new EditError("width 0 (no outline) is for text boxes and pictures — give text, or a width");
+  applyLabelAndArrows(sh, x);
   p.shapes.push(sh);
-  return `${kind === "picture" ? "Picture" : kind[0].toUpperCase() + kind.slice(1)} ${short(sh.id)} on page ${sheetNo(doc, p)} at ${gridRef(doc, p, points[0]) || `(${points[0].x}, ${points[0].y})`}`;
+  const where = gridRef(doc, p, points[0]) || `(${points[0].x}, ${points[0].y})`;
+  return `${shapeName(sh)} ${short(sh.id)} on page ${sheetNo(doc, p)} at ${where}${sh.label?.text ? ` with "${sh.label.text.replace(/\s+/g, " ").slice(0, 60)}"` : ""}`;
+}
+
+/** An arrow (or line) from one shape to another: side to side, straight or with one bend. */
+export function connectShapes(doc: Doc, fromRef: string, toRef: string, x: ShapePatch & { kind?: "arrow" | "line" }): string {
+  const A = findItem(doc, fromRef), B = findItem(doc, toRef);
+  if (A.kind !== "shape" || B.kind !== "shape") throw new EditError("from_item and to_item are shapes (ids from list_page_items)");
+  if (A.page.id !== B.page.id) throw new EditError("The two shapes are on different pages");
+  const pts = connectorBetween(A.s, B.s, doc.grid?.size || 10);
+  return addShape(doc, A.page.id, x.kind ?? "arrow", pts, { ...x, arrows: x.arrows ?? (x.kind === "line" ? undefined : "end") });
 }
 
 type Item = { kind: "text"; page: Page; t: FreeText } | { kind: "shape"; page: Page; s: Shape } | { kind: "junction"; page: Page; id: string };
@@ -407,6 +459,19 @@ export function updateItem(doc: Doc, ref: string, x: TextPatch & ShapePatch & { 
     done.push(`text "${t.text.slice(0, 40)}"`);
   } else {
     const s = pg.shapes.find((q) => q.id === it.s.id)!;
+    if (x.outline !== undefined) {
+      if (boxPresetOf(s) === null) throw new EditError("Only boxes (rectangles, ellipses and their outlines) switch outline");
+      setBoxPreset(s, x.outline);
+    }
+    if (x.radius !== undefined) {
+      if (s.kind !== "rect" || s.form) throw new EditError("Corner radius is for rectangles");
+      if (x.radius > 0) s.radius = x.radius;
+      else delete s.radius;
+    }
+    if (x.width === 0 && !s.label && !s.image && !x.label) throw new EditError("width 0 (no outline) is for text boxes and pictures");
+    // size / bold / italic / align given like a free text's: they are the shape text's
+    const ls = x.labelStyle ?? (x.size !== undefined || x.bold !== undefined || x.italic !== undefined || x.align !== undefined ? { size: x.size, bold: x.bold, italic: x.italic, align: x.align } : undefined);
+    applyLabelAndArrows(s, { ...x, labelStyle: ls });
     if (x.colour !== undefined) s.color = x.colour;
     if (x.width !== undefined) s.width = x.width;
     if (x.dash !== undefined) s.dash = x.dash;
@@ -426,7 +491,7 @@ export function updateItem(doc: Doc, ref: string, x: TextPatch & ShapePatch & { 
       moveSelection(doc, pg, mkSel({ shapes: [s.id] }), { x: p.x - s.pts[0].x, y: p.y - s.pts[0].y });
     }
     if (x.dx || x.dy) moveSelection(doc, pg, mkSel({ shapes: [s.id] }), { x: x.dx ?? 0, y: x.dy ?? 0 });
-    done.push(s.image ? "picture" : `${s.kind}`);
+    done.push(shapeName(s).toLowerCase());
   }
   return `Changed ${done.join(", ")} ${short(ref.replace(/^#/, ""))} on page ${sheetNo(doc, pg)}`;
 }
@@ -464,8 +529,15 @@ export function pageItemsText(doc: Doc, pageRef: string): string {
   if (p.kind === "terminals" && p.terminalDiagram) lines.push(`Terminal diagram of strip ${p.terminalDiagram.tag || "?"}${p.terminalDiagram.from ? ` from terminal ${p.terminalDiagram.from}` : ""}${p.terminalDiagram.to ? ` to ${p.terminalDiagram.to}` : ""} (${p.terminalDiagram.style ?? "rail"})`);
   lines.push("", `Texts (${p.texts.length}) — id | at | role | text`);
   for (const t of p.texts) lines.push(`${short(t.id)} | ${at(t)} | ${t.role}${t.rich ? " box" : ""} | ${t.text.replace(/\s+/g, " ").slice(0, 100)}`);
-  lines.push("", `Shapes and pictures (${p.shapes.length}) — id | kind | from → to | style`);
-  for (const s of p.shapes) lines.push(`${short(s.id)} | ${s.image ? `picture ${s.image.name ?? s.image.type}` : s.kind === "polygon" && s.closed === false ? "polyline" : s.kind} | ${at(s.pts[0])} → ${at(s.pts[s.pts.length - 1])}${s.pts.length > 2 ? ` (${s.pts.length} points)` : ""} | ${s.color} ${s.width}${s.dash !== "solid" ? " " + s.dash : ""}${s.fill ? ` fill ${s.fill}` : ""}`);
+  lines.push("", `Shapes and pictures (${p.shapes.length}) — id | kind | from → to (x,y) | style | text`);
+  const xy = (q: Pt) => `${Math.round(q.x)},${Math.round(q.y)}`;
+  for (const s of p.shapes) {
+    const kind = s.image ? `picture ${s.image.name ?? s.image.type}` : `${shapeName(s).toLowerCase()}${s.arrows ? ` (arrow ${s.arrows.start && s.arrows.end ? "both ends" : s.arrows.start ? "at start" : "at end"})` : ""}${s.radius && !s.form ? ` r${s.radius}` : ""}`;
+    const style = `${s.color} ${s.width}${s.dash !== "solid" ? " " + s.dash : ""}${s.fill ? ` fill ${s.fill}` : ""}`;
+    const l = s.label;
+    const text = l?.text ? `"${l.text.replace(/\s+/g, " ").slice(0, 80)}"${l.size ? ` ${l.size}pt` : ""}${l.bold ? " bold" : ""}${l.italic ? " italic" : ""}${l.align ? ` ${l.align}` : ""}${l.valign ? ` ${l.valign}` : ""}` : "-";
+    lines.push(`${short(s.id)} | ${kind} | ${at(s.pts[0])} → ${at(s.pts[s.pts.length - 1])} (${xy(s.pts[0])} → ${xy(s.pts[s.pts.length - 1])})${s.pts.length > 2 ? ` ${s.pts.length} points` : ""} | ${style} | ${text}`);
+  }
   const deg = (id: string) => p.wires.filter((w) => (w.a.k === "junction" && w.a.j === id) || (w.b.k === "junction" && w.b.j === id)).length;
   lines.push("", `Junctions (${p.junctions.length}) — id | at | x, y | wires`);
   for (const j of p.junctions) lines.push(`${short(j.id)} | ${at(j)} | ${j.x}, ${j.y} | ${deg(j.id)}`);

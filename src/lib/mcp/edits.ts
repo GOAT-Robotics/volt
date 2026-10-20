@@ -14,6 +14,7 @@ import { replaceSymbol as replaceSymbolCore } from "@/core/replace";
 import { convertShapesToWires, isOpenPath } from "@/core/shapes";
 import { despike, gridFriendlyScales, offGridComponents, straightenWires } from "@/core/straighten";
 import { computeNets } from "@/core/topology";
+import { projectNets } from "@/core/erc";
 import { wireNumberingOf } from "@/core/wirenumber";
 import { planRenumber, duplicateRefs, type RefChange } from "@/core/numbering";
 import { applyRefChanges, planCloseGaps } from "@/core/impact";
@@ -77,6 +78,23 @@ export function setComponentData(doc: Doc, ref: string, fields: Partial<Record<I
     if (opts.lockReference !== undefined) e.refLocked = opts.lockReference;
   }
   return `${parts.map((x) => `${x.e.info.label || short(x.e.id)}@${sheetNo(doc, x.page)}`).join(", ")}: ${keys.map((k) => `${k}=${set[k].trim() || "(cleared)"}`).join("; ")}${opts.lockReference !== undefined ? `; reference ${opts.lockReference ? "locked" : "unlocked"}` : ""}`;
+}
+
+/** Data for many components in one go: the ones that can be found are set, the others are listed. */
+export function setComponentDataMany(doc: Doc, items: { ref: string; fields: Partial<Record<InfoField, string>>; other?: Record<string, string>; allParts?: boolean; lockReference?: boolean }[]): string {
+  const done: string[] = [];
+  const failed: string[] = [];
+  for (const it of items) {
+    try {
+      done.push(setComponentData(doc, it.ref, it.fields, it.other ?? {}, { allParts: it.allParts, lockReference: it.lockReference }));
+    } catch (e) {
+      if (e instanceof AddressError || e instanceof EditError) failed.push(`${it.ref}: ${e.message}`);
+      else throw e;
+    }
+  }
+  if (!done.length) throw new EditError(`Nothing set — ${failed.slice(0, 20).join("; ")}`);
+  const head = `Set data on ${done.length} of ${items.length} component${items.length === 1 ? "" : "s"}${failed.length ? `; ${failed.length} not set` : ""}`;
+  return [head, ...done.slice(0, 30), ...(done.length > 30 ? [`… and ${done.length - 30} more`] : []), ...(failed.length ? ["Not set:", ...failed.slice(0, 30)] : [])].join("\n");
 }
 
 /** a device's data belongs on its main part (the coil, not the contacts): the one with most data, else the first */
@@ -157,7 +175,9 @@ export function moveComponent(doc: Doc, ref: string, to: { at?: Pt; dx?: number;
   moveSelection(doc, pg, mkSel({ elements: [x.e.id] }), d);
   const auto = findAutoConnections(doc, pg, [x.e.id]);
   applyAutoConnections(pg, auto);
-  return `Moved ${x.e.info.label || short(x.e.id)} by (${d.x}, ${d.y}) to x=${x.e.x + d.x} y=${x.e.y + d.y}; its wires follow${auto.length ? `; ${auto.length} free wire end${auto.length === 1 ? "" : "s"} attached` : ""}`;
+  // where it is now (read back: the move has already been applied to it)
+  const now = pg.elements.find((q) => q.id === x.e.id)!;
+  return `Moved ${now.info.label || short(now.id)} by (${d.x}, ${d.y}) to x=${now.x} y=${now.y}; its wires follow${auto.length ? `; ${auto.length} free wire end${auto.length === 1 ? "" : "s"} attached` : ""}`;
 }
 
 /** Delete a component; its wires stay with free ends (as in the editor). */
@@ -292,12 +312,17 @@ export function setWires(doc: Doc, wireIds: string[], patch: WirePatch, o: { app
     }
   if (!n) throw new EditError("No such wires");
   let net = 0;
+  const netPages = new Set<string>();
   if (o.applyToNet) {
-    for (const { w, page } of touched) {
-      const nets = computeNets(page, doc);
-      const mine = nets.find((x) => x.wires.includes(w.id));
-      for (const other of page.wires) {
-        if (!mine?.wires.includes(other.id) || other.id === w.id || wireIds.includes(other.id)) continue;
+    // the whole conductor: through feed-through terminals, off-page arrows and mated connectors, on every sheet
+    const { netOfWire } = projectNets(doc);
+    const done = new Set(wireIds);
+    for (const { w } of touched) {
+      for (const ref of netOfWire.get(w.id)?.wires ?? []) {
+        if (done.has(ref.id)) continue;
+        const other = doc.pages.find((p) => p.id === ref.pageId)?.wires.find((x) => x.id === ref.id);
+        if (!other) continue;
+        done.add(ref.id);
         other.pot = wirePot(w);
         other.use = wireUse(w);
         delete other.fn;
@@ -306,6 +331,7 @@ export function setWires(doc: Doc, wireIds: string[], patch: WirePatch, o: { app
           else delete other[k];
         }
         net++;
+        netPages.add(ref.pageId);
       }
     }
   }
@@ -313,7 +339,8 @@ export function setWires(doc: Doc, wireIds: string[], patch: WirePatch, o: { app
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `${k}=${v === "" || v === null ? "(cleared)" : typeof v === "object" ? JSON.stringify(v) : v}`)
     .join("; ");
-  return `${n} wire${n === 1 ? "" : "s"}: ${what}${o.applyToNet ? `; potential, use, supply, colour and section copied to ${net} other wire${net === 1 ? "" : "s"} of the same net` : ""}`;
+  const on = [...netPages].map((id) => doc.pages.find((p) => p.id === id)).filter((p): p is Page => !!p).map((p) => sheetNo(doc, p));
+  return `${n} wire${n === 1 ? "" : "s"}: ${what}${o.applyToNet ? `; potential, use, supply, colour and section copied to ${net} other wire${net === 1 ? "" : "s"} of the same conductor (through terminals, off-page arrows and connectors)${on.length ? ` on page${on.length === 1 ? "" : "s"} ${on.join(", ")}` : ""}` : ""}`;
 }
 
 export function deleteWires(doc: Doc, wireIds: string[]): string {

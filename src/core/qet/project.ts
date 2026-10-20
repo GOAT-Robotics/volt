@@ -65,6 +65,7 @@ import {
 } from "./elmt";
 import { parseTitleBlockNode, serializeTitleBlockTemplate, titleBlockModified } from "./titleblock";
 import { plainText } from "../richtext";
+import { formGeometry, pathMiddle, shapeTextBox } from "../shape-geom";
 import {
   allAttrs,
   attr,
@@ -651,6 +652,8 @@ function readShapes(diag: XElement, page: Page, ctx: ImportCtx): void {
       dash: dash(pen ? attr(pen, "style", "DashLine") : "DashLine"),
       fill: bstyle !== "NoBrush" && brush ? attr(brush, "color", "#000000") : null,
       ...(closed !== undefined ? { closed } : {}),
+      // QElectroTech rounded rectangles (rx / ry)
+      ...(type === "Rectangle" && num(s, "rx", 0) > 0 ? { radius: num(s, "rx", 0) } : {}),
       qet: { idx },
     });
   });
@@ -1666,6 +1669,23 @@ function writeDiagram(ctx: ExportCtx, diag: XElement, page: Page, order: number)
     }
     textOut.push(n);
   }
+  // text written in shapes (block diagrams): QElectroTech has no text in shapes, so it goes out as a
+  // free text at the same place
+  for (const sh of page.shapes) {
+    const lab = sh.label;
+    if (!lab?.text.trim()) continue;
+    const text = plainText(lab.text);
+    const size = lab.size ?? 9;
+    const lines = text.split("\n").length;
+    const lineH = size * (4 / 3) * 1.25;
+    const box = shapeTextBox(sh);
+    const longest = Math.max(...text.split("\n").map((l) => l.length));
+    const w = longest * size * (4 / 3) * 0.55;
+    const at = box
+      ? { x: box.x + Math.max(2, (box.w - w) / 2), y: box.y + Math.max(0, (box.h - lines * lineH) / 2) }
+      : ((m) => ({ x: m.x - w / 2, y: m.y - (lines * lineH) / 2 }))(pathMiddle(sh.pts).p);
+    textOut.push(createEl(ctx.x, "input", { x: at.x + QET_MARGIN, y: at.y + QET_MARGIN, text: plainToHtmlIfNeeded(text), rotation: 0, font: qtFontString("Sans Serif", size, !!lab.bold, !!lab.italic) }));
+  }
   if (inputsFound || textOut.length) rebuildList(ctx, inputsFound ?? ensureChild(ctx.x, diag, "inputs", ["images", "shapes", "tables"]), "input", textOut);
 
   writeShapes(ctx, diag, page);
@@ -1686,17 +1706,19 @@ function writeShapes(ctx: ExportCtx, diag: XElement, page: Page): void {
     if (sh.image) continue;
     let n = sh.qet?.idx !== undefined ? orig[sh.qet.idx] : undefined;
     if (n && used.has(n)) n = undefined;
-    const type = sh.kind === "line" ? "Line" : sh.kind === "rect" ? "Rectangle" : sh.kind === "ellipse" ? "Ellipse" : "Polygon";
-    if (n && attr(n, "type") !== type && !(sh.kind === "polygon" && attr(n, "type") !== "Line" && attr(n, "type") !== "Rectangle" && attr(n, "type") !== "Ellipse")) n = undefined;
+    // diagram forms (diamond, cylinder …) go out as the polygon they are drawn as
+    const form = formGeometry(sh);
+    const type = form ? "Polygon" : sh.kind === "line" ? "Line" : sh.kind === "rect" ? "Rectangle" : sh.kind === "ellipse" ? "Ellipse" : "Polygon";
+    if (n && attr(n, "type") !== type && !(type === "Polygon" && attr(n, "type") !== "Line" && attr(n, "type") !== "Rectangle" && attr(n, "type") !== "Ellipse")) n = undefined;
     if (!n) {
-      n = createEl(ctx.x, "shape", { type, z: 0, is_movable: 1, closed: sh.kind === "polygon" && sh.closed !== false ? 1 : 0, ...(sh.kind === "rect" ? { rx: 0, ry: 0 } : {}) });
+      n = createEl(ctx.x, "shape", { type, z: 0, is_movable: 1, closed: form || (sh.kind === "polygon" && sh.closed !== false) ? 1 : 0, ...(type === "Rectangle" ? { rx: sh.radius ?? 0, ry: sh.radius ?? 0 } : {}) });
       n.appendChild(createEl(ctx.x, "pen", { style: QT_PEN[sh.dash], color: sh.color, widthF: sh.width }));
       n.appendChild(createEl(ctx.x, "brush", { style: sh.fill ? "SolidPattern" : "NoBrush", color: sh.fill ?? "#000000" }));
     }
     used.add(n);
     // geometry
-    if (attr(n, "type") === "Polygon" || sh.kind === "polygon") {
-      const pts = sh.pts.map(M);
+    if (attr(n, "type") === "Polygon" || sh.kind === "polygon" || form) {
+      const pts = (form ? form.outline : sh.pts).map(M);
       const cur = subChildren(n, "points", "point");
       const same = cur.length === pts.length && cur.every((q, i) => Math.abs(num(q, "x") - pts[i].x) < 1e-9 && Math.abs(num(q, "y") - pts[i].y) < 1e-9);
       if (!same) {
@@ -1705,7 +1727,7 @@ function writeShapes(ctx: ExportCtx, diag: XElement, page: Page): void {
         else box = ensureChild(ctx.x, n, "points");
         for (const p of pts) insertIndented(ctx.x, box, createEl(ctx.x, "point", { x: fmt(p.x), y: fmt(p.y) }));
       }
-      const closed = sh.closed !== false ? "1" : "0";
+      const closed = form || sh.closed !== false ? "1" : "0";
       if (attr(n, "closed", "1") !== closed) n.setAttribute("closed", closed);
     } else if (sh.pts.length >= 2) {
       const a = M(sh.pts[0]), b = M(sh.pts[1]);
@@ -1713,6 +1735,11 @@ function writeShapes(ctx: ExportCtx, diag: XElement, page: Page): void {
       setNumAttr(n, "y1", a.y);
       setNumAttr(n, "x2", b.x);
       setNumAttr(n, "y2", b.y);
+      // corner radius: written only when it changed (a different ry stays as it was)
+      if (type === "Rectangle" && Math.abs((sh.radius ?? 0) - (optNum(n, "rx") ?? 0)) > 1e-9) {
+        setNumAttr(n, "rx", sh.radius ?? 0);
+        setNumAttr(n, "ry", sh.radius ?? 0);
+      }
     }
     // pen / brush only when they differ in meaning (keeps e.g. DashDotDotLine as written)
     const pen = child(n, "pen") ?? insertIndented(ctx.x, n, createEl(ctx.x, "pen", { style: QT_PEN[sh.dash], color: sh.color, widthF: sh.width }), children(n)[0] ?? null);

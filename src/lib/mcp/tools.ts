@@ -26,7 +26,8 @@ import { approxMeasure, pageToSvg } from "@/core/render/svg";
 import { parseElmt } from "@/core/qet";
 import { statusLabel } from "../voltfile/types";
 import { checksText, componentText, componentsText, findComponent, findComponents, findPage, findWires, netlistText, overviewText, positionOf, sheetNo, sheets, short, wiresText, withLinkedParts, AddressError } from "./doc";
-import { applyReferences, connectPins, deleteComponent, deleteWires, EditError, moveComponent, numberWires, placeComponent, planReferences, refChangesText, renameComponent, setComponentData, setWires, type InfoField } from "./edits";
+import { applyReferences, connectPins, deleteComponent, deleteWires, EditError, moveComponent, numberWires, placeComponent, planReferences, refChangesText, renameComponent, setComponentData, setComponentDataMany, setWires, type InfoField } from "./edits";
+import { parseArgs } from "./args";
 import { assertCanEdit, component, editDrawing, guard, page, readVersion, resolveVersion, findProject, symbolFor, text, tool, ToolError, via, vName, version, WORKING, type Content, type Env, type Tool, type ToolResult } from "./kit";
 import { DRAWING_TOOLS } from "./tools-drawing";
 import { SHEET_TOOLS } from "./tools-sheets";
@@ -40,6 +41,26 @@ export { ToolError };
 /* Tools                                                                */
 /* ------------------------------------------------------------------ */
 
+
+/** the data fields of a component (set_component_data, one or many) */
+const DATA_FIELDS = {
+  description: z.string().max(500).optional(),
+  rating: z.string().max(200).optional(),
+  part_number: z.string().max(200).optional(),
+  manufacturer: z.string().max(200).optional(),
+  supplier: z.string().max(200).optional(),
+  location: z.string().max(200).optional(),
+  function: z.string().max(200).optional(),
+  comment: z.string().max(500).optional(),
+  quantity: z.string().max(40).optional().describe("Bill of materials quantity (default 1)"),
+  unit: z.string().max(40).optional().describe("Bill of materials unit, e.g. pcs, m"),
+  designation: z.string().max(200).optional(),
+  in_bom: z.boolean().optional().describe("false = leave out of the bill of materials"),
+  other: z.record(z.string().max(60), z.string().max(500)).optional().describe("Other element information fields by name (custom properties)"),
+  all_parts: z.boolean().optional(),
+  lock_reference: z.boolean().optional().describe("Lock (true) or unlock (false) the reference against renumbering"),
+};
+const dataItem = z.object({ component: z.string(), ...DATA_FIELDS });
 
 const CORE_TOOLS: Tool[] = [
   tool({
@@ -440,34 +461,39 @@ Drawing rules (IEC 60617 style, like Volt's library): x to the right, y DOWN; th
   tool({
     name: "set_component_data",
     title: "Set component data",
-    description: "Set a component's name (description), rating, part number, manufacturer, supplier, location, function, comment, bill-of-materials quantity / unit / inclusion, or custom properties. Empty string clears a field. Device data goes on its main part (the coil, not the contacts) unless all_parts is set. Mating connectors: mate_connectors; how it is drawn: style_components.",
+    description:
+      "Set a component's name (description), rating, part number, manufacturer, supplier, location, function, comment, bill-of-materials quantity / unit / inclusion, or custom properties. Empty string clears a field. Device data goes on its main part (the coil, not the contacts) unless all_parts is set. Many components at once: items = a list of { component, …fields } (up to 1000, one save and one undo step; components that cannot be found are listed, the rest are set). Mating connectors: mate_connectors; how it is drawn: style_components; where its labels sit: move_labels.",
     access: "edit",
     area: "Components",
     input: z.object({
       version,
-      component,
-      description: z.string().max(500).optional(),
-      rating: z.string().max(200).optional(),
-      part_number: z.string().max(200).optional(),
-      manufacturer: z.string().max(200).optional(),
-      supplier: z.string().max(200).optional(),
-      location: z.string().max(200).optional(),
-      function: z.string().max(200).optional(),
-      comment: z.string().max(500).optional(),
-      quantity: z.string().max(40).optional().describe("Bill of materials quantity (default 1)"),
-      unit: z.string().max(40).optional().describe("Bill of materials unit, e.g. pcs, m"),
-      designation: z.string().max(200).optional(),
-      in_bom: z.boolean().optional().describe("false = leave out of the bill of materials"),
-      other: z.record(z.string().max(60), z.string().max(500)).optional().describe("Other element information fields by name (custom properties)"),
-      all_parts: z.boolean().optional(),
-      lock_reference: z.boolean().optional().describe("Lock (true) or unlock (false) the reference against renumbering"),
+      component: component.optional(),
+      ...DATA_FIELDS,
+      items: z
+        .array(z.object({ component, ...DATA_FIELDS }))
+        .min(1)
+        .max(1000)
+        .optional()
+        .describe("Several components, each with its own fields (instead of component + fields)"),
     }),
     run: async (x, env) => {
-      const fields: Partial<Record<InfoField, string>> = {};
-      for (const k of ["description", "rating", "part_number", "manufacturer", "supplier", "location", "function", "comment", "quantity", "unit", "designation"] as const) if (x[k] !== undefined) fields[k] = x[k];
-      const other = { ...(x.other ?? {}), ...(x.in_bom !== undefined ? { bom: x.in_bom ? "" : "no" } : {}) };
-      if (!Object.keys(fields).length && !Object.keys(other).length && x.lock_reference === undefined) throw new ToolError("Nothing to set");
-      return editDrawing(env, x.version, "set_component_data", (d) => guard(() => setComponentData(d, x.component, fields, other, { allParts: x.all_parts, lockReference: x.lock_reference })));
+      type Item = z.infer<typeof dataItem>;
+      const items: Item[] = x.items ?? [];
+      if (x.component) items.unshift(x as Item);
+      if (!items.length) throw new ToolError("Give component (and its fields), or items");
+      const parts = items.map((it) => {
+        const fields: Partial<Record<InfoField, string>> = {};
+        for (const k of ["description", "rating", "part_number", "manufacturer", "supplier", "location", "function", "comment", "quantity", "unit", "designation"] as const) if (it[k] !== undefined) fields[k] = it[k];
+        const other = { ...(it.other ?? {}), ...(it.in_bom !== undefined ? { bom: it.in_bom ? "" : "no" } : {}) };
+        return { it, fields, other };
+      });
+      const empty = parts.filter((p) => !Object.keys(p.fields).length && !Object.keys(p.other).length && p.it.lock_reference === undefined);
+      if (empty.length) throw new ToolError(`Nothing to set for ${empty.map((p) => p.it.component).slice(0, 10).join(", ")}`);
+      if (parts.length === 1) {
+        const p = parts[0];
+        return editDrawing(env, x.version, "set_component_data", (d) => guard(() => setComponentData(d, p.it.component, p.fields, p.other, { allParts: p.it.all_parts, lockReference: p.it.lock_reference })));
+      }
+      return editDrawing(env, x.version, "set_component_data", (d) => guard(() => setComponentDataMany(d, parts.map((p) => ({ ref: p.it.component, fields: p.fields, other: p.other, allParts: p.it.all_parts, lockReference: p.it.lock_reference })))));
     },
   }),
   tool({
@@ -700,8 +726,8 @@ export async function callTool(name: string, args: unknown, env: Env): Promise<T
   const t = TOOL_BY_NAME.get(name);
   if (!t) throw new HttpError(404, `Unknown tool ${name}`);
   if (t.access !== "read" && env.token.scope !== "EDIT") return { content: [{ type: "text", text: "This access token is read-only: it can read and check drawings, not comment or change them." }], isError: true };
-  const parsed = t.input.safeParse(args ?? {});
-  if (!parsed.success) return { content: [{ type: "text", text: `Invalid arguments: ${parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ")}` }], isError: true };
+  const parsed = parseToolArgs(t, args);
+  if (!parsed.ok) return { content: [{ type: "text", text: parsed.error }], isError: true };
   try {
     const out = await (t.run as (a: unknown, e: Env) => Promise<ToolResult | string>)(parsed.data, env);
     const r = typeof out === "string" ? text(out) : out;
@@ -713,6 +739,13 @@ export async function callTool(name: string, args: unknown, env: Env): Promise<T
     console.error("[mcp]", name, e);
     return { content: [{ type: "text", text: `Internal error in ${name}` }], isError: true };
   }
+}
+
+/** A tool's arguments checked against its schema (objects / lists sent as JSON text are accepted too). */
+export function parseToolArgs(t: Tool | string, args: unknown): { ok: true; data: unknown } | { ok: false; error: string } {
+  const tool = typeof t === "string" ? TOOL_BY_NAME.get(t) : t;
+  if (!tool) return { ok: false, error: `Unknown tool ${t}` };
+  return parseArgs(tool.input, args);
 }
 
 export function toolList(env: Env) {

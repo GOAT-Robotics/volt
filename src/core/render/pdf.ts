@@ -89,9 +89,24 @@ function pathOps(p: PathData) {
         out.push(closePath());
         break;
       case "R":
-      case "RR":
         out.push(rectangle(op[1], op[2], op[3], op[4]));
         break;
+      case "RR": {
+        const [, x, y, w, h] = op;
+        const rx = Math.min(op[5], w / 2), ry = Math.min(op[6], h / 2);
+        if (!rx || !ry) {
+          out.push(rectangle(x, y, w, h));
+          break;
+        }
+        const q = Math.PI / 2;
+        // y points down here (the page transform flips it): corners clockwise from the top right
+        out.push(moveTo(x + rx, y), lineTo(x + w - rx, y));
+        out.push(...arcOps(x + w - rx, y + ry, rx, ry, -q, q, false), lineTo(x + w, y + h - ry));
+        out.push(...arcOps(x + w - rx, y + h - ry, rx, ry, 0, q, false), lineTo(x + rx, y + h));
+        out.push(...arcOps(x + rx, y + h - ry, rx, ry, q, q, false), lineTo(x, y + ry));
+        out.push(...arcOps(x + rx, y + ry, rx, ry, 2 * q, q, false), closePath());
+        break;
+      }
       case "E":
         out.push(...arcOps(op[1], op[2], op[3], op[4], 0, Math.PI * 2, true), closePath());
         break;

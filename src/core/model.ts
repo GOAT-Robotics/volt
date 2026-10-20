@@ -244,6 +244,8 @@ export type ElemInst = {
    * `labelPos` = where it was dragged, relative to the component origin.
    */
   mate?: { id: string; gender: "male" | "female"; label?: "auto" | "show" | "hide"; labelPos?: Pt };
+  /** off-page arrows: where the cross-reference ("5-3B") was moved — its top-left relative to the component origin; unset = automatic */
+  xrefPos?: Pt;
   qet?: { idx?: number; terminalIds?: Record<string, string> }; // original node index; pinId -> original terminal id
 };
 
@@ -435,6 +437,25 @@ export type FreeText = {
   qet?: { idx?: number };
 };
 
+/** Block-diagram outlines drawn in a rectangle's box (flowchart-style). */
+export const SHAPE_FORMS = ["diamond", "hexagon", "triangle", "parallelogram", "cylinder", "document"] as const;
+export type ShapeForm = (typeof SHAPE_FORMS)[number];
+
+/** Text written inside a shape — or, on a line / polyline, a label at its middle. */
+export type ShapeLabel = {
+  /** as typed; the same markup as formatted text boxes (**bold**, *italic*, "- " bullets, "# " heading) */
+  text: string;
+  /** pt; unset = the project's annotation text size */
+  size?: number;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  /** default center */
+  align?: "left" | "center" | "right";
+  /** default middle */
+  valign?: "top" | "middle" | "bottom";
+};
+
 /** Free drawing shape (lines, rectangles, ellipses, polylines). Selectable and editable; written back on export. */
 export type Shape = {
   id: string;
@@ -446,6 +467,17 @@ export type Shape = {
   width: number;
   dash: LineStyle["dash"];
   fill: string | null;
+  /** rect only: a block-diagram outline in the rectangle's box (unset = the rectangle itself) */
+  form?: ShapeForm;
+  /** rect forms: quarter turns clockwise, and a left–right flip, picked up from rotating / mirroring */
+  turn?: 1 | 2 | 3;
+  flip?: boolean;
+  /** plain rectangles: rounded corners, radius in scene units */
+  radius?: number;
+  /** lines and open polylines: arrow heads at the start / end */
+  arrows?: { start?: boolean; end?: boolean };
+  /** text inside the shape (on a line: a label at its middle) */
+  label?: ShapeLabel;
   /** picture placed on the page (rect shapes only): drawn fitted inside the rectangle */
   image?: TitleBlockLogo & { name?: string };
   qet?: { idx?: number };

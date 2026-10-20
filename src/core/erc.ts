@@ -8,7 +8,7 @@
  * report" pairs), two-pin feed-through terminals and junction elements join them.
  */
 import type { Doc, ElemInst, ElementDef, Page, PinDef, Wire } from "./model";
-import { pinClassOf, pinPotential, pinSigOf, signalConflict } from "./pinclass";
+import { inferPinClass, pinClassOf, pinPotential, pinSigOf, signalConflict } from "./pinclass";
 import { sigConflict, sigText } from "./signals";
 import { wirePot, wireUse } from "./wiring";
 import { prefixFor } from "./numbering";
@@ -425,6 +425,36 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
         id,
       );
     }
+  }
+
+  /* ---------- symbols: a pin typed against its own name ---------- */
+  // e.g. a pin named "0V" typed DC+: every check on it would then report wrong polarity or a short
+  const seenDefs = new Set<string>();
+  for (const [id, { def, page }] of idx) {
+    if (!def || seenDefs.has(def.id) || page.kind === "cover" || page.kind === "contents") continue;
+    seenDefs.add(def.id);
+    const bad = def.pins.filter((p) => {
+      if (!p.cls || p.cls === "none") return false;
+      const byName = inferPinClass(p.name) ?? inferPinClass(p.number);
+      if (!byName || byName === p.cls || byName === "signal" || p.cls === "signal") return false;
+      // names that fit more than one type: L ↔ L1/L2/L3, "-" ↔ DC−, GND ↔ PE (PELV)
+      const pair = new Set([byName, p.cls]);
+      if (byName === "L" && ["L1", "L2", "L3"].includes(p.cls)) return false;
+      if (pair.has("DC0") && (pair.has("DC-") || pair.has("PE"))) return false;
+      return true;
+    });
+    if (!bad.length) continue;
+    onEl(
+      {
+        level: "warning",
+        code: "erc.pinClassName",
+        category: "wiring",
+        message: `Symbol "${def.name}": ${bad.map((p) => `pin ${p.name || p.number} is typed ${p.cls} but its name says ${inferPinClass(p.name) ?? inferPinClass(p.number)}`).join("; ")} — the polarity and short checks follow the type`,
+        suggestion: "Correct the pin type (set_symbol_pins, or the element editor), then check again.",
+        ids: [id],
+      },
+      id,
+    );
   }
 
   /* ---------- connections ---------- */

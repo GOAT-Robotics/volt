@@ -35,6 +35,37 @@ describe("pin classes", () => {
     expect(inferPinClass("13")).toBeNull();
   });
 
+  it("0 V is 0 V, not a supply voltage", () => {
+    expect(inferPinClass("0V")).toBe("DC0");
+    expect(inferPinClass("0 V")).toBe("DC0");
+    expect(inferPinClass("0VDC")).toBe("DC0");
+    expect(inferPinClass("24V")).toBe("DC+");
+    expect(inferPinClass("24VDC")).toBe("DC+");
+    expect(inferPinClass("+24V")).toBe("DC+");
+    expect(pinPotential({ name: "0V", number: "2" })?.kind).toBe("DC0");
+  });
+
+  it("ERC: 0V wired to GND is fine; a pin typed against its name is flagged once per symbol", () => {
+    const { doc, page } = mkDoc();
+    const a = newElement(doc, page, dev("psu", "0V"), { x: 100, y: 100 });
+    const b = newElement(doc, page, dev("ctl", "GND"), { x: 300, y: 100 });
+    wire(page, doc, a, "p", b, "p");
+    let f = checkElectrical(doc);
+    expect(codes(f)).not.toContain("erc.polarity");
+    expect(codes(f)).not.toContain("erc.pinClass");
+    // the library symbol says DC+ for its 0V pin
+    doc.defs.psu.pins[0].cls = "DC+";
+    newElement(doc, page, doc.defs.psu, { x: 500, y: 100 });
+    f = checkElectrical(doc);
+    const bad = f.filter((x) => x.code === "erc.pinClassName");
+    expect(bad).toHaveLength(1);
+    expect(bad[0].message).toMatch(/pin 0V is typed DC\+ but its name says DC0/);
+    // "-" typed DC− and GND typed PE are fine
+    doc.defs.psu.pins[0] = { ...doc.defs.psu.pins[0], name: "-", cls: "DC-" };
+    doc.defs.ctl.pins[0].cls = "PE";
+    expect(codes(checkElectrical(doc))).not.toContain("erc.pinClassName");
+  });
+
   it("an explicit class wins; none silences the name", () => {
     expect(pinClassOf({ name: "1", number: "1", cls: "L" })).toBe("L");
     expect(pinClassOf({ name: "N", number: "2", cls: "none" })).toBeNull();

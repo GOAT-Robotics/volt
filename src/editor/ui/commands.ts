@@ -24,6 +24,7 @@ import { newPage } from "@/core/doc";
 import { newCover } from "@/core/render/cover";
 import { convertShapesToWires, isOpenPath } from "@/core/shapes";
 import { straightenWires, type StraightenResult } from "@/core/straighten";
+import { INFO_BLOCK, MATE_LABEL, resetLabel, XREF_LABEL } from "@/core/label-place";
 import { uid } from "@/core/ids";
 
 export type Command = {
@@ -264,12 +265,8 @@ export const COMMANDS: Command[] = [
       s.apply("Restore label placement", (d) =>
         getPage(d, s.pageId).elements.forEach((e) => {
           if (!ids.has(e.id)) return;
-          const def = d.defs[e.defId];
-          for (const t of e.texts) {
-            const dp = def?.prims.find((p) => p.t === "dyntext" && ((t.uuid && p.uuid === t.uuid) || (p.info === t.info && t.info)));
-            if (dp && dp.t === "dyntext") (t.x = dp.x), (t.y = dp.y);
-            else (t.x = null), (t.y = null);
-          }
+          // texts, description block, cross-reference and counterpart label all back to their default places
+          for (const id of [...e.texts.map((t) => t.id), INFO_BLOCK, XREF_LABEL, MATE_LABEL]) resetLabel(d, e, id);
         }),
       );
     },
@@ -300,18 +297,27 @@ export const COMMANDS: Command[] = [
   { id: "tool-shape", label: "Shape tool", section: "Tools", keys: "S", enabled: editable, run: (_, s) => s.setTool("shape") },
   ...(
     [
-      ["rect", "Draw rectangle", "1"],
-      ["ellipse", "Draw ellipse / circle", "2"],
-      ["line", "Draw line", "3"],
-      ["polygon", "Draw polygon", "4"],
-      ["polyline", "Draw polyline", "5"],
+      ["rect", "Draw rectangle", "S 1"],
+      ["ellipse", "Draw ellipse / circle", "S 2"],
+      ["line", "Draw line", "S 3"],
+      ["polygon", "Draw polygon", "S 4"],
+      ["polyline", "Draw polyline", "S 5"],
+      ["textbox", "Draw a text box (then type in it)", "B"],
+      ["rounded", "Draw rounded box", "S 7"],
+      ["arrow", "Draw arrow", "S 8"],
+      ["diamond", "Draw diamond (decision)", "S 9"],
+      ["hexagon", "Draw hexagon", undefined],
+      ["triangle", "Draw triangle", undefined],
+      ["parallelogram", "Draw parallelogram (input / output)", undefined],
+      ["cylinder", "Draw cylinder (storage)", undefined],
+      ["document", "Draw document shape", undefined],
     ] as const
   ).map(
     ([k, label, keys]): Command => ({
       id: `draw-${k}`,
       label,
       section: "Tools",
-      keys: `S ${keys}`,
+      keys,
       enabled: editable,
       run: (_, s) => {
         s.set("shapeKind", k);
@@ -359,6 +365,18 @@ export const COMMANDS: Command[] = [
     },
   },
   { id: "tool-text", label: "Text tool", section: "Tools", keys: "T", enabled: editable, run: (_, s) => s.setTool("text") },
+  {
+    id: "editText",
+    label: "Edit the text of the selected shape or text",
+    section: "Edit",
+    keys: "Enter",
+    enabled: (s) => editable(s) && selSize(s.sel) === 1 && (s.sel.shapes.length === 1 || s.sel.texts.length === 1),
+    run: (ui, s) => {
+      const eng = ui.engine.current;
+      if (s.sel.shapes.length === 1) eng?.editShapeText(s.sel.shapes[0]);
+      else if (s.sel.texts.length === 1) eng?.editFreeText(s.sel.texts[0]);
+    },
+  },
   { id: "tool-pan", label: "Pan tool", section: "Tools", keys: "H", run: (_, s) => s.setTool("pan") },
   {
     id: "tool-comment",

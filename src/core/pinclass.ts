@@ -18,8 +18,9 @@ export function inferPinClass(raw: string | undefined): PinClass | null {
   if (/^(N|AC\/N|ACN)$/.test(t)) return "N";
   if (/^(L1|L2|L3)$/.test(t)) return t as PinClass;
   if (/^(L|AC\/L|ACL)$/.test(t)) return "L";
-  if (/^(\+|\+\d+(\.\d+)?V?|\d+(\.\d+)?V\+?|L\+|V\+|\+V|\+VO|OUT\+|\+OUT|VCC|VIN\+?)$/.test(t)) return "DC+";
-  if (/^(-|0V|M|L-|V-|-V|-VO|OUT-|-OUT|GND|VIN-)$/.test(t)) return "DC0";
+  // 0 V first: "0V" also has the shape of a supply voltage ("24V")
+  if (/^(-|0V|0VDC|0V-|M|L-|V-|-V|-VO|OUT-|-OUT|GND|VIN-)$/.test(t)) return "DC0";
+  if (/^(\+|\+\d+(\.\d+)?V?|\d+(\.\d+)?V(DC)?\+?|L\+|V\+|\+V|\+VO|OUT\+|\+OUT|VCC|VIN\+?)$/.test(t)) return "DC+";
   if (/^(CAN[_-]?[HL]|CANH|CANL|TXD?|RXD?|SDA|SCL|D\+|D-|RS-?485[_-]?[AB]?|RS-?232|ENC[_-]?[AB]?[+-]?|SIG|DATA)$/.test(t)) return "signal";
   if (inferSig(raw)) return "signal";
   return null;

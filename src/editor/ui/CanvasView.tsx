@@ -36,8 +36,16 @@ import {
   Slash,
   Pentagon,
   Waypoints,
+  SquareRoundCorner,
+  Diamond,
+  Hexagon,
+  Triangle,
+  Cylinder,
+  FileText,
+  MoveRight,
+  TextCursorInput,
 } from "lucide-react";
-import { Engine } from "../engine/Engine";
+import { Engine, type EditRequest } from "../engine/Engine";
 import { toast } from "sonner";
 import { useEditor, type DrawKind } from "../store";
 import { NativeSelect } from "@/components/ui/input";
@@ -48,11 +56,12 @@ import { Button } from "@/components/ui/button";
 import { Tip, Popover, PopoverContent, PopoverTrigger, Switch } from "@/components/ui/misc";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/menu";
 import { getPage, selSize } from "@/core/ops";
+import { isOpenPath } from "@/core/shape-geom";
 import { cn } from "@/lib/utils";
 import type { Rect } from "@/core/model";
 import { PageTabs } from "./PageTabs";
 
-type EditState = { kind: "free" | "element"; id: string; textId?: string; info?: string | null; value: string; rect: Rect; size: number } | null;
+type EditState = EditRequest | null;
 
 export function CanvasView() {
   const host = useRef<HTMLDivElement>(null);
@@ -127,7 +136,16 @@ export function CanvasView() {
               <SelectionBar />
               <ZoomControls fps={fps} minimap={minimap} setMinimap={setMinimap} />
               {minimap && <Minimap />}
-              {edit && <InlineEditor state={edit} onDone={() => setEdit(null)} />}
+              {edit && (
+                <InlineEditor
+                  key={`${edit.kind}:${edit.id}`}
+                  state={edit}
+                  onDone={() => {
+                    setEdit(null);
+                    ui.engine.current?.setEditingLabel(null);
+                  }}
+                />
+              )}
             </div>
           </ContextMenuTrigger>
           <CanvasContextMenu />
@@ -144,13 +162,16 @@ function ToolRail() {
   const canComment = useEditor((s) => !!s.version?.canComment);
   const set = useEditor((s) => s.setTool);
   const ui = useEditorUI();
+  const kind = useEditor((s) => s.shapeKind);
+  const textbox = tool === "shape" && kind === "textbox";
   const tools = [
-    { id: "select", icon: <MousePointer2 />, label: "Select", key: "V", on: true },
-    { id: "wire", icon: <Spline />, label: "Wire", key: "W", on: editable },
-    { id: "text", icon: <Type />, label: "Text", key: "T", on: editable },
-    { id: "shape", icon: <Shapes />, label: "Shapes (rectangle, ellipse, line, polygon)", key: "S", on: editable },
-    { id: "pan", icon: <Hand />, label: "Pan", key: "H / Space", on: true },
-    { id: "comment", icon: <MessageSquarePlus />, label: "Comment", key: "C", on: canComment },
+    { id: "select", icon: <MousePointer2 />, label: "Select", key: "V", on: true, active: tool === "select", run: () => set("select") },
+    { id: "wire", icon: <Spline />, label: "Wire", key: "W", on: editable, active: tool === "wire", run: () => set("wire") },
+    { id: "text", icon: <Type />, label: "Text", key: "T", on: editable, active: tool === "text", run: () => set("text") },
+    { id: "textbox", icon: <TextCursorInput />, label: "Text box — drag a box, then type in it", key: "B", on: editable, active: textbox, run: () => runCommand("draw-textbox", ui) },
+    { id: "shape", icon: <Shapes />, label: "Shapes (boxes, circles, diamonds, arrows, polygons …)", key: "S", on: editable, active: tool === "shape" && !textbox, run: () => (kind === "textbox" ? runCommand("draw-rect", ui) : set("shape")) },
+    { id: "pan", icon: <Hand />, label: "Pan", key: "H / Space", on: true, active: tool === "pan", run: () => set("pan") },
+    { id: "comment", icon: <MessageSquarePlus />, label: "Comment", key: "C", on: canComment, active: tool === "comment", run: () => set("comment") },
   ] as const;
   return (
     <div className="absolute left-3 top-3 z-10 flex flex-col gap-0.5 rounded-lg border border-border bg-panel/95 p-1 shadow-float backdrop-blur" role="toolbar" aria-label="Tools" aria-orientation="vertical">
@@ -158,7 +179,7 @@ function ToolRail() {
         .filter((t) => t.on)
         .map((t) => (
           <Tip key={t.id} content={t.label} shortcut={t.key} side="right">
-            <Button variant="tool" size="icon" active={tool === t.id} aria-pressed={tool === t.id} aria-label={t.label} onClick={() => set(t.id)}>
+            <Button variant="tool" size="icon" active={t.active} aria-pressed={t.active} aria-label={t.label} onClick={t.run}>
               {t.icon}
             </Button>
           </Tip>
@@ -230,10 +251,26 @@ function SelectionBar() {
   );
 }
 
-export const DRAW_KINDS: { id: DrawKind; label: string; icon: React.ReactNode; key: string }[] = [
+/** a parallelogram outline (no stock icon for it) */
+const ParallelogramIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" aria-hidden="true">
+    <path d="M7 5h14l-4 14H3z" />
+  </svg>
+);
+
+export const DRAW_KINDS: { id: DrawKind; label: string; icon: React.ReactNode; key?: string }[] = [
+  { id: "textbox", label: "Text box (drag a box, then type)", icon: <TextCursorInput />, key: "6" },
   { id: "rect", label: "Rectangle", icon: <Square />, key: "1" },
+  { id: "rounded", label: "Rounded box", icon: <SquareRoundCorner />, key: "7" },
   { id: "ellipse", label: "Ellipse / circle", icon: <Circle />, key: "2" },
+  { id: "diamond", label: "Diamond (decision)", icon: <Diamond />, key: "9" },
+  { id: "hexagon", label: "Hexagon", icon: <Hexagon /> },
+  { id: "triangle", label: "Triangle", icon: <Triangle /> },
+  { id: "parallelogram", label: "Parallelogram (input / output)", icon: <ParallelogramIcon /> },
+  { id: "cylinder", label: "Cylinder (storage, database)", icon: <Cylinder /> },
+  { id: "document", label: "Document", icon: <FileText /> },
   { id: "line", label: "Line", icon: <Slash />, key: "3" },
+  { id: "arrow", label: "Arrow (drag, or click points for a bent arrow)", icon: <MoveRight />, key: "8" },
   { id: "polygon", label: "Polygon", icon: <Pentagon />, key: "4" },
   { id: "polyline", label: "Polyline (open)", icon: <Waypoints />, key: "5" },
 ];
@@ -244,16 +281,21 @@ function ShapeBar() {
   const st = useEditor((s) => s.shapeStyle);
   const set = useEditor((s) => s.set);
   const style = (p: Partial<typeof st>) => set("shapeStyle", { ...st, ...p });
-  const poly = kind === "polygon" || kind === "polyline";
+  const multi = kind === "polygon" || kind === "polyline";
+  const open = kind === "line" || kind === "polyline" || kind === "arrow";
+  const box = !open && kind !== "polygon";
   return (
-    <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 flex-col items-center gap-1">
-      <div className="flex items-center gap-0.5 rounded-lg border border-border bg-panel/95 p-1 shadow-pop backdrop-blur" role="toolbar" aria-label="Shape options">
-        {DRAW_KINDS.map((k) => (
-          <Tip key={k.id} content={k.label} shortcut={k.key}>
-            <Button variant="tool" size="icon" active={kind === k.id} aria-pressed={kind === k.id} aria-label={k.label} onClick={() => set("shapeKind", k.id)}>
-              {k.icon}
-            </Button>
-          </Tip>
+    <div className="absolute left-1/2 top-3 z-10 flex max-w-[calc(100%-7rem)] -translate-x-1/2 flex-col items-center gap-1">
+      <div className="flex max-w-full flex-wrap items-center justify-center gap-0.5 rounded-lg border border-border bg-panel/95 p-1 shadow-pop backdrop-blur" role="toolbar" aria-label="Shape options">
+        {DRAW_KINDS.map((k, i) => (
+          <span key={k.id} className="contents">
+            {(i === 1 || i === 10) && <span className="mx-0.5 h-5 w-px bg-border" />}
+            <Tip content={k.label} shortcut={k.key}>
+              <Button variant="tool" size="icon" active={kind === k.id} aria-pressed={kind === k.id} aria-label={k.label} onClick={() => set("shapeKind", k.id)}>
+                {k.icon}
+              </Button>
+            </Tip>
+          </span>
         ))}
         <span className="mx-1 h-5 w-px bg-border" />
         <Tip content="Line color">
@@ -276,7 +318,7 @@ function ShapeBar() {
             <option value="dashdot">Dash-dot</option>
           </NativeSelect>
         </Tip>
-        {kind !== "line" && kind !== "polyline" && (
+        {!open && (
           <>
             <Tip content={st.fill ? "Remove fill" : "Fill"}>
               <Switch checked={!!st.fill} onCheckedChange={(v) => style({ fill: v ? "#e5e7eb" : null })} aria-label="Fill" />
@@ -286,14 +328,20 @@ function ShapeBar() {
         )}
       </div>
       <div className="pointer-events-none rounded-lg bg-fg/90 px-3 py-1 text-2xs text-bg shadow-pop [&_b]:font-semibold">
-        {poly ? (
+        {multi ? (
           <>
             Click to add points · {kind === "polygon" ? "click the first point, " : ""}double-click or <b>Enter</b> to finish · <b>Backspace</b> removes a point
           </>
+        ) : kind === "arrow" ? (
+          <>
+            Drag for a straight arrow, or click points for a bent one (double-click / <b>Enter</b> ends it)
+          </>
+        ) : kind === "textbox" ? (
+          <>Drag a box, then type · double-click any box to type in it</>
         ) : (
-          <>Drag, or click two corners</>
+          <>Drag, or click two corners{box ? " · double-click a box to type in it" : ""}</>
         )}{" "}
-        · <b>Shift</b> {kind === "rect" ? "square" : kind === "ellipse" ? "circle" : "45° steps"} · <b>Alt</b> no snapping · <b>Esc</b> done
+        · <b>Shift</b> {box ? (kind === "ellipse" ? "circle" : "square") : "45° steps"} · <b>Alt</b> no snapping · <b>Esc</b> done
       </div>
     </div>
   );
@@ -466,14 +514,39 @@ function Minimap() {
 function InlineEditor({ state, onDone }: { state: NonNullable<EditState>; onDone: () => void }) {
   const [v, setV] = useState(state.value);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [h, setH] = useState(0);
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
   }, []);
+  // text in a shape: the box grows with what is typed (wrapping at the shape's width)
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || state.kind !== "shape") return;
+    el.style.height = "0px";
+    const next = el.scrollHeight;
+    el.style.height = `${next}px`;
+    setH(next);
+  }, [v, state.kind]);
+  const done = useRef(false);
   const commit = () => {
+    if (done.current) return;
+    done.current = true;
     const s = useEditor.getState();
     if (v !== state.value) {
-      if (state.id.startsWith("wire:")) {
+      if (state.kind === "shape") {
+        const text = v.replace(/\s+$/, "");
+        s.apply(text ? "Edit shape text" : "Clear shape text", (d) => {
+          const sh = getPage(d, s.pageId).shapes.find((x) => x.id === state.id);
+          if (!sh) return;
+          if (text) sh.label = { ...(sh.label ?? {}), text };
+          else if (sh.label) {
+            // a line keeps no empty label; a box keeps its text settings (and stays a text box)
+            if (isOpenPath(sh) && Object.keys(sh.label).length === 1) delete sh.label;
+            else sh.label.text = "";
+          }
+        });
+      } else if (state.id.startsWith("wire:")) {
         const wid = state.id.slice(5);
         s.apply("Edit wire label", (d) => {
           const w = getPage(d, s.pageId).wires.find((x) => x.id === wid);
@@ -500,6 +573,36 @@ function InlineEditor({ state, onDone }: { state: NonNullable<EditState>; onDone
     }
     onDone();
   };
+  if (state.kind === "shape" && state.shape) {
+    const sh = state.shape;
+    const r = state.rect;
+    const height = Math.max(h, state.size * 1.3 + 6);
+    const top = !sh.inBox ? r.y + (r.h - height) / 2 : sh.valign === "top" ? r.y : sh.valign === "bottom" ? r.y + r.h - height : r.y + (r.h - height) / 2;
+    return (
+      <textarea
+        ref={ref}
+        value={v}
+        rows={1}
+        placeholder="Type…"
+        onChange={(e) => setV(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            done.current = true;
+            onDone();
+          }
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            commit();
+          }
+          e.stopPropagation();
+        }}
+        className="absolute z-20 resize-none overflow-hidden rounded-sm bg-white/85 px-1 py-[3px] font-sans outline-none ring-2 ring-accent/60 placeholder:text-neutral-400"
+        style={{ left: r.x, top, width: r.w, fontSize: state.size, lineHeight: 1.25, textAlign: sh.align, color: sh.color, fontWeight: sh.bold ? 700 : 400, fontStyle: sh.italic ? "italic" : "normal" }}
+        aria-label="Text in the shape"
+      />
+    );
+  }
   return (
     <textarea
       ref={ref}

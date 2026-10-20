@@ -8,59 +8,8 @@ import { uid } from "./ids";
 import { cleanupJunctions, resolveEnd } from "./ops";
 import { nearestSegment, simplify } from "./wires";
 
-/** Is the shape an open path (line / open polyline) — i.e. something that can become a wire? */
-export const isOpenPath = (s: Shape) => s.kind === "line" || (s.kind === "polygon" && s.closed === false);
-
-/** Outline of a shape as polyline(s) in scene coordinates (ellipses approximated). */
-export function shapeOutline(s: Shape): Pt[] {
-  if (s.kind === "rect" && s.pts.length >= 2) {
-    const [a, c] = s.pts;
-    return [a, { x: c.x, y: a.y }, c, { x: a.x, y: c.y }, a];
-  }
-  if (s.kind === "ellipse" && s.pts.length >= 2) {
-    const [a, c] = s.pts;
-    const cx = (a.x + c.x) / 2, cy = (a.y + c.y) / 2, rx = Math.abs(c.x - a.x) / 2, ry = Math.abs(c.y - a.y) / 2;
-    const out: Pt[] = [];
-    for (let i = 0; i <= 48; i++) {
-      const t = (i / 48) * Math.PI * 2;
-      out.push({ x: cx + rx * Math.cos(t), y: cy + ry * Math.sin(t) });
-    }
-    return out;
-  }
-  if (s.kind === "polygon" && s.closed !== false && s.pts.length > 2) return [...s.pts, s.pts[0]];
-  return s.pts;
-}
-
-export function shapeBounds(s: Shape): { x: number; y: number; w: number; h: number } {
-  const xs = s.pts.map((p) => p.x), ys = s.pts.map((p) => p.y);
-  const x = Math.min(...xs), y = Math.min(...ys);
-  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
-}
-
-/** Distance from p to the shape (0 inside a filled shape). */
-export function shapeDistance(s: Shape, p: Pt): number {
-  if ((s.fill || s.image) && s.kind !== "line") {
-    const b = shapeBounds(s);
-    if (s.kind === "ellipse") {
-      const rx = b.w / 2 || 1, ry = b.h / 2 || 1;
-      const dx = (p.x - (b.x + rx)) / rx, dy = (p.y - (b.y + ry)) / ry;
-      if (dx * dx + dy * dy <= 1) return 0;
-    } else if (s.kind === "rect") {
-      if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return 0;
-    } else if (pointInPolygon(p, s.pts)) return 0;
-  }
-  const n = nearestSegment(shapeOutline(s), p);
-  return n ? n.d : Infinity;
-}
-
-function pointInPolygon(p: Pt, pts: Pt[]): boolean {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const a = pts[i], b = pts[j];
-    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
-}
+export * from "./shape-geom";
+import { isOpenPath } from "./shape-geom";
 
 /* ------------------------------------------------------------------ */
 /* Lines → wires                                                        */

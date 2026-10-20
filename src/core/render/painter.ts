@@ -203,10 +203,19 @@ export function flattenPath(p: PathData, seg = 24): { pts: { x: number; y: numbe
         if (cur) (cur as { closed: boolean }).closed = true;
         cur = null;
         break;
-      case "R":
-      case "RR": {
+      case "R": {
         const [, x, y, w, h] = op;
         res.push({ pts: [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }], closed: true });
+        cur = null;
+        break;
+      }
+      case "RR": {
+        const [, x, y, w, h, rx0, ry0] = op;
+        const rx = Math.min(rx0, w / 2), ry = Math.min(ry0, h / 2);
+        const q = Math.PI / 2;
+        const n = Math.max(2, Math.ceil(seg / 2));
+        const corner = (cx: number, cy: number, a0: number) => Array.from({ length: n + 1 }, (_, i) => ellipsePt(cx, cy, rx, ry, a0 + (q * i) / n));
+        res.push({ pts: [...corner(x + w - rx, y + ry, -q), ...corner(x + w - rx, y + h - ry, 0), ...corner(x + rx, y + h - ry, q), ...corner(x + rx, y + ry, 2 * q)], closed: true });
         cur = null;
         break;
       }

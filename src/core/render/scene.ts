@@ -5,7 +5,8 @@ import { mateLabel } from "../mating";
 import { isReportDef, reportTarget } from "../reports";
 import { drawTerminalDiagram } from "./terminal-diagram";
 import { brandLogo } from "../brand";
-import type { ComponentFrame, Doc, ElemInst, ElementDef, FreeText, Junction, Page, PinDef, PlacedText, Pt, Rect, Styles, TextStyle, TitleBlockTemplate, Wire } from "../model";
+import type { ComponentFrame, Doc, ElemInst, ElementDef, FreeText, Junction, Page, PinDef, PlacedText, Pt, Rect, Shape, Styles, TextStyle, TitleBlockTemplate, Wire } from "../model";
+import { arrowGeometry, cornerRadius, formGeometry, pathMiddle, shapeBox, shapeTextBox } from "../shape-geom";
 import { effectiveText, projectStyles } from "../styles";
 import { elemMatrix, pointAlong, rotOrient, toScene, transformRect, unionRect } from "../geometry";
 import { templateLogos, titleBlockColumnWidths, titleBlockHeight } from "../qet/titleblock";
@@ -64,6 +65,8 @@ export type LaidText = {
   h: number;
   /** part of the component info block: the block's top-left (scene), used to drag it */
   block?: Pt;
+  /** the component text (PlacedText id) this was laid out from */
+  textId?: string;
 };
 
 const px = (s: TextStyle) => s.size * PT;
@@ -114,7 +117,7 @@ export function layoutElementTexts(e: ElemInst, sym: CompiledSymbol, styles: Sty
     const baseRot = t.rotation !== undefined ? t.rotation : e.rot * 90 + (style.rotation || 0);
     // element rotation also rotates the text box origin; keep readable
     const r = readable(p.x, p.y, baseRot, w, h);
-    const lt: LaidText = { text, x: r.x, y: r.y, rotation: r.rot, style, w, h };
+    const lt: LaidText = { text, x: r.x, y: r.y, rotation: r.rot, style, w, h, textId: t.id };
     out.push(lt);
     if (t.info === "label" && !ref) ref = lt;
     if (t.info) shown.add(t.info);
@@ -317,6 +320,98 @@ export function drawFreeText(pt: Painter, t: FreeText, styles: Styles, measure: 
   pt.restore();
 }
 
+/* ------------------------------------------------------------------ */
+/* Drawn shapes (boxes, diagram forms, arrows) and the text in them      */
+/* ------------------------------------------------------------------ */
+
+/** the style a shape's text is drawn in: the project's annotation text, changed by the label's own settings */
+export function shapeLabelStyle(s: Shape, styles: Styles): TextStyle {
+  const l = s.label;
+  return effectiveText(styles, "annotation", { size: l?.size, color: l?.color, weight: l?.bold ? 700 : undefined, italic: l?.italic, align: l?.align ?? "center", background: null, rotation: 0, dx: 0, dy: 0 });
+}
+
+const labelLayouts = new WeakMap<Shape, { key: string; l: RichLayout }>();
+/**
+ * Where a shape's text is drawn: its laid-out lines and their top-left corner in scene units.
+ * Inside a closed shape the text wraps at the width it has there; on a line it sits at the middle.
+ */
+export function shapeLabelLayout(s: Shape, styles: Styles, measure: Painter["measure"]): { l: RichLayout; x: number; y: number; st: TextStyle; onLine: boolean } | null {
+  const lab = s.label;
+  if (!lab?.text.trim()) return null;
+  const st = shapeLabelStyle(s, styles);
+  const box = shapeTextBox(s);
+  const width = box ? Math.max(box.w, 24) : 0;
+  // laid out per measuring (screen, PDF and plain exports measure text differently)
+  const key = `${JSON.stringify(st)}|${width}|${measure("Mg ·", 10, st.font, 400)}|${lab.text}`;
+  let l = labelLayouts.get(s)?.key === key ? labelLayouts.get(s)!.l : null;
+  if (!l) {
+    l = layoutRich(lab.text, st, { width: box ? width : undefined, align: lab.align ?? "center", padding: box ? 4 : 2 }, measure);
+    labelLayouts.set(s, { key, l });
+  }
+  if (!box) {
+    const m = pathMiddle(s.pts);
+    return { l, x: m.p.x - l.w / 2, y: m.p.y - l.h / 2, st, onLine: true };
+  }
+  const va = lab.valign ?? "middle";
+  const y = va === "top" ? box.y : va === "bottom" ? box.y + box.h - l.h : box.y + (box.h - l.h) / 2;
+  return { l, x: box.x + (box.w - width) / 2, y, st, onLine: false };
+}
+
+export function drawShape(pt: Painter, s: Shape, styles: Styles, measure: Painter["measure"], o: { alpha?: number; tint?: string; skipLabel?: boolean } = {}) {
+  const b = new PathBuilder();
+  const form = formGeometry(s);
+  const arrows = arrowGeometry(s);
+  if (form) b.poly(form.outline, true);
+  else if (s.kind === "ellipse" && s.pts.length >= 2) {
+    const [a, c] = s.pts;
+    b.E((a.x + c.x) / 2, (a.y + c.y) / 2, Math.abs(c.x - a.x) / 2, Math.abs(c.y - a.y) / 2);
+  } else if (s.kind === "rect" && s.pts.length >= 2) {
+    const r = shapeBox(s);
+    const rad = cornerRadius(s, r);
+    if (rad > 0) b.RR(r.x, r.y, r.w, r.h, rad, rad);
+    else b.R(r.x, r.y, r.w, r.h);
+  } else b.poly(arrows.path, s.kind === "polygon" && s.closed !== false);
+  const path = b.build();
+  const color = o.tint ?? s.color;
+  if (s.fill) pt.fill(path, s.fill, o.alpha);
+  if (s.image && s.pts.length >= 2 && pt.image) {
+    const box = shapeBox(s);
+    const size = logoSize(s.image);
+    if (size) pt.image({ key: logoKey(s.image), mime: LOGO_MIME[s.image.type], data: s.image.data, ...fitContain(size, box, 0) });
+  }
+  const stroke = { color, width: s.width, dash: DASHES[s.dash], minPx: 1, alpha: o.alpha };
+  // pictures and text boxes may have no outline (width 0); other shapes always show one (QElectroTech's 0 = hairline)
+  const outlined = s.width > 0 || (!s.image && !s.label);
+  if (outlined) pt.stroke(path, stroke);
+  if (outlined && form?.rims.length) {
+    const rb = new PathBuilder();
+    for (const r of form.rims) rb.poly(r, false);
+    pt.stroke(rb.build(), stroke);
+  }
+  for (const h of arrows.heads) pt.fill(new PathBuilder().poly(h, true).build(), color, o.alpha);
+  if (o.skipLabel) return;
+  const lab = shapeLabelLayout(s, styles, measure);
+  if (!lab) return;
+  const { l, st } = lab;
+  // on a line the label masks the line behind it
+  if (lab.onLine) pt.fill(new PathBuilder().R(lab.x, lab.y, l.w, l.h).build(), "#ffffff", o.alpha);
+  if (l.rules.length) {
+    const rb = new PathBuilder();
+    for (const ru of l.rules) rb.M(lab.x + ru.x1, lab.y + ru.y).L(lab.x + ru.x2, lab.y + ru.y);
+    pt.stroke(rb.build(), { color: o.tint ?? st.color, width: 0.75, alpha: o.alpha });
+  }
+  // words of a line in the same style go out as one text (exports then space them with the real font)
+  const runs: { text: string; x: number; y: number; size: number; weight: number; italic: boolean; end: number }[] = [];
+  for (const it of l.items) {
+    const prev = runs[runs.length - 1];
+    if (prev && prev.y === it.y && prev.size === it.size && prev.weight === it.weight && prev.italic === it.italic && it.x >= prev.end - 0.01) {
+      prev.text += (it.x - prev.end > it.size * 0.1 ? " " : "") + it.text;
+      prev.end = it.x + measure(it.text, it.size, st.font, it.weight);
+    } else runs.push({ ...it, end: it.x + measure(it.text, it.size, st.font, it.weight) });
+  }
+  for (const it of runs) pt.text({ text: it.text, x: lab.x + it.x, y: lab.y + it.y, size: it.size, font: st.font, weight: it.weight, italic: it.italic, color: o.tint ?? st.color, baseline: "top", background: null, alpha: o.alpha });
+}
+
 export function drawLaidText(pt: Painter, t: LaidText, alpha?: number, colorOverride?: string) {
   pt.text({
     text: t.text,
@@ -484,6 +579,8 @@ export type DrawOpts = {
   pageCount?: number;
   version?: string;
   extraFields?: Record<string, string>;
+  /** shapes whose text is not drawn (the editor, while it is being typed) */
+  skipLabels?: Set<string>;
 };
 
 /**
@@ -520,25 +617,7 @@ export function drawPage(pt: Painter, o: DrawOpts) {
   else if (page.kind === "terminals") drawTerminalDiagram(pt, doc, page, styles, measure);
 
   pt.begin?.("shapes");
-  for (const s of page.shapes) {
-    const b = new PathBuilder();
-    if (s.kind === "ellipse" && s.pts.length >= 2) {
-      const [a, c] = s.pts;
-      b.E((a.x + c.x) / 2, (a.y + c.y) / 2, Math.abs(c.x - a.x) / 2, Math.abs(c.y - a.y) / 2);
-    } else if (s.kind === "rect" && s.pts.length >= 2) {
-      const [a, c] = s.pts;
-      b.R(Math.min(a.x, c.x), Math.min(a.y, c.y), Math.abs(c.x - a.x), Math.abs(c.y - a.y));
-    } else b.poly(s.pts, s.kind === "polygon" && s.closed !== false);
-    const path = b.build();
-    if (s.fill) pt.fill(path, s.fill);
-    if (s.image && s.pts.length >= 2 && pt.image) {
-      const [a, c] = s.pts;
-      const box = { x: Math.min(a.x, c.x), y: Math.min(a.y, c.y), w: Math.abs(c.x - a.x), h: Math.abs(c.y - a.y) };
-      const size = logoSize(s.image);
-      if (size) pt.image({ key: logoKey(s.image), mime: LOGO_MIME[s.image.type], data: s.image.data, ...fitContain(size, box, 0) });
-    }
-    if (!s.image || s.width > 0) pt.stroke(path, { color: s.color, width: s.width, dash: DASHES[s.dash], minPx: 1 });
-  }
+  for (const s of page.shapes) drawShape(pt, s, styles, measure, { skipLabel: o.skipLabels?.has(s.id) });
   pt.end?.();
 
   // wires — cached paths, batched per stroke style (one native stroke per style on canvas)
@@ -683,27 +762,54 @@ export function mateLabelLayout(doc: Doc, e: ElemInst, def: ElementDef, page: Pa
   return { text, x: p.x, y: p.y, w, h, size, font: st.font };
 }
 
-/** "5-3B" next to a linked report arrow, on the side away from its connection point */
-export function reportLabelLayout(doc: Doc, e: ElemInst, def: ElementDef, styles: Styles, measure: Painter["measure"]): { text: string; x: number; y: number; w: number; h: number; size: number; font: string } | null {
+type ReportLabel = { text: string; x: number; y: number; w: number; h: number; size: number; font: string };
+const reportLabels = new WeakMap<ElemInst, { key: string; out: ReportLabel }>();
+const styleIds = new WeakMap<Styles, number>();
+let nextStyleId = 1;
+const styleId = (s: Styles) => styleIds.get(s) ?? (styleIds.set(s, nextStyleId++), styleIds.get(s)!);
+
+/**
+ * "5-3B" next to a linked report arrow, on the side away from its connection point — past the
+ * arrow's own texts (its name) when they sit there — or where it was moved (`xrefPos`).
+ */
+export function reportLabelLayout(doc: Doc, e: ElemInst, def: ElementDef, styles: Styles, measure: Painter["measure"]): ReportLabel | null {
   const text = reportTarget(doc, e);
   if (!text) return null;
-  const b = elementBounds(e, def);
   const st = styles.text.componentName;
+  const key = `${text}|${e.x},${e.y},${e.rot},${e.mirror},${e.scale ?? 1}|${JSON.stringify(e.xrefPos ?? null)}|${measure("Mg", 10, st.font, 400)}|${styleId(styles)}`;
+  const hit = reportLabels.get(e);
+  if (hit && hit.key === key) return hit.out;
+  const b = elementBounds(e, def);
   const size = st.size * PT * 0.9;
   const w = measure(text, size, st.font, st.weight);
   const h = size * st.lineHeight;
-  const pin = def.pins[0] ? toScene(e, def.pins[0]) : { x: b.x, y: b.y + b.h / 2 };
-  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   let x: number, y: number;
-  if (Math.abs(pin.x - cx) >= Math.abs(pin.y - cy)) {
-    // horizontal arrow: text past the tip
-    x = pin.x < cx ? b.x + b.w + 2 : b.x - w - 2;
-    y = cy - h / 2;
+  if (e.xrefPos) {
+    ((x = e.x + e.xrefPos.x), (y = e.y + e.xrefPos.y));
   } else {
-    x = cx - w / 2;
-    y = pin.y < cy ? b.y + b.h + 1 : b.y - h - 1;
+    const pin = def.pins[0] ? toScene(e, def.pins[0]) : { x: b.x, y: b.y + b.h / 2 };
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    // the arrow's own texts (its name, description lines): the cross-reference goes past them, not over them
+    const own = layoutElementTexts(e, symbolFor(def), styles, measure).map(textBounds);
+    // with some room: text widths vary between fonts (screen, PDF, pictures)
+    const pad = Math.max(3, h * 0.4);
+    const over = (bx: number, by: number) => own.filter((r) => bx < r.x + r.w + pad && bx + w > r.x - pad && by < r.y + r.h && by + h > r.y);
+    if (Math.abs(pin.x - cx) >= Math.abs(pin.y - cy)) {
+      // horizontal arrow: text past the tip
+      const right = pin.x < cx;
+      x = right ? b.x + b.w + 2 : b.x - w - 2;
+      y = cy - h / 2;
+      for (let i = 0, hits = over(x, y); hits.length && i < 6; i++, hits = over(x, y)) x = right ? Math.max(...hits.map((r) => r.x + r.w)) + pad + 0.5 : Math.min(...hits.map((r) => r.x)) - w - pad - 0.5;
+    } else {
+      const down = pin.y < cy;
+      x = cx - w / 2;
+      y = down ? b.y + b.h + 1 : b.y - h - 1;
+      for (let i = 0, hits = over(x, y); hits.length && i < 6; i++, hits = over(x, y)) y = down ? Math.max(...hits.map((r) => r.y + r.h)) + 1 : Math.min(...hits.map((r) => r.y)) - h - 1;
+    }
   }
-  return { text, x, y, w, h, size, font: st.font };
+  const out = { text, x, y, w, h, size, font: st.font };
+  reportLabels.set(e, { key, out });
+  return out;
 }
 
 export const DEFAULT_FRAME: ComponentFrame = { show: false, color: "#111827", width: 0.8, dash: "dashed", padding: 4 };

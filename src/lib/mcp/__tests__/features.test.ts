@@ -8,8 +8,14 @@ import { collectStrips } from "@/core/terminals";
 import { toScene } from "@/core/geometry";
 import type { Doc } from "@/core/model";
 import { allElements, findComponent, findComponents, findPage, findPin, findWires, sheets, short } from "../doc";
-import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, replaceSymbols, routeWire, setCable, setSymbolPins, setWires, straighten, styleComponents } from "../edits";
-import { addPage, addShape, addText, deleteItems, deletePage, editTitleBlock, pageItemsText, setCover, updateItem, updatePage } from "../sheets";
+import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, moveComponent, replaceSymbols, routeWire, setCable, setComponentDataMany, setSymbolPins, setWires, straighten, styleComponents } from "../edits";
+import { moveCableTag, moveLabels } from "../labels";
+import { parseArgs } from "../args";
+import { z } from "zod";
+import { newDoc } from "@/core/doc";
+import { addWire, newElement } from "@/core/ops";
+import { mkDef } from "@/core/__tests__/helpers";
+import { addPage, addShape, addText, connectShapes, deleteItems, deletePage, editTitleBlock, pageItemsText, setCover, updateItem, updatePage } from "../sheets";
 import { cablesText, editStrip, placeStripTerminals, reportCsv, reportTable, settingsText, stripsText, updateSettings } from "../project";
 
 const FIX = path.join(__dirname, "..", "..", "..", "core", "qet", "__fixtures__", "projects", "2612_ats_singlephase.qet");
@@ -19,6 +25,104 @@ const edit = <T,>(doc: Doc, f: (d: Doc) => T): { doc: Doc; out: T } => {
   const next = produce(doc, (d: Doc) => void (out = f(d)));
   return { doc: next, out };
 };
+
+describe("MCP: labels, conductors, batches", () => {
+  /** device —w1— feed-through terminal —w2— going arrow ⇒ page 2: coming arrow —w3— device */
+  function chain() {
+    const doc = newDoc("t");
+    const page = doc.pages[0];
+    const dev = mkDef("dev", [{ id: "1", x: 10, y: 0, orient: "e" }], { name: "Lamp" });
+    const term = mkDef("term", [{ id: "a", x: -10, y: 0, orient: "w", number: "1" }, { id: "b", x: 10, y: 0, orient: "e", number: "1" }], { name: "Terminal", linkType: "terminal", prefix: "X" });
+    const rep = mkDef("rep", [{ id: "1", x: -10, y: 0, orient: "w" }], { linkType: "next_report", prefix: "", name: "Arrow" });
+    const d1 = newElement(doc, page, dev, { x: 105, y: 105 });
+    d1.info.label = "H1";
+    const t1 = newElement(doc, page, term, { x: 205, y: 105 });
+    t1.info.label = "X1";
+    const r1 = newElement(doc, page, rep, { x: 305, y: 105 });
+    r1.info.label = "SP1";
+    r1.texts = [{ id: "ref", role: "componentRef", info: "label", text: "", x: null, y: null }];
+    const page2 = { ...structuredClone(page), id: "p2", title: "Two", elements: [], wires: [], junctions: [], texts: [], shapes: [], order: 1 };
+    doc.pages.push(page2);
+    const r2 = newElement(doc, page2, { ...rep, id: "rep2", linkType: "previous_report", pins: [{ ...rep.pins[0], x: 10, orient: "e" }] }, { x: 105, y: 105 });
+    r2.info.label = "SP1";
+    const d2 = newElement(doc, page2, { ...dev, id: "dev2", pins: [{ ...dev.pins[0], x: -10, orient: "w" }] }, { x: 305, y: 105 });
+    d2.info.label = "H2";
+    r1.links = [r2.id];
+    r2.links = [r1.id];
+    const w = (pg: typeof page, a: typeof d1, pa: string, b: typeof d1, pb: string) => {
+      const p1 = toScene(a, doc.defs[a.defId].pins.find((p) => p.id === pa)!), p2 = toScene(b, doc.defs[b.defId].pins.find((p) => p.id === pb)!);
+      return addWire(pg, { k: "pin", el: a.id, pin: pa, p: p1 }, { k: "pin", el: b.id, pin: pb, p: p2 }, [p1, p2])!;
+    };
+    const w1 = w(page, d1, "1", t1, "a"), w2 = w(page, t1, "b", r1, "1"), w3 = w(page2, r2, "1", d2, "1");
+    return { doc, w1, w2, w3 };
+  }
+
+  it("apply_to_net carries the size through terminals and off-page arrows", () => {
+    const { doc, w1, w2, w3 } = chain();
+    const r = edit(doc, (d) => setWires(d, [w1.id], { section: "1.5 mm²" }, { applyToNet: true }));
+    expect(r.out).toMatch(/copied to 2 other wires of the same conductor .* on pages 1, 2/);
+    const all = r.doc.pages.flatMap((p) => p.wires);
+    for (const id of [w2.id, w3.id]) expect(all.find((x) => x.id === id)!.section).toBe("1.5 mm²");
+  });
+
+  it("moves a component and reports where it is now", () => {
+    const { doc } = chain();
+    const r = edit(doc, (d) => moveComponent(d, "H1", { dx: 20, dy: 10 }));
+    const e = findComponent(r.doc, "H1").e;
+    expect([e.x, e.y]).toEqual([125, 115]);
+    expect(r.out).toContain("by (20, 10) to x=125 y=115");
+  });
+
+  it("moves labels: an arrow's cross-reference, every arrow on a sheet, reset", () => {
+    const { doc } = chain();
+    let r = edit(doc, (d) => moveLabels(d, ["SP1@1"], ["xref"], { dy: 15 }));
+    expect(r.out).toMatch(/Moved the cross-reference of 1 component by \(0, 15\)/);
+    expect(findComponent(r.doc, "SP1@1").e.xrefPos).toBeTruthy();
+    r = edit(r.doc, (d) => moveLabels(d, "all", ["all"], { side: "above", page: "2", onlyArrows: true }));
+    expect(r.out).toMatch(/of 1 component above the symbol/);
+    expect(r.out).toMatch(/SP1@2: reference at .*cross-reference at/);
+    expect(findComponent(r.doc, "SP1@2").e.xrefPos).toBeTruthy();
+    r = edit(r.doc, (d) => moveLabels(d, ["SP1"], ["all"], { reset: true }));
+    expect(findComponent(r.doc, "SP1@1").e.xrefPos).toBeUndefined();
+    expect(findComponent(r.doc, "SP1@2").e.xrefPos).toBeUndefined();
+    expect(() => edit(doc, (d) => moveLabels(d, ["H1"], ["xref"], { dx: 5 }))).toThrow(/None of them shows cross-reference/);
+    expect(() => edit(doc, (d) => moveLabels(d, ["SP1"], ["all"], {}))).toThrow(/Say where/);
+  });
+
+  it("sets data on many components at once, listing the ones it cannot find", () => {
+    const { doc } = chain();
+    const r = edit(doc, (d) =>
+      setComponentDataMany(d, [
+        { ref: "H1", fields: { description: "Status lamp" } },
+        { ref: "SP1@1", fields: { comment: "to RGB" } },
+        { ref: "NOPE", fields: { description: "x" } },
+      ]),
+    );
+    expect(r.out.split("\n")[0]).toBe("Set data on 2 of 3 components; 1 not set");
+    expect(r.out).toMatch(/NOPE:/);
+    expect(findComponent(r.doc, "H1").e.info.description).toBe("Status lamp");
+    expect(findComponent(r.doc, "SP1@1").e.info.comment).toBe("to RGB");
+  });
+
+  it("moves a cable's tag", () => {
+    const { doc, w1 } = chain();
+    doc.cables = [{ id: "c", tag: "W15", cores: [] }];
+    doc.pages[0].wires.find((x) => x.id === w1.id)!.cable = "W15";
+    const r = edit(doc, (d) => moveCableTag(d, "W15", { side: "below", dx: 4 }));
+    expect(r.out).toMatch(/^W15 tag moved — page 1: mark at x = \d+ \(along [\d.]+ of \d+–\d+\), tag at/);
+    expect(r.doc.cables![0].marks?.[doc.pages[0].id]?.label).toBeTruthy();
+    expect(() => edit(doc, (d) => moveCableTag(d, "W99", { dx: 1 }))).toThrow(/No cable W99/);
+  });
+
+  it("reads objects sent as JSON text (like add_text's box)", () => {
+    const schema = z.object({ text: z.string(), box: z.union([z.object({ width: z.number().min(0).optional() }), z.literal("none")]).optional() });
+    expect(parseArgs(schema, { text: "[1] stays text", box: '{"width": 0}' })).toMatchObject({ ok: true, data: { text: "[1] stays text", box: { width: 0 } } });
+    expect(parseArgs(schema, { text: "t", box: "none" })).toMatchObject({ ok: true, data: { box: "none" } });
+    const bad = parseArgs(schema, { text: "t", box: { width: -5 } });
+    expect(bad.ok).toBe(false);
+    expect(!bad.ok && bad.error).toMatch(/box\.width: Too small/);
+  });
+});
 
 describe("MCP: components", () => {
   it("mates two connector halves: pins pair up, nets run through, unmate clears both", () => {
@@ -257,7 +361,7 @@ describe("MCP: pages and annotations", () => {
     expect(t.override).toMatchObject({ size: 14, weight: 700 });
     expect(t.rich?.width).toBe(200);
     r = edit(doc, (d) => addShape(d, "1", "rect", [{ x: 100, y: 100 }, { x: 300, y: 200 }], { dash: "dashed", colour: "#ff0000" }));
-    const sid = /Rect (#[0-9a-f]{8})/.exec(r.out)![1];
+    const sid = /Rectangle (#[0-9a-f]{8})/.exec(r.out)![1];
     doc = r.doc;
     expect(pageItemsText(doc, "1")).toContain(sid);
     doc = edit(doc, (d) => updateItem(d, tid, { text: "Safety", dx: 20 })).doc;
@@ -266,6 +370,41 @@ describe("MCP: pages and annotations", () => {
     expect(findPage(doc, 1).shapes.find((x) => short(x.id) === sid)).toMatchObject({ fill: "#eeeeee", width: 2 });
     doc = edit(doc, (d) => deleteItems(d, [tid, sid])).doc;
     expect(pageItemsText(doc, "1")).not.toContain(sid);
+  });
+
+  it("draws a block diagram: text boxes, forms, arrows between boxes, text styles", () => {
+    let r = edit(load(), (d) => addShape(d, "1", "textbox", [{ x: 100, y: 100 }, { x: 240, y: 160 }], { label: "**Battery**\n48 V", labelStyle: { size: 12, align: "left" }, fill: "#e0f2fe" }));
+    expect(r.out).toMatch(/^Text box #[0-9a-f]{8} on page 1 .* with "\*\*Battery\*\* 48 V"/);
+    const a = /#[0-9a-f]{8}/.exec(r.out)![0];
+    r = edit(r.doc, (d) => addShape(d, "1", "diamond", [{ x: 400, y: 100 }, { x: 520, y: 160 }], { label: "Charging?" }));
+    const b = /#[0-9a-f]{8}/.exec(r.out)![0];
+    r = edit(r.doc, (d) => connectShapes(d, a, b, { label: "48 V DC" }));
+    expect(r.out).toMatch(/^Arrow #[0-9a-f]{8}/);
+    let doc = r.doc;
+    const shapes = findPage(doc, 1).shapes;
+    const box = shapes.find((x) => short(x.id) === a)!;
+    expect(box).toMatchObject({ kind: "rect", fill: "#e0f2fe", label: { text: "**Battery**\n48 V", size: 12, align: "left" } });
+    expect(shapes.find((x) => short(x.id) === b)).toMatchObject({ kind: "rect", form: "diamond", label: { text: "Charging?" } });
+    const arrow = shapes[shapes.length - 1];
+    expect(arrow).toMatchObject({ kind: "line", arrows: { end: true }, label: { text: "48 V DC" }, pts: [{ x: 240, y: 130 }, { x: 400, y: 130 }] });
+    const items = pageItemsText(doc, "1");
+    expect(items).toMatch(/text box \| .* \| "\*\*Battery\*\* 48 V" 12pt left/);
+    expect(items).toMatch(/arrow \(arrow at end\)/);
+    expect(items).toMatch(/diamond \|/);
+    // change: outline, text, style, arrows; no outline for a text box
+    doc = edit(doc, (d) => updateItem(d, b, { outline: "hexagon", label: "Charger", bold: true })).doc;
+    expect(findPage(doc, 1).shapes.find((x) => short(x.id) === b)).toMatchObject({ form: "hexagon", label: { text: "Charger", bold: true } });
+    doc = edit(doc, (d) => updateItem(d, short(arrow.id), { arrows: "both", label: "" })).doc;
+    const ar = findPage(doc, 1).shapes.find((x) => x.id === arrow.id)!;
+    expect(ar.arrows).toEqual({ start: true, end: true });
+    expect(ar.label).toBeUndefined();
+    doc = edit(doc, (d) => updateItem(d, a, { width: 0, labelStyle: { size: null, valign: "top" } })).doc;
+    expect(findPage(doc, 1).shapes.find((x) => short(x.id) === a)).toMatchObject({ width: 0, label: { text: "**Battery**\n48 V", align: "left", valign: "top" } });
+    expect(findPage(doc, 1).shapes.find((x) => short(x.id) === a)!.label!.size).toBeUndefined();
+    // refused: arrows on a box, no outline without text, an outline for a line
+    expect(() => edit(doc, (d) => updateItem(d, b, { arrows: "end" }))).toThrow(/lines/);
+    expect(() => edit(doc, (d) => addShape(d, "1", "rect", [{ x: 0, y: 0 }, { x: 50, y: 50 }], { width: 0 }))).toThrow(/text boxes/);
+    expect(() => edit(doc, (d) => updateItem(d, short(arrow.id), { outline: "diamond" }))).toThrow(/boxes/);
   });
 
   it("edits a title block template", () => {

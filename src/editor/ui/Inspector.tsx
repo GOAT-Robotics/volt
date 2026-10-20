@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { RotateCw, RotateCcw, FlipHorizontal2, Lock, Unlock, RotateCcw as Reset, Plus, X, Link2, Unlink, ExternalLink, Pencil, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight, Printer } from "lucide-react";
+import { RotateCw, RotateCcw, FlipHorizontal2, Lock, Unlock, RotateCcw as Reset, Plus, X, Link2, Unlink, ExternalLink, Pencil, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight, Printer, Bold, Italic, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd } from "lucide-react";
 import { toast } from "sonner";
 import { useEditor } from "../store";
 import { useEditorUI } from "./context";
@@ -9,7 +9,7 @@ import { Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge, Switch, Tip } from "@/components/ui/misc";
 import { getPage, emptySel, scaleElements } from "@/core/ops";
-import type { Doc, ElemInst, Page, PlacedText, Shape, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
+import type { Doc, ElemInst, Page, PlacedText, Shape, ShapeLabel, TextRole, TextStyle, TitleBlockTemplate, Wire, WireEnd } from "@/core/model";
 import { TEXT_ROLES, COMPONENT_INFO, type ComponentInfoFlags, type ComponentInfoKey, type InfoLayout, type InfoPlacement } from "@/core/model";
 import { ConductorSection } from "./Conductor";
 import { PartDocuments } from "@/components/volt/PartDocuments";
@@ -29,6 +29,8 @@ import { ROLE_LABELS } from "@/core/styles";
 import { DEFAULT_FRAME, docStyles, tbTemplate, wireTextAnchor } from "@/core/render/scene";
 import { templateVariables } from "@/core/titleblock-edit";
 import { gridFriendlyScales } from "@/core/straighten";
+import { boxPresetOf, PRESET_NAMES, setBoxPreset, shapeName, type BoxPreset } from "@/core/shape-presets";
+import { isOpenPath } from "@/core/shape-geom";
 import { symbolThumb } from "../thumb";
 import { pinDegree } from "../engine/snap";
 import { polylineLength } from "@/core/geometry";
@@ -1042,7 +1044,118 @@ function WireInspector({ w, page, doc, editable }: { w: Wire; page: Page; doc: D
   );
 }
 
-const SHAPE_NAMES: Record<Shape["kind"], string> = { line: "Line", rect: "Rectangle", ellipse: "Ellipse", polygon: "Polygon / polyline" };
+/** the outlines a box shape can switch between */
+const BOX_OUTLINES: BoxPreset[] = ["rect", "rounded", "ellipse", "diamond", "hexagon", "triangle", "parallelogram", "cylinder", "document"];
+
+/** the text inside shapes: content (typed here or on the drawing) and how it looks */
+function ShapeTextSection({ list, editable, upd }: { list: Shape[]; editable: boolean; upd: (label: string, fn: (x: Shape) => void) => void }) {
+  const first = list[0];
+  const lab = first.label;
+  const one = list.length === 1;
+  const [v, setV] = useState(lab?.text ?? "");
+  useEffect(() => setV(lab?.text ?? ""), [lab?.text, first.id]);
+  const ui = useEditorUI();
+  const closed = list.every((x) => !isOpenPath(x));
+  const all = <K extends keyof ShapeLabel>(k: K) => (list.every((x) => x.label?.[k] === first.label?.[k]) ? first.label?.[k] : undefined);
+  const setLabel = (label: string, p: Partial<ShapeLabel>) =>
+    upd(label, (x) => {
+      x.label = { text: "", ...(x.label ?? {}), ...p };
+      for (const k of Object.keys(x.label) as (keyof ShapeLabel)[]) if (x.label[k] === undefined) delete x.label[k];
+    });
+  const align = all("align") ?? "center";
+  const valign = all("valign") ?? "middle";
+  const size = all("size");
+  return (
+    <Section title="Text">
+      {one ? (
+        <Textarea
+          value={v}
+          rows={Math.min(8, Math.max(2, v.split("\n").length + 1))}
+          disabled={!editable}
+          placeholder={closed ? "Text inside the shape" : "Label on the line"}
+          onChange={(e) => setV(e.target.value)}
+          onBlur={() =>
+            v !== (lab?.text ?? "") &&
+            upd(v.trim() ? "Shape text" : "Clear shape text", (x) => {
+              if (v.trim()) x.label = { ...(x.label ?? {}), text: v.replace(/\s+$/, "") };
+              else if (x.label) x.label.text = "";
+            })
+          }
+          onKeyDown={(e) => e.stopPropagation()}
+          aria-label="Text"
+        />
+      ) : (
+        <p className="text-2xs text-muted">The text of each shape is typed on the drawing; the settings below apply to all {list.length}.</p>
+      )}
+      <Row label="Size">
+        <div className="flex items-center gap-1.5">
+          <Commit type="number" min={4} max={72} step={0.5} value={size ?? ""} placeholder="auto" disabled={!editable} onCommit={(x) => setLabel("Text size", { size: Number(x) > 0 ? Number(x) : undefined })} className="w-20" aria-label="Text size (pt)" />
+          <span className="text-2xs text-subtle">pt</span>
+        </div>
+      </Row>
+      <Row label="Color">
+        <ColorInput value={all("color") ?? "#111827"} disabled={!editable} onChange={(c) => setLabel("Text color", { color: c })} />
+      </Row>
+      <Row label="Style">
+        <div className="flex items-center gap-0.5">
+          <Tip content="Bold">
+            <Button size="icon-sm" variant="tool" active={!!all("bold")} aria-pressed={!!all("bold")} aria-label="Bold" disabled={!editable} onClick={() => setLabel("Bold text", { bold: all("bold") ? undefined : true })}>
+              <Bold />
+            </Button>
+          </Tip>
+          <Tip content="Italic">
+            <Button size="icon-sm" variant="tool" active={!!all("italic")} aria-pressed={!!all("italic")} aria-label="Italic" disabled={!editable} onClick={() => setLabel("Italic text", { italic: all("italic") ? undefined : true })}>
+              <Italic />
+            </Button>
+          </Tip>
+          <span className="mx-1 h-4 w-px bg-border" />
+          {(
+            [
+              ["left", <AlignLeft key="l" />, "Align left"],
+              ["center", <AlignCenter key="c" />, "Center"],
+              ["right", <AlignRight key="r" />, "Align right"],
+            ] as const
+          ).map(([a, icon, tip]) => (
+            <Tip key={a} content={tip}>
+              <Button size="icon-sm" variant="tool" active={align === a} aria-pressed={align === a} aria-label={tip} disabled={!editable} onClick={() => setLabel(tip, { align: a === "center" ? undefined : a })}>
+                {icon}
+              </Button>
+            </Tip>
+          ))}
+          {closed && (
+            <>
+              <span className="mx-1 h-4 w-px bg-border" />
+              {(
+                [
+                  ["top", <AlignVerticalJustifyStart key="t" />, "Top"],
+                  ["middle", <AlignVerticalJustifyCenter key="m" />, "Middle"],
+                  ["bottom", <AlignVerticalJustifyEnd key="b" />, "Bottom"],
+                ] as const
+              ).map(([a, icon, tip]) => (
+                <Tip key={a} content={`Text at the ${tip.toLowerCase()}`}>
+                  <Button size="icon-sm" variant="tool" active={valign === a} aria-pressed={valign === a} aria-label={`Text at the ${tip.toLowerCase()}`} disabled={!editable} onClick={() => setLabel(`Text at the ${tip.toLowerCase()}`, { valign: a === "middle" ? undefined : a })}>
+                    {icon}
+                  </Button>
+                </Tip>
+              ))}
+            </>
+          )}
+        </div>
+      </Row>
+      <p className="text-2xs text-subtle">
+        {one && editable ? (
+          <>
+            <button className="text-accent hover:underline" onClick={() => runCommand("editText", ui)}>
+              Type on the drawing
+            </button>{" "}
+            (double-click the shape, or Enter) ·{" "}
+          </>
+        ) : null}
+        **bold**, *italic*, “- ” bullets; the text wraps inside the shape.
+      </p>
+    </Section>
+  );
+}
 
 function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; editable: boolean }) {
   const list = page.shapes.filter((x) => ids.includes(x.id));
@@ -1059,9 +1172,16 @@ function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; ed
   const remember = (p: Partial<ReturnType<typeof s>["shapeStyle"]>) => s().set("shapeStyle", { ...s().shapeStyle, ...p });
   const closable = list.filter((x) => x.kind === "polygon");
   const fillable = list.some((x) => x.kind !== "line" && !(x.kind === "polygon" && x.closed === false));
-  const kinds = [...new Set(list.map((x) => SHAPE_NAMES[x.kind]))];
-  const title = list.length === 1 ? (first.image ? "Picture" : SHAPE_NAMES[first.kind]) : `${list.length} drawing shapes`;
+  const kinds = [...new Set(list.map(shapeName))];
+  const title = list.length === 1 ? shapeName(first) : `${list.length} drawing shapes`;
   const pic = list.length === 1 && first.image ? first.image : null;
+  // box shapes switch outline (rectangle ↔ rounded ↔ diamond …); lines get arrow heads
+  const boxes = list.every((x) => boxPresetOf(x) !== null);
+  const outline = boxes && list.every((x) => boxPresetOf(x) === boxPresetOf(first)) ? boxPresetOf(first) : null;
+  const paths = list.every(isOpenPath);
+  const rounded = list.filter((x) => x.kind === "rect" && !x.form && x.radius);
+  const texty = list.every((x) => !x.image);
+  const noOutline = list.every((x) => x.width === 0);
   return (
     <div>
       {pic && (
@@ -1129,6 +1249,40 @@ function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; ed
             </span>
           </Row>
         )}
+        {boxes && !pic && (
+          <Row label="Outline">
+            <NativeSelect value={outline ?? ""} disabled={!editable} onChange={(ev) => ev.target.value && upd(`Shape: ${PRESET_NAMES[ev.target.value as BoxPreset].toLowerCase()}`, (x) => setBoxPreset(x, ev.target.value as BoxPreset))} aria-label="Outline">
+              {!outline && <option value="">Mixed</option>}
+              {BOX_OUTLINES.map((k) => (
+                <option key={k} value={k}>
+                  {PRESET_NAMES[k]}
+                </option>
+              ))}
+            </NativeSelect>
+          </Row>
+        )}
+        {rounded.length > 0 && (
+          <Row label="Corners">
+            <div className="flex items-center gap-1.5">
+              <Commit type="number" min={1} max={200} step={1} value={rounded.every((x) => x.radius === rounded[0].radius) ? rounded[0].radius ?? "" : ""} disabled={!editable} onCommit={(v) => Number(v) > 0 && upd("Corner radius", (x) => void (x.kind === "rect" && !x.form && x.radius && (x.radius = Number(v))))} className="w-20" aria-label="Corner radius" />
+              <span className="text-2xs text-subtle">radius</span>
+            </div>
+          </Row>
+        )}
+        {paths && (
+          <Row label="Arrows">
+            <div className="flex items-center gap-3 text-2xs">
+              <label className="flex items-center gap-1.5">
+                <Switch checked={list.every((x) => !!x.arrows?.start)} disabled={!editable} onCheckedChange={(v) => upd(v ? "Arrow at the start" : "No arrow at the start", (x) => setArrow(x, "start", v))} aria-label="Arrow at the start" />
+                start
+              </label>
+              <label className="flex items-center gap-1.5">
+                <Switch checked={list.every((x) => !!x.arrows?.end)} disabled={!editable} onCheckedChange={(v) => upd(v ? "Arrow at the end" : "No arrow at the end", (x) => setArrow(x, "end", v))} aria-label="Arrow at the end" />
+                end
+              </label>
+            </div>
+          </Row>
+        )}
         {closable.length > 0 && (
           <Row label="Closed">
             <Switch checked={closable.every((x) => x.closed !== false)} disabled={!editable} onCheckedChange={(v) => upd(v ? "Close shape" : "Open shape", (x) => void (x.kind === "polygon" && (x.closed = v)))} />
@@ -1140,9 +1294,23 @@ function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; ed
         <Row label="Color">
           <ColorInput value={same("color") ?? first.color} disabled={!editable} onChange={(v) => (upd("Shape color", (x) => (x.color = v)), remember({ color: v }))} />
         </Row>
-        <Row label="Thickness">
-          <Commit type="number" step={0.25} value={same("width") ?? ""} disabled={!editable} onCommit={(v) => Number(v) > 0 && (upd("Shape thickness", (x) => (x.width = Number(v))), remember({ width: Number(v) }))} />
+        <Row label="Thickness" hint={texty && list.every((x) => !!x.label) ? "0 = no outline (text only)" : undefined}>
+          <Commit
+            type="number"
+            step={0.25}
+            min={0}
+            value={same("width") ?? ""}
+            disabled={!editable}
+            onCommit={(v) => {
+              const w = Number(v);
+              // no outline is for text boxes (and pictures); other shapes need a line
+              if (!(w > 0 || (w === 0 && list.every((x) => !!x.label || !!x.image)))) return;
+              upd(w === 0 ? "No outline" : "Shape thickness", (x) => (x.width = w));
+              if (w > 0) remember({ width: w });
+            }}
+          />
         </Row>
+        {noOutline && !pic && <p className="text-2xs text-subtle">No outline: only the text (and fill) show.</p>}
         <Row label="Line">
           <NativeSelect value={same("dash") ?? ""} disabled={!editable} onChange={(ev) => (upd("Shape line style", (x) => (x.dash = ev.target.value as Shape["dash"])), remember({ dash: ev.target.value as Shape["dash"] }))}>
             {same("dash") === undefined && <option value="">Mixed</option>}
@@ -1161,8 +1329,18 @@ function ShapeInspector({ ids, page, editable }: { ids: string[]; page: Page; ed
           </Row>
         )}
       </Section>
+      {texty && <ShapeTextSection list={list} editable={editable} upd={upd} />}
     </div>
   );
+}
+
+function setArrow(x: Shape, end: "start" | "end", on: boolean) {
+  if (!isOpenPath(x)) return;
+  const a = { ...(x.arrows ?? {}), [end]: on || undefined };
+  if (!a.start) delete a.start;
+  if (!a.end) delete a.end;
+  if (a.start || a.end) x.arrows = a;
+  else delete x.arrows;
 }
 
 function MultiInspector() {

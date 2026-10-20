@@ -145,8 +145,18 @@ export function rotateSelection(doc: Doc, page: Page, sel: Sel, cw = true, pivot
     j.y = Math.round(p.y);
   }
   for (const w of page.wires) if (sel.wires.includes(w.id) && w.a.k === "free" && w.b.k === "free") w.pts = w.pts.map(rot);
-  for (const s of shapes) s.pts = rotateShapePts(s, rot);
+  for (const s of shapes) {
+    s.pts = rotateShapePts(s, rot);
+    // a diagram form turns with its box (a triangle pointing up points right after a clockwise turn)
+    if (s.kind === "rect" && s.form) turnShape(s, cw ? 1 : 3);
+  }
   refreshAttached(doc, page, new Set(els.map((e) => e.id)), new Set(js.map((j) => j.id)));
+}
+
+function turnShape(s: Shape, by: number) {
+  const t = ((s.turn ?? 0) + by) % 4;
+  if (t) s.turn = t as 1 | 2 | 3;
+  else delete s.turn;
 }
 
 /** Rectangles / ellipses are stored as two opposite corners: rotating them keeps them axis-aligned. */
@@ -175,7 +185,15 @@ export function mirrorSelection(doc: Doc, page: Page, sel: Sel) {
   if (shapes.length) {
     const xs = [...shapes.flatMap((s) => s.pts.map((p) => p.x)), ...els.map((e) => e.x)];
     const axis = Math.min(...xs) + Math.max(...xs);
-    for (const s of shapes) s.pts = s.pts.map((p) => ({ x: Math.round((axis - p.x) * 1000) / 1000, y: p.y }));
+    for (const s of shapes) {
+      s.pts = s.pts.map((p) => ({ x: Math.round((axis - p.x) * 1000) / 1000, y: p.y }));
+      // mirrored left–right: a turned form turns the other way, and flips
+      if (s.kind === "rect" && s.form) {
+        turnShape(s, (4 - 2 * (s.turn ?? 0)) % 4);
+        if (s.flip) delete s.flip;
+        else s.flip = true;
+      }
+    }
   }
   // mirror about the centre of the hotspots' bbox: it is invariant under the flip, so X twice is an exact identity
   const minX = Math.min(...els.map((e) => e.x)), maxX = Math.max(...els.map((e) => e.x));

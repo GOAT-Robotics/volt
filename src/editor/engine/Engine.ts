@@ -1,11 +1,13 @@
 "use client";
 import RBush from "rbush";
 import { produce } from "immer";
-import type { Doc, ElemInst, ElementDef, Page, Pt, Rect, Styles, TextRole } from "@/core/model";
-import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, toLocal, eqPt, dist } from "@/core/geometry";
+import type { Doc, ElemInst, ElementDef, Page, Pt, Rect, Shape, Styles, TextRole } from "@/core/model";
+import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, toLocal, eqPt, dist, unionRect } from "@/core/geometry";
 import { CanvasPainter, imageLoadListeners, measureText } from "@/core/render/canvas";
 import { DASHES, PathBuilder } from "@/core/render/painter";
-import { cableLabelRect, contentBounds, docStyles, drawPage, elementBounds, layoutElementTexts, mateLabelLayout, pageGeometry, textBounds, freeTextBounds, wireStroke, drawElement } from "@/core/render/scene";
+import { cableLabelRect, contentBounds, docStyles, drawPage, drawShape, elementBounds, layoutElementTexts, mateLabelLayout, pageGeometry, reportLabelLayout, shapeLabelLayout, shapeLabelStyle, textBounds, freeTextBounds, wireStroke, drawElement } from "@/core/render/scene";
+import { INFO_BLOCK, MATE_LABEL, moveLabel, XREF_LABEL } from "@/core/label-place";
+import { isReportDef } from "@/core/reports";
 import { symbolFor } from "@/core/render/symbol";
 import { deepMerge } from "@/core/styles";
 import {
@@ -25,7 +27,8 @@ import {
 } from "@/core/ops";
 import { moveSegment, orthoRoute } from "@/core/wires";
 import { computeNets } from "@/core/topology";
-import { shapeBounds, shapeDistance, shapeOutline } from "@/core/shapes";
+import { arrowSize, isOpenPath, pathMiddle, shapeBounds, shapeDistance, shapeEdgeDistance, shapeOutline, shapeTextBox } from "@/core/shapes";
+import { boxShape, isBoxPreset, pathShape, PRESET_NAMES } from "@/core/shape-presets";
 import { cableMarks, computeCableMarks } from "@/core/wiring";
 import { nearestSegment } from "@/core/wires";
 import { cachedXref, describe, occurrenceAt, targetsOf, type Occurrence } from "@/core/xref";
@@ -35,8 +38,22 @@ import { pinDegree, snapPoint, type IndexItem, type Snap } from "./snap";
 
 type StoreApi = { getState(): EditorStore; subscribe(l: (s: EditorStore, p: EditorStore) => void): () => void };
 
+/** a text to type in place: free texts, component labels, a wire's label, the text in a shape */
+export type EditRequest = {
+  kind: "free" | "element" | "shape";
+  id: string;
+  textId?: string;
+  info?: string | null;
+  value: string;
+  /** screen rectangle to edit in (a shape: the part of it its text goes in) */
+  rect: Rect;
+  /** font size, screen px */
+  size: number;
+  shape?: { align: "left" | "center" | "right"; valign: "top" | "middle" | "bottom"; color: string; bold: boolean; italic: boolean; inBox: boolean };
+};
+
 export type EngineHooks = {
-  onEditText?(t: { kind: "free" | "element"; id: string; textId?: string; info?: string | null; value: string; rect: Rect; size: number }): void;
+  onEditText?(t: EditRequest): void;
   onNewComment?(a: { pageId: string; anchor: { type: string; id?: string; x: number; y: number }; screen: Pt }): void;
   onAnnounce?(msg: string): void;
   onToast?(msg: string, undo?: boolean): void;
@@ -74,10 +91,6 @@ type Hit =
   | { k: "comment"; id: string };
 
 const HIT_PX = 6;
-/** index "sub" id of the texts of a component's info block (dragged as one) */
-const INFO_BLOCK = "\u0000info";
-/** "sub" id of a mated connector's counterpart label */
-const MATE_LABEL = "\u0000mate";
 const SNAP_PX = 12;
 
 export class Engine {
@@ -351,11 +364,14 @@ export class Engine {
         const items: IndexItem[] = [{ minX: r.x - 2, minY: r.y - 2, maxX: r.x + r.w + 2, maxY: r.y + r.h + 2, kind: "el", id: e.id }];
         for (const lt of layoutElementTexts(e, symbolFor(def), styles, measureText)) {
           const tb = textBounds(lt);
-          const t = lt.block ? undefined : e.texts.find((x) => x.info !== null ? (e.info[x.info] ?? def.info[x.info]) === lt.text : x.text === lt.text);
+          const t = lt.block ? undefined : lt.textId ? e.texts.find((x) => x.id === lt.textId) : e.texts.find((x) => x.info !== null ? (e.info[x.info] ?? def.info[x.info]) === lt.text : x.text === lt.text);
           items.push({ minX: tb.x, minY: tb.y, maxX: tb.x + tb.w, maxY: tb.y + tb.h, kind: "etext", id: e.id, sub: lt.block ? INFO_BLOCK : t?.id });
         }
         const ml = e.mate ? mateLabelLayout(this.doc, e, def, page, styles, measureText) : null;
         if (ml) items.push({ minX: ml.x, minY: ml.y, maxX: ml.x + ml.w, maxY: ml.y + ml.h, kind: "etext", id: e.id, sub: MATE_LABEL });
+        // an off-page arrow's cross-reference ("5-3B") can be dragged too
+        const rl = e.links?.length && isReportDef(def) ? reportLabelLayout(this.doc, e, def, styles, measureText) : null;
+        if (rl) items.push({ minX: rl.x, minY: rl.y, maxX: rl.x + rl.w, maxY: rl.y + rl.h, kind: "etext", id: e.id, sub: XREF_LABEL });
         return items;
       });
     }
@@ -374,8 +390,11 @@ export class Engine {
     for (const sh of page.shapes)
       upsert("s:" + sh.id, sh, () => {
         if (!sh.pts.length) return [];
-        const b = shapeBounds(sh);
-        const pad = Math.max(1, sh.width / 2);
+        let b = shapeBounds(sh);
+        // arrow heads and a line's label reach past its points
+        const pad = Math.max(1, sh.width / 2) + (sh.arrows ? arrowSize(sh.width).half : 0);
+        const lab = sh.label?.text && isOpenPath(sh) ? shapeLabelLayout(sh, this.styles, measureText) : null;
+        if (lab) b = unionRect(b, { x: lab.x, y: lab.y, w: lab.l.w, h: lab.l.h })!;
         return [{ minX: b.x - pad, minY: b.y - pad, maxX: b.x + b.w + pad, maxY: b.y + b.h + pad, kind: "shape", id: sh.id }];
       });
     for (const t of page.texts)
@@ -493,7 +512,13 @@ export class Engine {
       if (h.kind !== "shape") continue;
       const shape = page.shapes.find((x) => x.id === h.id);
       if (!shape) continue;
-      const d = shapeDistance(shape, p);
+      let d = shapeDistance(shape, p);
+      // inside a filled shape / text box: components and wires drawn in it come first
+      if (d === 0 && shapeEdgeDistance(shape, p) > tol * 0.35) d = tol * 0.7;
+      if (d > tol && shape.label?.text && isOpenPath(shape)) {
+        const lab = shapeLabelLayout(shape, this.styles, measureText);
+        if (lab && p.x >= lab.x && p.x <= lab.x + lab.l.w && p.y >= lab.y && p.y <= lab.y + lab.l.h) d = 0;
+      }
       if (d <= tol && (!sh || d < sh.d)) sh = { id: h.id, d };
     }
     // cable marks (the short line crossing a cable's wires) select the whole cable
@@ -1057,7 +1082,7 @@ export class Engine {
         // press-drag-release draws a rectangle / ellipse / line in one gesture; a plain click
         // starts it and a second click finishes it
         const sp2 = this.local(e);
-        if ((m.kind === "rect" || m.kind === "ellipse" || m.kind === "line") && m.pts.length === 1 && Math.hypot(sp2.x - m.down.x, sp2.y - m.down.y) > 4) {
+        if ((isBoxPreset(m.kind) || m.kind === "line" || m.kind === "arrow") && m.pts.length === 1 && Math.hypot(sp2.x - m.down.x, sp2.y - m.down.y) > 4) {
           m.pts.push(m.cur);
           this.commitDraw();
         }
@@ -1098,42 +1123,7 @@ export class Engine {
   private moveElementText(d: Doc, pid: string, elId: string, textId: string, delta: Pt) {
     const page = getPage(d, pid);
     const e = page.elements.find((x) => x.id === elId);
-    const def = e && d.defs[e.defId];
-    if (e && def && e.mate && textId === MATE_LABEL) {
-      // counterpart label: remember where it was dragged, relative to the component (it follows it)
-      const cur = mateLabelLayout(d, e, def, page, docStyles(d), measureText);
-      if (!cur) return;
-      e.mate.labelPos = { x: Math.round((cur.x + delta.x - e.x) * 2) / 2, y: Math.round((cur.y + delta.y - e.y) * 2) / 2 };
-      e.mate.label = "show";
-      return;
-    }
-    if (e && def && textId === INFO_BLOCK) {
-      // component info block: remember its top-left in element coordinates (it follows the component)
-      const cur = layoutElementTexts(e, symbolFor(def), docStyles(d), measureText).find((t) => t.block)?.block;
-      if (!cur) return;
-      const p = toLocal(e, { x: cur.x + delta.x, y: cur.y + delta.y });
-      e.infoLayout = { ...(e.infoLayout ?? {}), at: "free", pos: { x: Math.round(p.x * 2) / 2, y: Math.round(p.y * 2) / 2 } };
-      return;
-    }
-    const t = e?.texts.find((x) => x.id === textId);
-    if (!e || !t || !def) return;
-    // convert the scene delta into element-local delta (inverse rotation, mirror)
-    let lx = delta.x, ly = delta.y;
-    for (let i = 0; i < e.rot; i++) [lx, ly] = [ly, -lx];
-    if (e.mirror) lx = -lx;
-    const k = e.scale && e.scale > 0 ? e.scale : 1;
-    ((lx /= k), (ly /= k));
-    if (t.x === null || t.y === null) {
-      const sym = symbolFor(def);
-      const lt = layoutElementTexts({ ...e, texts: [t] }, sym, docStyles(d), measureText)[0];
-      const st = docStyles(d).text[t.role];
-      const bb = sym.bbox;
-      t.x = bb.x + bb.w + 4 + st.dx - 4;
-      t.y = bb.y + st.dy - 4;
-      void lt;
-    }
-    t.x = Math.round((t.x + lx) * 2) / 2;
-    t.y = Math.round((t.y + ly) * 2) / 2;
+    if (e) moveLabel(d, page, e, textId, delta, docStyles(d), measureText);
   }
 
   private pinGuides(sel: Sel, d: Pt): { x?: number; dx?: number; y?: number; dy?: number } {
@@ -1306,7 +1296,7 @@ export class Engine {
     let p = { ...sn.p };
     if (shift && m && last) {
       const dx = p.x - last.x, dy = p.y - last.y;
-      if ((m.kind === "rect" || m.kind === "ellipse") && m.pts.length === 1) {
+      if (isBoxPreset(m.kind) && m.pts.length === 1) {
         const d = Math.max(Math.abs(dx), Math.abs(dy));
         p = { x: last.x + Math.sign(dx || 1) * d, y: last.y + Math.sign(dy || 1) * d };
       } else {
@@ -1322,7 +1312,7 @@ export class Engine {
     const m = this.mode;
     if (m.m === "draw") {
       const p = this.drawPoint(wp, shift, m);
-      if (m.kind === "polygon" || m.kind === "polyline") {
+      if (m.kind === "polygon" || m.kind === "polyline" || m.kind === "arrow") {
         // clicking the first point closes a polygon
         if (m.kind === "polygon" && m.pts.length >= 3 && dist(p, m.pts[0]) < 8 / this.view.s) return this.finishDraw();
         if (!eqPt(p, m.pts[m.pts.length - 1])) m.pts.push(p);
@@ -1343,7 +1333,7 @@ export class Engine {
   finishDraw() {
     const m = this.mode;
     if (m.m !== "draw") return;
-    if (m.kind === "polygon" || m.kind === "polyline") {
+    if (m.kind === "polygon" || m.kind === "polyline" || m.kind === "arrow") {
       // a double-click adds the same point twice
       const pts = m.pts.filter((p, i) => i === 0 || !eqPt(p, m.pts[i - 1]));
       m.pts = pts;
@@ -1358,38 +1348,79 @@ export class Engine {
     this.snapInd = null;
     this.dirtyOverlay = true;
     const s = this.s;
-    const st = s.shapeStyle;
-    let shape: import("@/core/model").Shape | null = null;
     const id = uid();
-    const base = { id, color: st.color, width: st.width, dash: st.dash };
-    if (m.kind === "rect" || m.kind === "ellipse") {
-      if (m.pts.length < 2) return;
-      const [a, b] = m.pts;
-      if (Math.abs(a.x - b.x) < 0.5 || Math.abs(a.y - b.y) < 0.5) return;
-      shape = { ...base, kind: m.kind, pts: [{ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) }], fill: st.fill };
-    } else if (m.kind === "line") {
-      if (m.pts.length < 2 || eqPt(m.pts[0], m.pts[1])) return;
-      shape = { ...base, kind: "line", pts: m.pts.slice(0, 2), fill: null };
-    } else {
-      const closed = m.kind === "polygon";
-      if (m.pts.length < 2 || (closed && m.pts.length < 3)) {
-        this.hooks.onToast?.(closed ? "A polygon needs at least 3 points" : "A polyline needs at least 2 points");
-        return;
-      }
-      shape = { ...base, kind: "polygon", closed, pts: m.pts, fill: closed ? st.fill : null };
+    const shape = this.draftShape(m, id, true);
+    if (!shape) {
+      if (m.kind === "polygon" || m.kind === "polyline") this.hooks.onToast?.(m.kind === "polygon" ? "A polygon needs at least 3 points" : "A polyline needs at least 2 points");
+      return;
     }
-    const names: Record<DrawKind, string> = { rect: "rectangle", ellipse: "ellipse", line: "line", polygon: "polygon", polyline: "polyline" };
-    const sh = shape;
     const pid = s.pageId;
-    s.apply(`Draw ${names[m.kind]}`, (d) => void getPage(d, pid).shapes.push(sh), { sel: { ...emptySel(), shapes: [id] } });
-    this.hooks.onAnnounce?.(`${names[m.kind][0].toUpperCase()}${names[m.kind].slice(1)} drawn`);
+    s.apply(`Draw ${PRESET_NAMES[m.kind].toLowerCase()}`, (d) => void getPage(d, pid).shapes.push(shape), { sel: { ...emptySel(), shapes: [id] } });
+    this.hooks.onAnnounce?.(`${PRESET_NAMES[m.kind]} drawn`);
+    // a text box is for typing: start right away
+    if (m.kind === "textbox") this.editShapeText(id);
   }
 
-  private drawPreviewPts(m: Extract<Mode, { m: "draw" }>): { kind: "rect" | "ellipse" | "poly"; pts: Pt[]; closed: boolean } {
-    if (m.kind === "rect" || m.kind === "ellipse") return { kind: m.kind, pts: [m.pts[0], m.cur], closed: true };
-    if (m.kind === "line") return { kind: "poly", pts: [m.pts[0], m.cur], closed: false };
-    const pts = eqPt(m.cur, m.pts[m.pts.length - 1]) ? m.pts : [...m.pts, m.cur];
-    return { kind: "poly", pts, closed: m.kind === "polygon" && pts.length > 2 };
+  /** the shape being drawn (final = as it will be saved: too-small boxes and short paths give null) */
+  private draftShape(m: Extract<Mode, { m: "draw" }>, id = "draft", final = false): Shape | null {
+    const st = this.s.shapeStyle;
+    const look = { color: st.color, width: st.width, dash: st.dash, fill: st.fill };
+    if (isBoxPreset(m.kind)) {
+      const a = m.pts[0], b = final ? m.pts[1] : m.cur;
+      if (!a || !b || Math.abs(a.x - b.x) < 0.5 || Math.abs(a.y - b.y) < 0.5) return null;
+      return boxShape(id, m.kind, a, b, look);
+    }
+    let pts = final ? m.pts : eqPt(m.cur, m.pts[m.pts.length - 1]) ? m.pts : [...m.pts, m.cur];
+    if (m.kind === "line") pts = final ? m.pts.slice(0, 2) : [m.pts[0], m.cur];
+    pts = pts.filter((p, i) => i === 0 || !eqPt(p, pts[i - 1]));
+    if (pts.length < 2 || (m.kind === "polygon" && final && pts.length < 3)) return null;
+    return pathShape(id, m.kind, pts, look);
+  }
+
+  /** Type the text inside a shape (or the label on a line): opens the editor over it. */
+  editShapeText(id: string) {
+    const sh = this.s.page().shapes.find((x) => x.id === id);
+    if (!sh || !this.editable) return;
+    const st = shapeLabelStyle(sh, this.styles);
+    const box = shapeTextBox(sh);
+    let rect: Rect;
+    if (box) {
+      const a = this.toScreen({ x: box.x, y: box.y });
+      rect = { x: a.x, y: a.y, w: Math.max(40, box.w * this.view.s), h: Math.max(20, box.h * this.view.s) };
+    } else {
+      const c = this.toScreen(pathMiddle(sh.pts).p);
+      rect = { x: c.x - 70, y: c.y - 12, w: 140, h: 24 };
+    }
+    this.editingLabel = id;
+    this.dirtyScene = true;
+    this.hooks.onEditText?.({
+      kind: "shape",
+      id,
+      value: sh.label?.text ?? "",
+      rect,
+      size: Math.max(9, st.size * (4 / 3) * this.view.s),
+      shape: { align: sh.label?.align ?? "center", valign: box ? sh.label?.valign ?? "middle" : "middle", color: st.color, bold: !!sh.label?.bold, italic: !!sh.label?.italic, inBox: !!box },
+    });
+  }
+
+  /** the shape whose text is being typed (not drawn on the canvas meanwhile) */
+  private editingLabel: string | null = null;
+  setEditingLabel(id: string | null) {
+    if (this.editingLabel === id) return;
+    this.editingLabel = id;
+    this.dirtyScene = true;
+  }
+
+  /** the smallest closed shape around a point (double-click inside an empty box types in it) */
+  private shapeAround(p: Pt): string | null {
+    let best: { id: string; a: number } | null = null;
+    for (const sh of this.page.shapes) {
+      if (isOpenPath(sh) || sh.image) continue;
+      if (shapeDistance({ ...sh, fill: sh.fill ?? "#fff" }, p) !== 0) continue;
+      const b = shapeBounds(sh);
+      if (!best || b.w * b.h < best.a) best = { id: sh.id, a: b.w * b.h };
+    }
+    return best?.id ?? null;
   }
 
   isBusy() {
@@ -1594,6 +1625,10 @@ export class Engine {
     }
     if (!this.editable) return;
     const h = this.hitTest(wp, { pins: false });
+    if (h?.k === "shape" || h?.k === "shapePt") return this.editShapeText(h.id);
+    // inside an empty box (nothing else under the pointer): type in the box
+    const inside = !h || h.k === "comment" ? this.shapeAround(wp) : null;
+    if (inside) return this.editShapeText(inside);
     if (h?.k === "text") this.editFreeText(h.id);
     else if (h?.k === "etext") this.editElementText(h.el, h.text);
     else if (h?.k === "el") {
@@ -1857,6 +1892,7 @@ export class Engine {
       editor: { pins: !this.secondary, dangling: !this.secondary },
       tint,
       version: this.s.version?.label,
+      skipLabels: this.editingLabel ? new Set([this.editingLabel]) : undefined,
     });
     this.lastRenderMs = performance.now() - t0;
   }
@@ -2016,23 +2052,16 @@ export class Engine {
     }
     // shape being drawn: in its real style, plus accent handles and a size readout
     if (m.m === "draw") {
-      const pv = this.drawPreviewPts(m);
-      const st = s.shapeStyle;
-      const b = new PathBuilder();
-      if (pv.kind === "rect" || pv.kind === "ellipse") {
-        const r = normRect(pv.pts[0], pv.pts[1]);
-        if (pv.kind === "rect") b.R(r.x, r.y, r.w, r.h);
-        else b.E(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, r.h / 2);
-      } else b.poly(pv.closed ? [...pv.pts, pv.pts[0]] : pv.pts);
-      const path = b.build();
-      if (st.fill && (pv.kind !== "poly" || pv.closed)) painter.fill(path, st.fill, 0.6);
-      painter.stroke(path, { color: st.color, width: st.width, dash: DASHES[st.dash] ?? null, minPx: 1 });
-      painter.stroke(path, { color: accent, width: px(1), dash: [px(3), px(3)], alpha: 0.7 });
+      const draft = this.draftShape(m);
+      if (draft) {
+        drawShape(painter, draft, this.styles, measureText, { alpha: 0.85 });
+        painter.stroke(new PathBuilder().poly(shapeOutline(draft)).build(), { color: accent, width: px(1), dash: [px(3), px(3)], alpha: 0.7 });
+      }
       const hb = new PathBuilder();
       for (const p of m.pts) hb.R(p.x - px(3), p.y - px(3), px(6), px(6));
       painter.fill(hb.build(), accent);
       const r = normRect(m.pts[m.pts.length - 1], m.cur);
-      const txt = m.kind === "rect" || m.kind === "ellipse" ? `${Math.round(Math.abs(m.cur.x - m.pts[0].x))} × ${Math.round(Math.abs(m.cur.y - m.pts[0].y))}` : `${Math.round(Math.hypot(r.w, r.h))}`;
+      const txt = isBoxPreset(m.kind) ? `${Math.round(Math.abs(m.cur.x - m.pts[0].x))} × ${Math.round(Math.abs(m.cur.y - m.pts[0].y))}` : `${Math.round(Math.hypot(r.w, r.h))}`;
       const sp = this.toScreen(m.cur);
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
       c.font = "500 11px ui-sans-serif, -apple-system, sans-serif";
