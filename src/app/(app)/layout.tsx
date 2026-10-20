@@ -22,6 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         workspace: ctx.workspace.name,
         workspaceId: ctx.workspace.id,
         workspaces: ctx.workspaces,
+        mcp: ctx.settings.mcp.enabled && !ctx.user.isGuest,
       }}
     >
       {children}

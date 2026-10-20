@@ -27,8 +27,9 @@ function sameOrigin(req: NextRequest): boolean {
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (pathname.startsWith("/api/")) {
-    // Auth.js has its own CSRF token for its POSTs (sign-in/out)
-    if (!SAFE.has(req.method) && !pathname.startsWith("/api/auth/") && !sameOrigin(req)) {
+    // Auth.js has its own CSRF token for its POSTs (sign-in/out); the MCP server authenticates
+    // with bearer tokens only (never cookies), so other origins (MCP clients, inspectors) may call it
+    if (!SAFE.has(req.method) && !pathname.startsWith("/api/auth/") && pathname !== "/api/mcp" && !sameOrigin(req)) {
       return NextResponse.json({ error: "Cross-site request refused" }, { status: 403 });
     }
     return NextResponse.next();

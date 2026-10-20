@@ -610,6 +610,8 @@ export const VERSION_STATUSES = [
   "SUPERSEDED",
   "WITHDRAWN",
   "OBSOLETE",
+  /** a read-only record that came from a .volt file (it keeps the status it had there for display) */
+  "IMPORTED",
 ] as const;
 export type VersionStatus = (typeof VERSION_STATUSES)[number];
 export const EDITABLE_STATUSES: VersionStatus[] = ["DRAFT", "CHANGES_REQUESTED"];

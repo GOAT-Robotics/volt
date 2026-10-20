@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Star, GitBranchPlus, PenLine, ExternalLink, MoreHorizontal, Rocket, Undo2, ArchiveX, FileSignature, FileDown, FileCode2, FileArchive, Eye, Folder, GitFork, RotateCcw, Ban, Archive, ArchiveRestore, Pencil, Lock } from "lucide-react";
+import { Star, GitBranchPlus, PenLine, ExternalLink, MoreHorizontal, Rocket, Undo2, ArchiveX, FileSignature, FileDown, FileCode2, FileArchive, Eye, Folder, GitFork, RotateCcw, Ban, Archive, ArchiveRestore, Pencil, Lock, Share2, FileBox, GitMerge, Download } from "lucide-react";
 import { PageHeader } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
@@ -18,6 +18,8 @@ import type { CompatReport } from "@/core/model";
 import type { FolderRow } from "../ProjectsView";
 import { ReviewsTab, SignaturesTab, ActivityTab, MembersTab, AttachmentsTab, SettingsTab } from "./Tabs";
 import { LiveStack, useLivePeople } from "@/components/live/LiveNow";
+import { VoltExportDialog, VoltImportDialog } from "@/components/volt/VoltFile";
+import { statusLabel } from "@/lib/voltfile/types";
 
 export type VersionRow = {
   id: string;
@@ -41,6 +43,8 @@ export type VersionRow = {
   endReason: string | null;
   docHash: string | null;
   importId: string | null;
+  /** came from a .volt file: the status it had where it was made */
+  imported: { status: string; from: string; server: string; file: string; importedAt: string; importedBy: string } | null;
 };
 export type ReviewRow = {
   id: string;
@@ -51,6 +55,8 @@ export type ReviewRow = {
   dueDate: string | null;
   instructions: string;
   submittedBy: string;
+  /** review record imported from a .volt file: the server where it took place */
+  importedFrom: string | null;
   createdAt: string;
   closedAt: string | null;
   assignments: { id: string; order: number; who: string; isGroup: boolean; canApprove: boolean; decision: string; reason: string | null; decidedBy: string | null; decidedAt: string | null }[];
@@ -90,6 +96,8 @@ export type ProjectData = {
   attachments: { id: string; ownerType: string; ownerId: string; filename: string; mime: string; size: number; sha256: string; uploadedBy: string; uploadedById: string; createdAt: string; context: string }[];
   imports: { id: string; filename: string; sha256: string; createdAt: string; versionLabel: string | null; report: CompatReport | null }[];
   eligibleSignatories: { id: string; name: string; email: string }[];
+  /** signature records that came with imported versions (they do not count here) */
+  importedSignatures: { id: string; versionId: string; versionLabel: string; name: string; email: string; purpose: string; status: string; signedAt: string | null; server: string; sealValid: boolean | null; docHash: string }[];
 };
 
 export function download(url: string) {
@@ -111,6 +119,9 @@ export function ProjectView({ data, initialTab }: { data: ProjectData; initialTa
   const [run] = useMutation();
   const [startFrom, setStartFrom] = React.useState<VersionRow | null>(null);
   const [variantFrom, setVariantFrom] = React.useState<VersionRow | null>(null);
+  const [exportProject, setExportProject] = React.useState(false);
+  const [reviewedCopy, setReviewedCopy] = React.useState<File | null>(null);
+  const voltInput = React.useRef<HTMLInputElement>(null);
   const p = data.project;
   const main = data.versions.filter((v) => !v.variantId);
   const working = main.find((v) => WORKING.includes(v.status));
@@ -181,6 +192,43 @@ export function ProjectView({ data, initialTab }: { data: ProjectData; initialTa
         }
         actions={
           <span className="flex items-center gap-2">
+          {data.perms.view && (
+            <>
+              <input
+                ref={voltInput}
+                type="file"
+                accept=".volt"
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f && !/\.volt$/i.test(f.name)) return void toast.error("Choose a .volt file");
+                  if (f) setReviewedCopy(f);
+                }}
+              />
+              <Menu>
+                <MenuTrigger asChild>
+                  <Button aria-label="Share as a .volt file or bring reviews back">
+                    <Share2 /> Share
+                  </Button>
+                </MenuTrigger>
+                <MenuContent align="end" className="w-72">
+                  {data.perms.export && (
+                    <MenuItem onSelect={() => setExportProject(true)}>
+                      <FileBox /> Download project as .volt…
+                    </MenuItem>
+                  )}
+                  {data.perms.export && <p className="px-2 pb-1.5 pt-0.5 text-2xs leading-snug text-muted">To send one version to a reviewer: ⋯ on its row → Share for review.</p>}
+                  <MenuSeparator />
+                  <MenuItem onSelect={() => voltInput.current?.click()}>
+                    <GitMerge /> Merge reviews from a .volt file…
+                  </MenuItem>
+                </MenuContent>
+              </Menu>
+            </>
+          )}
           {mayStart && variantBase && (
             <Button onClick={() => setVariantFrom(variantBase)} title={`A customer / configuration variant branched from v${variantBase.label}`}>
               <GitFork /> New variant
@@ -244,6 +292,8 @@ export function ProjectView({ data, initialTab }: { data: ProjectData; initialTa
       </TabsRoot>
       {startFrom && <StartVersionDialog projectId={p.id} parent={startFrom} variant={data.variants.find((x) => x.id === startFrom.variantId) ?? null} onClose={() => setStartFrom(null)} />}
       {variantFrom && <CreateVariantDialog data={data} base={variantFrom} onClose={() => setVariantFrom(null)} />}
+      <VoltExportDialog open={exportProject} onClose={() => setExportProject(false)} project={{ id: p.id, name: p.name, versions: data.versions.length }} canManage={data.perms.manage} />
+      {reviewedCopy && <VoltImportDialog file={reviewedCopy} folders={data.folders} currentFolder={p.folderId} prefer="merge" onClose={() => setReviewedCopy(null)} />}
     </div>
   );
 }
@@ -410,6 +460,7 @@ function VersionsTab({ data, onStart, onVariant }: { data: ProjectData; onStart?
 function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectData; versions: VersionRow[]; onStart?: (v: VersionRow) => void; onVariant?: (v: VersionRow) => void }) {
   const [run] = useMutation();
   const [dlg, setDlg] = React.useState<{ kind: LineAction; v: VersionRow } | null>(null);
+  const [share, setShare] = React.useState<VersionRow | null>(null);
   const pid = data.project.id;
   const lineWorking = versions.find((v) => WORKING.includes(v.status));
   const canRelease = (s: string) => (data.policy.signatureRequiredForRelease ? s === "SIGNED" : s === "APPROVED" || s === "SIGNED");
@@ -451,6 +502,11 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
                 </td>
                 <td>
                   <StatusBadge status={v.status} />
+                  {v.imported && (
+                    <p className="mt-1 text-2xs text-muted" title={`From ${v.imported.file}, imported by ${v.imported.importedBy} ${fmtDate(v.imported.importedAt)}`}>
+                      {v.status === "IMPORTED" ? `${statusLabel(v.imported.status)} at ${v.imported.from}` : `Imported from ${v.imported.server}`}
+                    </p>
+                  )}
                   {pendingSig && <p className="mt-1 text-2xs text-muted">Awaiting signatures{signed ? " · partly signed" : ""}</p>}
                   {["SIGNED", "RELEASED"].includes(v.status) && (
                     <p className="mt-1 flex items-center gap-1 text-2xs text-muted">
@@ -526,9 +582,16 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
                             <Undo2 /> Withdraw
                           </MenuItem>
                         )}
-                        {data.perms.export && frozen && (
+                        {data.perms.export && (
                           <>
                             <MenuSeparator />
+                            <MenuItem onSelect={() => setShare(v)}>
+                              <Share2 /> Share for review (.volt)…
+                            </MenuItem>
+                          </>
+                        )}
+                        {data.perms.export && frozen && (
+                          <>
                             <MenuItem onSelect={() => download(`/api/versions/${v.id}/canonical.pdf`)}>
                               <FileDown /> Drawing PDF (canonical)
                             </MenuItem>
@@ -546,7 +609,7 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
                         )}
                         {v.importId && data.perms.view && (
                           <MenuItem onSelect={() => download(`/api/projects/${pid}/imports/${v.importId}/original`)}>
-                            <FileArchive /> Original imported file
+                            {v.imported ? <Download /> : <FileArchive />} Original imported file
                           </MenuItem>
                         )}
                       </MenuContent>
@@ -558,6 +621,7 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
           })}
         </tbody>
       </Table>
+      {share && <VoltExportDialog open onClose={() => setShare(null)} project={{ id: pid, name: data.project.name, versions: data.versions.length }} version={share} canManage={data.perms.manage} />}
       {dlg?.kind === "release" && (
         <PromptDialog
           open

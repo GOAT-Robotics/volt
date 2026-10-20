@@ -2,7 +2,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Upload, Download, CheckCircle2, AlertTriangle, Archive, XCircle, FileText } from "lucide-react";
+import { Upload, Download, FileText } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Field, Input, NativeSelect } from "@/components/ui/input";
@@ -11,7 +11,10 @@ import { ImportDialog } from "@/library-editor/browser/ImportDialog";
 import type { LibraryInfo } from "@/library-editor/types";
 import { TagInput } from "@/components/volt/common";
 import { downloadBlob, cn } from "@/lib/utils";
-import type { CompatItem, CompatLevel, CompatReport } from "@/core/model";
+import type { CompatReport } from "@/core/model";
+import { CompatReportView } from "@/components/volt/CompatReport";
+import { VoltImportDialog } from "@/components/volt/VoltFile";
+export { CompatReportView };
 import type { FolderRow } from "./ProjectsView";
 import { folderOptions } from "./NewProjectDialog";
 
@@ -21,6 +24,8 @@ export function ImportQetButton({ folders, currentFolder }: { folders: FolderRow
   const input = React.useRef<HTMLInputElement>(null);
   const [parsing, setParsing] = React.useState(false);
   const [parsed, setParsed] = React.useState<Parsed | null>(null);
+  /** a Volt project file (.volt): checked and imported on the server */
+  const [volt, setVolt] = React.useState<File | null>(null);
   /** an element (.elmt) or a .zip of them goes to the library, through the import review */
   const [elements, setElements] = React.useState<File[] | null>(null);
   const [libs, setLibs] = React.useState<LibraryInfo[]>([]);
@@ -37,7 +42,12 @@ export function ImportQetButton({ folders, currentFolder }: { folders: FolderRow
       if (input.current) input.current.value = "";
       return void importElements(file);
     }
-    if (!/\.qet$/i.test(file.name)) return toast.error("Choose a project file (.qet)");
+    if (/\.volt$/i.test(file.name)) {
+      if (input.current) input.current.value = "";
+      if (file.size > 100 * 1024 * 1024) return toast.error("File exceeds the 100 MB limit");
+      return void setVolt(file);
+    }
+    if (!/\.qet$/i.test(file.name)) return toast.error("Choose a Volt (.volt) or QElectroTech (.qet) project file");
     if (file.size > 50 * 1024 * 1024) return toast.error("File exceeds the 50 MB limit");
     setParsing(true);
     try {
@@ -54,10 +64,11 @@ export function ImportQetButton({ folders, currentFolder }: { folders: FolderRow
   };
   return (
     <>
-      <input ref={input} type="file" accept=".qet,.elmt,.zip,application/xml" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => onFile(e.target.files?.[0])} />
-      <Button onClick={() => input.current?.click()} disabled={parsing}>
-        {parsing ? <Spinner /> : <Upload />} Import .qet
+      <input ref={input} type="file" accept=".volt,.qet,.elmt,.zip,application/xml" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => onFile(e.target.files?.[0])} />
+      <Button onClick={() => input.current?.click()} disabled={parsing} title="Open a Volt project file (.volt) or a QElectroTech project (.qet); element files (.elmt, .zip) go to your library">
+        {parsing ? <Spinner /> : <Upload />} Import
       </Button>
+      {volt && <VoltImportDialog file={volt} folders={folders} currentFolder={currentFolder} onClose={() => setVolt(null)} />}
       <ImportDialog
         open={!!elements}
         initialFiles={elements}
@@ -69,51 +80,6 @@ export function ImportQetButton({ folders, currentFolder }: { folders: FolderRow
       />
       {parsed && <ImportPreview parsed={parsed} folders={folders} currentFolder={currentFolder} onClose={() => setParsed(null)} />}
     </>
-  );
-}
-
-const LEVELS: { level: CompatLevel; label: string; icon: React.ReactNode; cls: string; help: string }[] = [
-  { level: "supported", label: "Supported", icon: <CheckCircle2 />, cls: "text-success", help: "Imported and fully editable." },
-  { level: "degraded", label: "Degraded", icon: <AlertTriangle />, cls: "text-warning", help: "Imported with simplifications — check these areas." },
-  { level: "preserved", label: "Preserved", icon: <Archive />, cls: "text-accent", help: "Not editable in Volt, kept byte-for-byte and written back on .qet export." },
-  { level: "unsupported", label: "Unsupported", icon: <XCircle />, cls: "text-danger", help: "Not represented; still kept in the stored original file." },
-];
-
-export function CompatReportView({ report }: { report: CompatReport }) {
-  const groups = LEVELS.map((l) => ({ ...l, items: report.items.filter((i) => i.level === l.level) }));
-  return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-4 gap-2">
-        {groups.map((g) => (
-          <div key={g.level} className="rounded-md border border-border bg-panel-2 px-2.5 py-2">
-            <p className={cn("flex items-center gap-1 text-2xs font-medium [&_svg]:size-3", g.cls)}>
-              {g.icon} {g.label}
-            </p>
-            <p className="text-base font-semibold tabular-nums">{g.items.length}</p>
-          </div>
-        ))}
-      </div>
-      {groups
-        .filter((g) => g.items.length)
-        .map((g) => (
-          <details key={g.level} open={g.level !== "supported"} className="rounded-md border border-border">
-            <summary className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs font-medium">
-              <span className={cn("[&_svg]:size-3.5", g.cls)}>{g.icon}</span>
-              {g.label} <span className="text-muted">— {g.help}</span>
-            </summary>
-            <ul className="border-t border-border px-3 py-1.5">
-              {g.items.map((i: CompatItem, k) => (
-                <li key={k} className="flex gap-2 py-0.5 text-2xs">
-                  <span className="w-28 shrink-0 font-medium text-muted">{i.area}</span>
-                  <span className="flex-1">{i.message}</span>
-                  {i.count !== undefined && <span className="tabular-nums text-muted">×{i.count}</span>}
-                  {i.page && <span className="text-muted">{i.page}</span>}
-                </li>
-              ))}
-            </ul>
-          </details>
-        ))}
-    </div>
   );
 }
 

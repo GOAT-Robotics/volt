@@ -1,5 +1,6 @@
 import "server-only";
-import { db } from "./db";
+import { db, J } from "./db";
+import type { AssignmentImport, ReviewImport } from "./voltfile/types";
 import { audit } from "./audit";
 import { notify } from "./notify";
 import { HttpError, type Ctx } from "./session";
@@ -152,27 +153,33 @@ export async function reviewInfo(ctx: Ctx, versionId: string, roles: Role[]) {
     !signed &&
     ((st === "APPROVED" && (manage || rolesAllow(roles, "review.approve"))) ||
       (st === "IN_REVIEW" && (manage || (rolesAllow(roles, "project.edit") && (ctx.user.id === r.version.createdById || (r.status === "OPEN" && ctx.user.id === r.submittedById))))));
+  // a review record imported from a .volt file: people and status as the file gives them
+  const imp = J.parse<ReviewImport | null>(r.imported, null);
   return {
     canRecall,
     versionStatus: st,
     review: {
       id: r.id,
-      status: r.status,
+      status: imp?.status ?? r.status,
+      importedFrom: imp?.from ?? null,
       dueDate: r.dueDate?.toISOString() ?? null,
       instructions: r.instructions,
       sequential: r.sequential,
-      submittedBy: submitter?.name ?? "",
-      assignments: r.assignments.map((a) => ({
-        id: a.id,
-        order: a.order,
-        userName: a.userId ? names.get(a.userId) ?? null : null,
-        groupName: a.groupName,
-        canApprove: a.canApprove,
-        decision: a.decision,
-        reason: a.reason,
-        decidedAt: a.decidedAt?.toISOString() ?? null,
-        decidedByName: a.decidedById ? names.get(a.decidedById) ?? null : null,
-      })),
+      submittedBy: imp?.submittedBy.name ?? submitter?.name ?? "",
+      assignments: r.assignments.map((a) => {
+        const ai = J.parse<AssignmentImport | null>(a.imported, null);
+        return {
+          id: a.id,
+          order: a.order,
+          userName: ai ? ai.who?.name ?? null : a.userId ? names.get(a.userId) ?? null : null,
+          groupName: ai ? ai.group : a.groupName,
+          canApprove: a.canApprove,
+          decision: a.decision,
+          reason: a.reason,
+          decidedAt: a.decidedAt?.toISOString() ?? null,
+          decidedByName: ai ? ai.decidedBy?.name ?? null : a.decidedById ? names.get(a.decidedById) ?? null : null,
+        };
+      }),
     },
     canDecide,
     canApprove,

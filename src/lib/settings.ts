@@ -56,6 +56,12 @@ export type WorkspaceSettings = {
    * comment (lower ones are only summarised). instructions: house rules added to the AI prompt.
    */
   aiReview: { enabled: boolean; onSubmit: boolean; useModel: boolean; minLevel: "error" | "warning" | "info"; instructions: string };
+  /**
+   * MCP server (/api/mcp): AI assistants (Claude and other MCP clients) connect with a personal
+   * access token and work as that person. enabled: tokens work at all; allowEdits: tokens may
+   * change working drafts (otherwise read, check and comment only).
+   */
+  mcp: { enabled: boolean; allowEdits: boolean };
 };
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -89,6 +95,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   access: { newMemberRole: "none", projectSharing: "admins" },
   branding: { name: "", address: "", url: "", logo: null },
   aiReview: { enabled: true, onSubmit: true, useModel: true, minLevel: "warning", instructions: "" },
+  mcp: { enabled: true, allowEdits: true },
 };
 
 export function parseSettings(s: string | null | undefined): WorkspaceSettings {
@@ -109,5 +116,6 @@ export function parseSettings(s: string | null | undefined): WorkspaceSettings {
     access: { ...DEFAULT_SETTINGS.access, ...(v.access ?? {}) },
     branding: { ...DEFAULT_SETTINGS.branding, ...(v.branding ?? {}) },
     aiReview: { ...DEFAULT_SETTINGS.aiReview, ...(v.aiReview ?? {}) },
+    mcp: { ...DEFAULT_SETTINGS.mcp, ...(v.mcp ?? {}) },
   };
 }

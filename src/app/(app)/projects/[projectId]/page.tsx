@@ -13,6 +13,7 @@ import type { CompatReport } from "@/core/model";
 import { projectPreview } from "@/lib/og/preview";
 import { previewMetadata } from "@/lib/og/meta";
 import { ProjectView, type ProjectData } from "./ProjectView";
+import type { AssignmentImport, ReviewImport, VersionImport } from "@/lib/voltfile/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ projectId: string }> }): Promise<Metadata> {
   const { projectId } = await params;
@@ -66,6 +67,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const users = new Map((await db.user.findMany({ where: { id: { in: [...uids] } }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u]));
   const nm = (id: string | null | undefined) => (id ? users.get(id)?.name ?? "Unknown" : null);
   const labelOf = new Map(versions.map((v) => [v.id, v.label]));
+  // versions, reviews and people that came from a .volt file
+  const vImp = new Map(versions.map((v) => [v.id, J.parse<VersionImport | null>(v.imported, null)]));
   const canManage = can("project.manage");
   const canRequestSignatures = can("signature.request");
   const canExport = isGuestCtx(ctx) ? ctx.settings.exports.guestCanExport : can("project.export") && (can("project.edit") || ctx.settings.exports.viewerCanExport);
@@ -100,7 +103,10 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       summary: v.summary,
       description: v.description,
       ticket: v.ticket,
-      author: nm(v.createdById) ?? "",
+      author: vImp.get(v.id)?.createdBy?.name ?? nm(v.createdById) ?? "",
+      imported: vImp.get(v.id)
+        ? { status: vImp.get(v.id)!.status, from: vImp.get(v.id)!.statusFrom || vImp.get(v.id)!.server, server: vImp.get(v.id)!.server, file: vImp.get(v.id)!.file, importedAt: vImp.get(v.id)!.importedAt, importedBy: vImp.get(v.id)!.importedBy }
+        : null,
       parentLabel: v.parentId ? labelOf.get(v.parentId) ?? null : null,
       createdAt: v.createdAt.toISOString(),
       updatedAt: v.updatedAt.toISOString(),
@@ -111,21 +117,30 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       endedAt: v.endedAt?.toISOString() ?? null,
       endReason: v.endReason,
       docHash: v.docHash,
-      importId: imports.find((i) => i.versionId === v.id)?.id ?? null,
+      // the file this version was made from (a .volt merged into a version is listed under Attachments)
+      importId: imports.find((i) => i.versionId === v.id && (!/\.volt$/i.test(i.filename) || vImp.get(v.id)))?.id ?? null,
     })),
-    reviews: reviews.map((r) => ({
+    reviews: reviews.map((r) => {
+      const imp = J.parse<ReviewImport | null>(r.imported, null);
+      return {
       id: r.id,
       versionId: r.versionId,
       versionLabel: labelOf.get(r.versionId) ?? "",
-      status: r.status,
+      status: imp?.status ?? r.status,
+      importedFrom: imp?.from ?? null,
       sequential: r.sequential,
       dueDate: r.dueDate?.toISOString() ?? null,
       instructions: r.instructions,
-      submittedBy: nm(r.submittedById) ?? "",
+      submittedBy: imp?.submittedBy.name ?? nm(r.submittedById) ?? "",
       createdAt: r.createdAt.toISOString(),
       closedAt: r.closedAt?.toISOString() ?? null,
-      assignments: r.assignments.map((a) => ({ id: a.id, order: a.order, who: a.userId ? nm(a.userId) ?? "Unknown" : a.groupName ?? a.groupId ?? "Group", isGroup: !a.userId, canApprove: a.canApprove, decision: a.decision, reason: a.reason, decidedBy: nm(a.decidedById), decidedAt: a.decidedAt?.toISOString() ?? null })),
-    })),
+      assignments: r.assignments.map((a) => {
+        const ai = J.parse<AssignmentImport | null>(a.imported, null);
+        if (ai) return { id: a.id, order: a.order, who: ai.who?.name ?? ai.group ?? "Reviewer", isGroup: !ai.who && !!ai.group, canApprove: a.canApprove, decision: a.decision, reason: a.reason, decidedBy: ai.decidedBy?.name ?? null, decidedAt: a.decidedAt?.toISOString() ?? null };
+        return { id: a.id, order: a.order, who: a.userId ? nm(a.userId) ?? "Unknown" : a.groupName ?? a.groupId ?? "Group", isGroup: !a.userId, canApprove: a.canApprove, decision: a.decision, reason: a.reason, decidedBy: nm(a.decidedById), decidedAt: a.decidedAt?.toISOString() ?? null };
+      }),
+      };
+    }),
     signatures: signatures.map((s) => ({
       id: s.id,
       versionId: s.versionId,
@@ -151,6 +166,9 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     attachments: attachments.map((a) => ({ id: a.id, ownerType: a.ownerType, ownerId: a.ownerId, filename: a.filename, mime: a.mime, size: a.size, sha256: a.sha256, uploadedBy: nm(a.userId) ?? "", uploadedById: a.userId, createdAt: a.createdAt.toISOString(), context: a.ownerType === "REVIEW" ? `Review of v${labelOf.get(reviews.find((r) => r.id === a.ownerId)?.versionId ?? "") ?? "?"}` : a.ownerType === "RELEASE" ? `v${labelOf.get(a.ownerId) ?? "?"}` : a.ownerType === "COMMENT" ? "Comment" : "Project" })),
     imports: imports.map((i) => ({ id: i.id, filename: i.filename, sha256: i.sha256, createdAt: i.createdAt.toISOString(), versionLabel: i.versionId ? labelOf.get(i.versionId) ?? null : null, report: J.parse<CompatReport | null>(i.report, null) })),
     eligibleSignatories: canRequestSignatures ? await eligibleSignatories(project.workspaceId, projectId) : [],
+    importedSignatures: versions.flatMap((v) =>
+      (vImp.get(v.id)?.signatures ?? []).map((s, i) => ({ id: `${v.id}:${i}`, versionId: v.id, versionLabel: v.label, name: s.signatory.name, email: full ? s.signatory.email ?? "" : "", purpose: s.purpose, status: s.status, signedAt: s.signedAt, server: s.server, sealValid: s.sealValid, docHash: s.docHash })),
+    ),
   };
   return <ProjectView data={data} initialTab={tab ?? "versions"} />;
 }

@@ -133,7 +133,8 @@ export async function historyOf(versionId: string, limit = 300): Promise<History
         seq: c.seq,
         kind: c.kind,
         message: c.message,
-        author: await nameOf(c.authorId),
+        // imported history (.volt file): the author as named in the file
+        author: (c.externalAuthor && (JSON.parse(c.externalAuthor) as { name?: string }).name) || (await nameOf(c.authorId)),
         createdAt: c.createdAt.toISOString(),
         stats: { added: s.added ?? 0, removed: s.removed ?? 0, changed: s.changed ?? 0, moved: s.moved ?? 0, total: s.total ?? 0 },
         versionId: cur.id,

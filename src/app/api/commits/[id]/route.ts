@@ -13,5 +13,5 @@ export const GET = route<{ id: string }>(async (_req, { params }) => {
   if (!c) throw new HttpError(404, "Commit not found");
   await loadVersion(ctx, c.versionId, { withDoc: false });
   const author = await db.user.findUnique({ where: { id: c.authorId }, select: { name: true } });
-  return { id: c.id, seq: c.seq, kind: c.kind, message: c.message, versionId: c.versionId, parentId: c.parentId, author: author?.name ?? "", createdAt: c.createdAt.toISOString(), docHash: c.docHash, stats: J.parse(c.stats, {}) };
+  return { id: c.id, seq: c.seq, kind: c.kind, message: c.message, versionId: c.versionId, parentId: c.parentId, author: J.parse<{ name?: string } | null>(c.externalAuthor, null)?.name || author?.name || "", createdAt: c.createdAt.toISOString(), docHash: c.docHash, stats: J.parse(c.stats, {}) };
 });

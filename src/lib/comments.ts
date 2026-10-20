@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db, J } from "./db";
 import type { Ctx } from "./session";
 import { isGuestCtx } from "./access";
+import type { ExternalAuthor } from "./voltfile/types";
 
 export const Anchor = z.object({
   type: z.enum(["element", "wire", "text", "region", "point"]),
@@ -16,6 +17,8 @@ export const Anchor = z.object({
 type Row = Awaited<ReturnType<typeof db.comment.findFirstOrThrow>> & { author: { id: string; name: string; isBot?: boolean } };
 
 export function commentDto(c: Row) {
+  // imported from a .volt file: written by someone on another server, imported by c.author
+  const ext = J.parse<ExternalAuthor | null>(c.externalAuthor, null);
   return {
     id: c.id,
     pageId: c.pageId,
@@ -23,7 +26,8 @@ export function commentDto(c: Row) {
     parentId: c.parentId,
     body: c.body,
     status: c.status,
-    author: { id: c.author.id, name: c.author.name, bot: !!c.author.isBot },
+    author: ext ? { id: c.author.id, name: ext.name || "Unknown", bot: !!ext.bot } : { id: c.author.id, name: c.author.name, bot: !!c.author.isBot },
+    imported: ext ? { from: ext.server, email: ext.email ?? null, by: c.author.name } : null,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   };

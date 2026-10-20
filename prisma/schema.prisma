@@ -34,6 +34,27 @@ model User {
   comments       Comment[]
   audit          AuditEvent[]
   loginTokens    LoginToken[]
+  apiTokens      ApiToken[]
+}
+
+/// personal access token for the MCP server (/api/mcp): AI assistants act as this user, in one
+/// workspace. Only the SHA-256 of the token is stored. scope: READ | EDIT
+model ApiToken {
+  id          String    @id @default(cuid())
+  userId      String
+  workspaceId String
+  name        String
+  /// first characters of the token, to recognise it in the list
+  prefix      String
+  tokenHash   String    @unique
+  scope       String    @default("EDIT")
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 /// one-time sign-in link (only the SHA-256 of the token is stored)
@@ -198,6 +219,7 @@ model Variant {
 }
 
 /// status: DRAFT | IN_REVIEW | CHANGES_REQUESTED | APPROVED | REJECTED | SIGNED | RELEASED | SUPERSEDED | WITHDRAWN | OBSOLETE
+///   | IMPORTED (a read-only record that came from a .volt file; `imported` has the status it had there)
 /// variantId: null = main line; otherwise the version belongs to that variant's line
 model Version {
   id          String    @id @default(cuid())
@@ -225,6 +247,9 @@ model Version {
   /// git-like history: the latest commit of this version, and the commit it was started from
   headCommitId String?
   baseCommitId String?
+  /// set when the version came from a .volt file: JSON VersionImport (status it had where it was
+  /// made, source server, lineage keys, author and signature records) — see lib/voltfile
+  imported     String?
   project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   variant     Variant?  @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
@@ -257,6 +282,8 @@ model Commit {
   data      Bytes // gzip JSON document (without the original imported file)
   stats     String   @default("{}") // { added, removed, changed, moved, items: Change[] }
   authorId  String
+  /// commit imported from a .volt file whose author has no account here: JSON {name,email}
+  externalAuthor String?
   createdAt DateTime @default(now())
   version   Version  @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
@@ -418,7 +445,7 @@ model ProjectTemplate {
   @@index([workspaceId, status])
 }
 
-/// status: OPEN | APPROVED | REJECTED | CHANGES_REQUESTED | CANCELLED | RECALLED
+/// status: OPEN | APPROVED | REJECTED | CHANGES_REQUESTED | CANCELLED | RECALLED | IMPORTED (record from a .volt file)
 model Review {
   id            String             @id @default(cuid())
   versionId     String
@@ -428,6 +455,8 @@ model Review {
   sequential    Boolean            @default(false)
   status        String             @default("OPEN")
   commitId      String? // the commit under review (like a pull request head)
+  /// review record imported from a .volt file (never acted on by the workflow): JSON {status, submittedBy, from, keys}
+  imported      String?
   createdAt     DateTime           @default(now())
   closedAt      DateTime?
   version       Version            @relation(fields: [versionId], references: [id], onDelete: Cascade)
@@ -450,6 +479,8 @@ model ReviewAssignment {
   reason      String?
   decidedById String?
   decidedAt   DateTime?
+  /// imported review record: JSON {who, decidedBy} (people from the file)
+  imported    String?
   review      Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
   @@index([reviewId, order])
@@ -470,6 +501,11 @@ model Comment {
   status    String   @default("OPEN")
   mentions  String   @default("[]")
   authorId  String
+  /// imported from a .volt file: space separated "<server key id>/<comment id>" keys the comment had
+  /// on other Volt servers (so a round trip never adds it twice)
+  origin         String?
+  /// author outside this server (imported from a .volt file): JSON {name,email,bot,server}
+  externalAuthor String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)

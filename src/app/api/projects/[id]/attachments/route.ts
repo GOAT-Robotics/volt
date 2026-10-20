@@ -71,7 +71,7 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
   // comments and reviews of closed versions are part of the record
   if (versionId && (ownerType === "COMMENT" || ownerType === "REVIEW")) {
     const v = await db.version.findUnique({ where: { id: versionId }, select: { status: true } });
-    if (!v || !["DRAFT", "CHANGES_REQUESTED", "IN_REVIEW"].includes(v.status)) throw new HttpError(409, "This version is closed — files can no longer be attached to its comments or review");
+    if (!v || !["DRAFT", "CHANGES_REQUESTED", "IN_REVIEW", ...(ownerType === "COMMENT" ? ["IMPORTED"] : [])].includes(v.status)) throw new HttpError(409, "This version is closed — files can no longer be attached to its comments or review");
   }
   // who may attach what
   if (ownerType === "COMMENT") {

@@ -361,6 +361,17 @@ function GeneralTab({ data }: { data: AdminData }) {
           <Textarea rows={4} value={s.aiReview.instructions} onChange={(e) => up("aiReview", { instructions: e.target.value })} maxLength={8000} aria-label="House rules for the AI reviewer" />
         </div>
       </Section>
+      <Section
+        title="AI assistants (MCP)"
+        description="Claude and other assistants that speak the Model Context Protocol connect to /api/mcp with a personal access token (each person creates theirs under Connect AI). They work as that person, with that person's roles and projects; everything they change is in the audit log as made via MCP."
+      >
+        <Row label="MCP server" hint="Off: every token is refused. Tokens are kept and work again when it is turned back on.">
+          <Switch checked={s.mcp.enabled} onCheckedChange={(c) => up("mcp", { enabled: c })} aria-label="MCP server" />
+        </Row>
+        <Row label="Assistants may edit drawings" hint="Change references, component data, wires and numbering in working drafts (never submitted, approved, signed or released versions). Off: read, check and comment only.">
+          <Switch checked={s.mcp.enabled && s.mcp.allowEdits} disabled={!s.mcp.enabled} onCheckedChange={(c) => up("mcp", { allowEdits: c })} aria-label="Assistants may edit drawings" />
+        </Row>
+      </Section>
       <Section title="Editor & compatibility">
         <Row label=".qet format version" hint="Version written into exported .qet files.">
           <Input value={s.qetBaseline} onChange={(e) => up("qetBaseline", e.target.value)} className="w-28 text-right" aria-label="QET baseline" />

@@ -37,6 +37,7 @@ export function ReviewsTab({ data }: { data: ProjectData }) {
             <span className="flex items-center gap-2">
               Review of <span className="font-mono">v{r.versionLabel}</span> <StatusBadge status={r.status} />
               {r.sequential && <Badge>Sequential</Badge>}
+              {r.importedFrom && <Badge tone="accent">At {r.importedFrom} · imported record</Badge>}
             </span>
           }
           description={`Submitted by ${r.submittedBy} ${relTime(r.createdAt)}${r.dueDate ? ` · due ${fmtDate(r.dueDate, false)}` : ""}${r.closedAt ? ` · closed ${fmtDate(r.closedAt)}` : ""}`}
@@ -68,7 +69,7 @@ export function ReviewsTab({ data }: { data: ProjectData }) {
                     <span className="flex items-center gap-2">
                       {a.isGroup ? <Users className="size-3.5 text-muted" /> : <Avatar name={a.who} size={18} />}
                       {a.who}
-                      {a.isGroup && <Badge>Entra group</Badge>}
+                      {a.isGroup && <Badge>{r.importedFrom ? "Group" : "Entra group"}</Badge>}
                     </span>
                   </td>
                   <td className="text-2xs text-muted">{a.canApprove ? "Approver" : "Reviewer"}</td>
@@ -110,6 +111,8 @@ export function SignaturesTab({ data }: { data: ProjectData }) {
       });
     }
   };
+  const imported = data.importedSignatures.length > 0 && <ImportedSignatures data={data} />;
+  if (!data.signatures.length && imported) return <div className="space-y-4">{imported}</div>;
   if (!data.signatures.length)
     return (
       <Empty icon={<FileSignature />} title="No signatures requested">
@@ -119,6 +122,7 @@ export function SignaturesTab({ data }: { data: ProjectData }) {
   const byVersion = [...new Set(data.signatures.map((s) => s.versionId))];
   return (
     <div className="space-y-4">
+      {imported}
       {byVersion.map((vid) => {
         const list = data.signatures.filter((s) => s.versionId === vid);
         return (
@@ -231,13 +235,61 @@ export function SignaturesTab({ data }: { data: ProjectData }) {
   );
 }
 
+/** signature records that came with versions imported from a .volt file: shown, never counted */
+function ImportedSignatures({ data }: { data: ProjectData }) {
+  const byVersion = [...new Set(data.importedSignatures.map((s) => s.versionId))];
+  return (
+    <>
+      {byVersion.map((vid) => {
+        const list = data.importedSignatures.filter((s) => s.versionId === vid);
+        return (
+          <Section
+            key={vid}
+            title={
+              <span className="flex items-center gap-2">
+                Signature record of <span className="font-mono">v{list[0].versionLabel}</span> <Badge tone="accent">Imported</Badge>
+              </span>
+            }
+            description={`Signed at ${list[0].server}, imported with the version. A record only: it does not count here — sign again in this project to release.`}
+          >
+            <ul className="divide-y divide-border">
+              {list.map((s) => (
+                <li key={s.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                  <Avatar name={s.name} size={20} />
+                  <span className="text-xs font-medium">{s.name}</span>
+                  {s.email && <span className="text-2xs text-muted">{s.email}</span>}
+                  <StatusBadge status={s.status} />
+                  <span className="text-2xs text-muted">{s.purpose}</span>
+                  <span className="ml-auto flex items-center gap-1 text-2xs text-muted">
+                    {s.sealValid === true && (
+                      <span className="flex items-center gap-1 text-success" title="The signature's evidence seal verifies with the key that sealed the file">
+                        <ShieldCheck className="size-3.5" /> Seal verified
+                      </span>
+                    )}
+                    {s.sealValid === false && (
+                      <span className="flex items-center gap-1 text-danger">
+                        <ShieldAlert className="size-3.5" /> Seal does not verify
+                      </span>
+                    )}
+                    {s.signedAt && <span className="ml-2">{fmtDate(s.signedAt)}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        );
+      })}
+    </>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Activity                                                             */
 /* ------------------------------------------------------------------ */
 
 export function ActivityTab({ data }: { data: ProjectData }) {
   const [filter, setFilter] = React.useState("all");
-  const groups: Record<string, string[]> = { all: [], versions: ["version.", "review.", "signature."], comments: ["comment."], exports: ["project.export"], project: ["project."] };
+  const groups: Record<string, string[]> = { all: [], versions: ["version.", "review.", "signature.", "mcp."], comments: ["comment.", "volt.merge"], exports: ["project.export"], project: ["project."] };
   const list = data.activity.filter((e) => filter === "all" || groups[filter].some((g) => e.type.startsWith(g)));
   if (!data.activity.length) return <Empty icon={<Activity />} title="No activity yet">Edits, reviews, signatures, exports and member changes are recorded here.</Empty>;
   return (
@@ -451,7 +503,7 @@ export function AttachmentsTab({ data }: { data: ProjectData }) {
   return (
     <div className="space-y-4">
       {data.imports.length > 0 && (
-        <Section title="Imported source files" description="Original files are kept unchanged with their SHA-256 and compatibility report.">
+        <Section title="Imported source files" description="Original files (.qet projects, .volt files and reviewed copies) are kept unchanged with their SHA-256 and import report.">
           <ul className="divide-y divide-border">
             {data.imports.map((i) => (
               <li key={i.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
@@ -464,7 +516,7 @@ export function AttachmentsTab({ data }: { data: ProjectData }) {
                 </div>
                 {i.report && (
                   <Button size="xs" variant="ghost" onClick={() => setReport(i)}>
-                    <ClipboardCheck /> Compatibility report
+                    <ClipboardCheck /> {/\.volt$/i.test(i.filename) ? "Import report" : "Compatibility report"}
                   </Button>
                 )}
                 <Button size="xs" variant="ghost" asChild>
@@ -474,7 +526,7 @@ export function AttachmentsTab({ data }: { data: ProjectData }) {
                 </Button>
                 <Button size="xs" asChild>
                   <a href={`/api/projects/${pid}/imports/${i.id}/original`}>
-                    <Download /> Original .qet
+                    <Download /> Original {/\.volt$/i.test(i.filename) ? ".volt" : ".qet"}
                   </a>
                 </Button>
               </li>
@@ -560,7 +612,11 @@ export function AttachmentsTab({ data }: { data: ProjectData }) {
       )}
       {report?.report && (
         <Dialog open onOpenChange={(o) => !o && setReport(null)}>
-          <DialogContent title={`Compatibility report — ${report.filename}`} description={`${report.report.pageCount} pages · ${report.report.elementCount} components · ${report.report.wireCount} wires · format ${report.report.qetVersion}`} wide="xl">
+          <DialogContent
+            title={`${report.report.qetVersion.startsWith("volt") ? "Import report" : "Compatibility report"} — ${report.filename}`}
+            description={report.report.pageCount ? `${report.report.pageCount} pages · ${report.report.elementCount} components · ${report.report.wireCount} wires · format ${report.report.qetVersion}` : `Reviews merged from ${report.filename} · ${fmtDate(report.createdAt)}`}
+            wide="xl"
+          >
             <CompatReportView report={report.report} />
           </DialogContent>
         </Dialog>

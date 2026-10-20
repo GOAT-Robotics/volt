@@ -30,9 +30,16 @@ const ALLOWED: Record<string, string> = {
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   step: "application/step",
   stp: "application/step",
+  volt: "application/vnd.volt+zip",
 };
 
 export const ALLOWED_EXTENSIONS = Object.keys(ALLOWED);
+
+/** canonical content type for a file name, or null when the type is not allowed */
+export function allowedMime(filename: string): string | null {
+  const ext = filename.includes(".") ? filename.split(".").pop()!.toLowerCase() : "";
+  return ALLOWED[ext] ?? null;
+}
 
 /** Validates an uploaded file (size, extension + declared type) and returns normalized metadata. */
 export async function readUpload(f: File, max = MAX_ATTACHMENT) {

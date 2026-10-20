@@ -10,7 +10,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { docHash, scheduleReindex, withStoredSource } from "@/lib/versioning";
-import { applyOps, type LiveOp } from "@/core/live-ops";
+import { applyOps, diffOps, type LiveOp } from "@/core/live-ops";
 import { randomBytes } from "node:crypto";
 import type { Doc, Pt } from "@/core/model";
 import { liveHooks } from "./hooks";
@@ -65,6 +65,7 @@ if (!g.__voltLiveExit) {
 liveHooks.flush = (id) => flushVersion(id);
 liveHooks.readonly = (id, reason) => notifyVersion(id, { type: "readonly", reason });
 liveHooks.disable = (workspaceId) => closeWorkspace(workspaceId);
+liveHooks.edit = (versionId, by, change) => serverEdit(versionId, by, change);
 
 const sse = (msg: unknown) => `data: ${JSON.stringify(msg)}\n\n`;
 const publicPeer = (c: Client): Peer => {
@@ -181,6 +182,26 @@ export function submitOps(versionId: string, clientId: string, userId: string, b
   broadcast(room, { type: "ops", seq: room.seq, clientId, batchId, ops, by: client.name, color: client.color });
   markDirty(room);
   return { seq: room.seq };
+}
+
+/**
+ * A change made on the server (an AI assistant via MCP): ordered like any client's batch and sent
+ * to everyone in the room, who see it arrive as from "<name>". Null when the version has no room.
+ */
+export function serverEdit(versionId: string, by: { userId: string; name: string }, change: (doc: Doc) => Doc): { ops: number } | null {
+  const room = rooms.get(versionId);
+  if (!room || room.closing) return null;
+  // the caller checked that the version is a working version and the person may edit it (a room
+  // opened by viewers only is not marked editable yet)
+  const next = change(room.doc);
+  const ops = diffOps(room.doc, next);
+  if (!ops.length) return { ops: 0 };
+  applyOps(room.doc, ops);
+  room.seq++;
+  room.lastEditor = by.userId;
+  broadcast(room, { type: "ops", seq: room.seq, clientId: "server", batchId: randomBytes(8).toString("hex"), ops, by: by.name, color: "#7c3aed" });
+  markDirty(room);
+  return { ops: ops.length };
 }
 
 /** Cursor, selection, sheet, viewport, drag and mode of one client (only the fields that changed). */

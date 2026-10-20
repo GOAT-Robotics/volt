@@ -69,7 +69,13 @@ export async function loadVersion(ctx: Ctx, versionId: string, opts: { withDoc?:
   const status = version.status as VersionStatus;
   let editable = EDITABLE_STATUSES.includes(status) && can("project.edit") && project.state === "ACTIVE";
   let reason: string | undefined;
-  if (!EDITABLE_STATUSES.includes(status)) reason = status === "IN_REVIEW" ? "Frozen for review — start a new version to make changes" : `This version is ${status.toLowerCase().replace("_", " ")} and immutable`;
+  if (!EDITABLE_STATUSES.includes(status))
+    reason =
+      status === "IN_REVIEW"
+        ? "Frozen for review — start a new version to make changes"
+        : status === "IMPORTED"
+          ? "Imported from a .volt file — comment on it, or start a new version to make changes"
+          : `This version is ${status.toLowerCase().replace("_", " ")} and immutable`;
   else if (!can("project.edit")) reason = "You have view access only";
   else if (project.state !== "ACTIVE") ((reason = "Project is archived"), (editable = false));
   const isGuest = !inWorkspace;

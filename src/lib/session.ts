@@ -31,21 +31,29 @@ export class HttpError extends Error {
 export const getCtx = cache(async (): Promise<Ctx | null> => {
   const s = await auth();
   if (!s?.uid) return null;
-  const user = await db.user.findUnique({ where: { id: s.uid } });
+  const jar = await cookies();
+  return ctxForUser(s.uid, { workspaceId: jar.get("volt_ws")?.value, authTime: s.authTime });
+});
+
+/**
+ * Context for a user (session or personal access token). `strict`: the user must still belong to
+ * `workspaceId` (tokens are issued for one workspace); otherwise their first workspace is used.
+ */
+export async function ctxForUser(userId: string, opts: { workspaceId?: string; authTime: number; strict?: boolean }): Promise<Ctx | null> {
+  const user = await db.user.findUnique({ where: { id: userId } });
   if (!user || user.disabled) return null;
   // external access ends at its end date, also for sessions that are still open
   if (user.external && user.accessUntil && user.accessUntil.getTime() < Date.now()) return null;
   await ensureDefaultWorkspace();
   await loadCustomRoles();
   const mems = await db.membership.findMany({ where: { userId: user.id }, include: { workspace: true }, orderBy: { createdAt: "asc" } });
-  const jar = await cookies();
-  const wanted = jar.get("volt_ws")?.value;
-  let mem = mems.find((m) => m.workspaceId === wanted) ?? mems[0];
+  const wanted = opts.workspaceId;
+  let mem = mems.find((m) => m.workspaceId === wanted) ?? (opts.strict ? undefined : mems[0]);
   const projectAccess = (await db.projectMember.count({ where: { userId: user.id } })) > 0;
   let workspace = mem?.workspace;
   if (!workspace) {
     // guest with project-level invites only
-    const pm = await db.projectMember.findFirst({ where: { userId: user.id }, include: { project: { include: { workspace: true } } } });
+    const pm = await db.projectMember.findFirst({ where: { userId: user.id, ...(opts.strict ? { project: { workspaceId: wanted } } : {}) }, include: { project: { include: { workspace: true } } } });
     if (!pm) return null;
     workspace = pm.project.workspace;
   }
@@ -58,10 +66,10 @@ export const getCtx = cache(async (): Promise<Ctx | null> => {
     settings,
     roles: mem ? parseRoles(mem.roles) : ["GUEST"],
     projectAccess,
-    authTime: s.authTime,
+    authTime: opts.authTime,
     workspaces: mems.map((m) => ({ id: m.workspace.id, name: m.workspace.name, slug: m.workspace.slug })),
   };
-});
+}
 
 export async function requireCtx(): Promise<Ctx> {
   const c = await getCtx();

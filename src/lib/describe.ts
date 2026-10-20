@@ -29,6 +29,16 @@ export function describeAudit(type: string, data: Record<string, unknown>): stri
     case "version.commit":
       if (data.seq) parts.push(`#${data.seq}`);
       if (data.message) parts.push(`“${String(data.message).slice(0, 80)}”`);
+      if (data.via) parts.push(String(data.via).replace(/^mcp: /, "via AI assistant: "));
+      break;
+    case "mcp.edit":
+      if (data.summary) parts.push(String(data.summary).split("\n")[0].slice(0, 160));
+      if (data.token) parts.push(`(token “${data.token}”)`);
+      break;
+    case "token.create":
+    case "token.revoke":
+      if (data.name) parts.push(`“${data.name}”`);
+      if (data.scope) parts.push(data.scope === "READ" ? "read only" : "read & edit");
       break;
     case "version.recall":
       if (data.from) parts.push(`${String(data.from).toLowerCase().replace("_", " ")} → draft`);
@@ -51,11 +61,22 @@ export function describeAudit(type: string, data: Record<string, unknown>): stri
       break;
     case "project.export":
       if (data.format) parts.push(String(data.format).toUpperCase());
+      if (data.scope === "project") parts.push("whole project");
+      if (data.reviews === false) parts.push("without reviews");
       break;
     case "project.import":
       if (data.filename) parts.push(String(data.filename));
-      if (data.pages) parts.push(`${data.pages} pages`);
+      if (data.format === "volt" && data.server) parts.push(`from ${data.server}`);
+      if (data.format === "volt" && data.versions) parts.push(`${data.versions} version${data.versions === 1 ? "" : "s"}`);
+      else if (data.pages) parts.push(`${data.pages} pages`);
       break;
+    case "volt.merge": {
+      if (data.server) parts.push(`from ${data.server}`);
+      const n = Number(data.threads ?? 0) + Number(data.replies ?? 0);
+      parts.push(`${n} comment${n === 1 ? "" : "s"}${data.decisions ? `, ${data.decisions} review decision${data.decisions === 1 ? "" : "s"}` : ""}`);
+      if (data.filename) parts.push(String(data.filename));
+      break;
+    }
     case "project.member":
       if (data.user) parts.push(`${data.action ?? ""} ${data.user}`.trim());
       if (data.roles) parts.push(String(data.roles).toLowerCase());

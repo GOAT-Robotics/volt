@@ -60,6 +60,7 @@ const Settings = z.object({
   aiReview: z
     .object({ enabled: z.boolean(), onSubmit: z.boolean(), useModel: z.boolean(), minLevel: z.enum(["error", "warning", "info"]), instructions: z.string().max(8000) })
     .default({ enabled: true, onSubmit: true, useModel: true, minLevel: "warning", instructions: "" }),
+  mcp: z.object({ enabled: z.boolean(), allowEdits: z.boolean() }).default({ enabled: true, allowEdits: true }),
 });
 
 export const PUT = route(async (req) => {

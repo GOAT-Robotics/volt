@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FolderKanban, Library, Inbox, Search, Settings, Moon, Sun, Monitor, LogOut, ChevronsUpDown, ScrollText } from "lucide-react";
+import { FolderKanban, Library, Inbox, Search, Settings, Moon, Sun, Monitor, LogOut, ChevronsUpDown, ScrollText, Bot } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Avatar, TooltipProvider } from "@/components/ui/misc";
@@ -11,7 +11,7 @@ import { Toaster } from "sonner";
 import { LogoMark } from "@/components/brand/Logo";
 import { signOutAction } from "@/app/actions/auth";
 
-export type ShellUser = { name: string; email: string; roles: string[]; library?: boolean; isAdmin: boolean; workspace: string; workspaces: { id: string; name: string }[]; workspaceId: string };
+export type ShellUser = { name: string; email: string; roles: string[]; library?: boolean; isAdmin: boolean; workspace: string; workspaces: { id: string; name: string }[]; workspaceId: string; /** the MCP server is on: "Connect AI" */ mcp?: boolean };
 
 export function AppShell({ user, children, inboxCount }: { user: ShellUser; children: React.ReactNode; inboxCount: number }) {
   const path = usePathname();
@@ -20,6 +20,7 @@ export function AppShell({ user, children, inboxCount }: { user: ShellUser; chil
     ...(user.library === false ? [] : [{ href: "/library", label: "Library", icon: <Library /> }]),
     { href: "/reviews", label: "My reviews", icon: <Inbox />, badge: inboxCount },
     { href: "/search", label: "Search", icon: <Search /> },
+    ...(user.mcp ? [{ href: "/connect", label: "Connect AI", icon: <Bot /> }] : []),
     ...(user.isAdmin ? [{ href: "/admin", label: "Administration", icon: <Settings /> }, { href: "/admin/audit", label: "Audit log", icon: <ScrollText /> }] : []),
   ];
   return (

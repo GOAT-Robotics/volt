@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Image as ImageIcon, FileCode2, FileDown, PenTool, Loader2, ClipboardList } from "lucide-react";
+import { FileText, Image as ImageIcon, FileCode2, FileDown, PenTool, Loader2, ClipboardList, FileBox } from "lucide-react";
 import { zipSync, strToU8 } from "fflate";
 import { useEditor } from "../../store";
 import { useEditorUI } from "../context";
@@ -24,7 +24,7 @@ import type { Doc, Page } from "@/core/model";
 import type { Painter } from "@/core/render/painter";
 import { rasterizeSvg } from "../logoUpload";
 
-type Fmt = "pdf" | "svg" | "png" | "qet" | "dxf" | "bom";
+type Fmt = "pdf" | "svg" | "png" | "qet" | "dxf" | "bom" | "volt";
 const FORMATS: { id: Fmt; label: string; icon: React.ReactNode; desc: string }[] = [
   { id: "pdf", label: "PDF", icon: <FileText />, desc: "Vector, multi-page, print-ready" },
   { id: "svg", label: "SVG", icon: <PenTool />, desc: "Vector, one file per page" },
@@ -32,6 +32,7 @@ const FORMATS: { id: Fmt; label: string; icon: React.ReactNode; desc: string }[]
   { id: "qet", label: ".qet", icon: <FileCode2 />, desc: "Editable project file" },
   { id: "dxf", label: "DXF", icon: <FileDown />, desc: "CAD exchange (R12), per page" },
   { id: "bom", label: "BOM", icon: <ClipboardList />, desc: "Bill of materials: Excel, CSV, PDF" },
+  { id: "volt", label: ".volt", icon: <FileBox />, desc: "Share for review, with comments" },
 ];
 
 const safe = (s: string) => s.replace(/[^\w.-]+/g, "_").replace(/_+/g, "_").slice(0, 80) || "export";
@@ -55,6 +56,8 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
   const [markup, setMarkup] = useState(false);
   const [meta, setMeta] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [voltReviews, setVoltReviews] = useState(true);
+  const [voltFiles, setVoltFiles] = useState(true);
   const sorted = useMemo(() => [...doc.pages].filter((p) => !p.archived).sort((a, b) => a.order - b.order), [doc.pages]);
   const pages = useMemo(() => {
     if (range === "current") return sorted.filter((p) => p.id === pageId);
@@ -124,7 +127,28 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
     }
   };
 
+  /** .volt: built and sealed on the server from the saved version */
+  const runVolt = async () => {
+    if (!v) return;
+    setBusy(true);
+    try {
+      if (v.editable) await ui.saveNow();
+      const res = await fetch(`/api/versions/${v.versionId}/export.volt?reviews=${voltReviews ? 1 : 0}&files=${voltFiles ? 1 : 0}`);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+      const cd = res.headers.get("content-disposition") ?? "";
+      const star = /filename\*=UTF-8''([^;]+)/i.exec(cd)?.[1];
+      downloadBlob(await res.blob(), star ? decodeURIComponent(star) : `${safe(v.projectName)}_v${safe(v.label)}.volt`);
+      ui.toast("Export ready");
+      onClose();
+    } catch (e) {
+      ui.toast(`Export failed: ${(e as Error).message}`, { tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const run = async () => {
+    if (fmt === "volt") return runVolt();
     if (!pages.length) return ui.toast("No pages selected", { tone: "error" });
     setBusy(true);
     try {
@@ -196,8 +220,8 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent title="Export" description={v ? `Version ${v.label} · ${v.status.replace("_", " ").toLowerCase()}` : undefined} wide>
-        <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
-          {FORMATS.map((f) => (
+        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
+          {FORMATS.filter((f) => f.id !== "volt" || v).map((f) => (
             <button
               key={f.id}
               onClick={() => setFmt(f.id)}
@@ -210,7 +234,20 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
             </button>
           ))}
         </div>
-        {fmt !== "qet" ? (
+        {fmt === "volt" ? (
+          <div className="mt-4 space-y-2">
+            <p className="text-xs text-muted">
+              This version in one sealed file. The reviewer imports it into their Volt (Projects → Import), comments, and exports their copy back; import that here and choose <b>Merge reviews back</b> to get their comments on v{v?.label}.
+            </p>
+            <label className="flex items-center gap-2 text-xs">
+              <Checkbox checked={voltReviews} onCheckedChange={(x) => setVoltReviews(!!x)} /> Include comments, review decisions and signature records
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <Checkbox checked={voltFiles} onCheckedChange={(x) => setVoltFiles(!!x)} /> Include attachments and component datasheets
+            </label>
+            <p className="text-2xs text-subtle">The whole project with every version: project page → Share → Download project as .volt.</p>
+          </div>
+        ) : fmt !== "qet" ? (
           <div className="mt-4 grid grid-cols-2 gap-3">
             <Field label="Pages">
               <div className="flex gap-1">
@@ -306,7 +343,7 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={run} disabled={busy || sourcePending}>
+          <Button variant="primary" onClick={run} disabled={busy || (fmt !== "volt" && sourcePending)}>
             {busy ? <Loader2 className="animate-spin" /> : <FileDown />} Export {FORMATS.find((f) => f.id === fmt)?.label}
           </Button>
         </DialogFooter>

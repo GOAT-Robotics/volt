@@ -18,7 +18,7 @@ Prisma 6 + SQLite (`prisma/schema.prisma`), Auth.js v5 (Entra ID + dev credentia
   `render/*` (`drawPage`, `drawElement`, `pageToSvg`, `exportPdf`, `SvgPainter`, `approxMeasure`, `CanvasPainter`), `diff.ts`, `validate.ts`, `numbering.ts`, `blocks.ts`, `stable-json.ts`.
 - The diagram editor (`src/editor/**`, route `src/app/(editor)/projects/[projectId]/v/[versionId]`) is owned by the lead — don't edit it.
 - Editor deep link: `/projects/{pid}/v/{vid}?page={pageId}&el={elementId}` focuses an element.
-- Version statuses: DRAFT, IN_REVIEW, CHANGES_REQUESTED, APPROVED, REJECTED, SIGNED, RELEASED, SUPERSEDED, WITHDRAWN. Editable only in DRAFT/CHANGES_REQUESTED.
+- Version statuses: DRAFT, IN_REVIEW, CHANGES_REQUESTED, APPROVED, REJECTED, SIGNED, RELEASED, SUPERSEDED, WITHDRAWN, OBSOLETE, IMPORTED (read-only record from a .volt file; takes comments). Editable only in DRAFT/CHANGES_REQUESTED.
 - Library element ids used in docs: `lib:{libraryElementId}@{revision}` with `def.source = { libraryElementId, revision, status }`.
 - Dev servers: never use the default `.next`. Run with a private dist dir + port, e.g.
   `NEXT_DIST_DIR=.next-w PORT=3101 npx next dev -p 3101` (agent W) or `NEXT_DIST_DIR=.next-l npx next dev -p 3102` (agent L).
@@ -53,3 +53,20 @@ Prisma 6 + SQLite (`prisma/schema.prisma`), Auth.js v5 (Entra ID + dev credentia
 | POST `/api/versions/{id}/export-log` | `{ format, pages, markup }` | `{ ok }` (audit `project.export`) |
 | GET `/api/style-templates/default` | | `{ id, name, version, styles }` |
 | GET `/api/notifications` / POST `{ ids? , all? }` | | `{ items, unread }` / `{ ok }` |
+
+## MCP server (docs/MCP.md)
+| Method & path | Request | Response |
+|---|---|---|
+| POST `/api/mcp` | JSON-RPC 2.0 (MCP Streamable HTTP), `Authorization: Bearer volt_pat_…` | JSON-RPC response; 202 for notifications; 401 + `WWW-Authenticate: Bearer` without a valid token |
+| GET `/api/tokens` | | `{ tokens: { id, name, prefix, scope: READ\|EDIT, expiresAt, lastUsedAt, createdAt, expired }[] }` (mine, current workspace) |
+| POST `/api/tokens` | `{ name, scope: READ\|EDIT, days: number \| null }` | `{ token /* shown once */, ...tokenDto }` |
+| DELETE `/api/tokens/{id}` | | `{ ok }` (owner or workspace admin) |
+
+## .volt files (docs/VOLT_FORMAT.md)
+| Method & path | Request | Response |
+|---|---|---|
+| GET `/api/projects/{id}/export.volt?reviews=0&history=0&files=0` | | sealed `.volt` of the whole project (`application/vnd.volt+zip`); parts on by default |
+| GET `/api/versions/{id}/export.volt?reviews=0&files=0` | | sealed `.volt` of one version |
+| POST `/api/volt/inspect` | multipart `file` | `VoltInspection` (`src/lib/voltfile/types.ts`): seal state, versions and what they import as, import report, merge candidates. Stores nothing |
+| POST `/api/volt/import` | multipart `file, mode=new, name, number?, folderId?, tags (JSON)` | `{ id, versionId, importId }` |
+| POST `/api/volt/import` | multipart `file, mode=merge, targets (JSON version ids)` | `{ merged: { projectId, versionId, label, threads, replies, decisions, files }[] }` |

@@ -11,6 +11,7 @@ const MAP: Record<string, [string, Tone]> = {
   SUPERSEDED: ["Superseded", "neutral"],
   WITHDRAWN: ["Withdrawn", "danger"],
   OBSOLETE: ["Obsolete", "neutral"],
+  IMPORTED: ["Imported", "accent"],
   RECALLED: ["Recalled", "warning"],
   ARCHIVED: ["Archived", "neutral"],
   ACTIVE: ["Active", "success"],

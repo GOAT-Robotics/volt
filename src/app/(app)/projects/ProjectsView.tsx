@@ -155,7 +155,7 @@ export function ProjectsView(p: {
                   ) : undefined
                 }
               >
-                {p.canCreate ? "Start from a blank drawing or a project template, or import an existing .qet file." : "You can see a project once a workspace admin gives you access. Ask your Volt admin to add you."}
+                {p.canCreate ? "Start from a blank drawing or a project template, or import a .volt or QElectroTech .qet project file." : "You can see a project once a workspace admin gives you access. Ask your Volt admin to add you."}
               </Empty>
             )
           ) : (

@@ -21,6 +21,8 @@ type C = {
   body: string;
   status: string;
   author: { id: string; name: string; bot?: boolean };
+  /** came from a .volt file: written on another server, imported by `by` */
+  imported?: { from: string; email: string | null; by: string } | null;
   createdAt: string;
 };
 
@@ -37,6 +39,8 @@ type ReviewInfo = {
   review: {
     id: string;
     status: string;
+    /** a review record imported from a .volt file: where it took place */
+    importedFrom?: string | null;
     dueDate: string | null;
     instructions: string;
     sequential: boolean;
@@ -177,7 +181,7 @@ function ReviewBox({ info, reload }: { info: ReviewInfo; reload: () => void }) {
   return (
     <div className="border-b border-border bg-panel-2 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-semibold">Review</span>
+        <span className="text-xs font-semibold">Review{r.importedFrom ? <span className="font-normal text-muted"> at {r.importedFrom}</span> : null}</span>
         <StatusBadge status={r.status} />
       </div>
       {r.instructions && <p className="mb-2 whitespace-pre-wrap text-2xs text-muted">{r.instructions}</p>}
@@ -342,6 +346,13 @@ function Msg({ c }: { c: C }) {
             <Badge tone="purple" className="!h-4">
               AI
             </Badge>
+          )}
+          {c.imported && (
+            <span title={`${c.imported.email ? `${c.imported.email} · ` : ""}from ${c.imported.from} · imported by ${c.imported.by}`}>
+              <Badge tone="accent" className="!h-4">
+                {c.imported.from}
+              </Badge>
+            </span>
           )}
           <span className="text-2xs text-subtle" title={fmtDate(c.createdAt)}>
             {relTime(c.createdAt)}

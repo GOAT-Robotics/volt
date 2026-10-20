@@ -14,7 +14,8 @@ export type NotifyType =
   | "library.approval"
   | "ai.review"
   | "version.recalled"
-  | "variant.created";
+  | "variant.created"
+  | "review.imported";
 
 /** In-app notification + optional email + optional Teams webhook. Never throws. */
 export async function notify(userIds: string[], n: { type: NotifyType; title: string; body?: string; link?: string; workspaceId?: string }) {
