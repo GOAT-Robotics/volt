@@ -189,6 +189,16 @@ export function positionOf(doc: Doc, page: Page, at: { cell?: string; x?: number
   if (typeof at.x === "number" && typeof at.y === "number") return snap(doc, { x: at.x, y: at.y });
   throw new AddressError("Give a position: cell (e.g. 3C) or x and y");
 }
+/** the area of a border cell ("3C"): its top-left and bottom-right corners */
+export function cellArea(page: Page, cell: string): { a: Pt; b: Pt } {
+  const m = /^\s*(\d+)\s*([A-Za-z])\s*$/.exec(cell);
+  if (!m) throw new AddressError(`Cell "${cell}" — write column number then row letter, e.g. 3C`);
+  const b = page.border;
+  const hx = b.showRows ? b.headerW : 0, hy = b.showCols ? b.headerH : 0;
+  const col = Number(m[1]), row = m[2].toUpperCase().charCodeAt(0) - 65;
+  if (col < 1 || col > b.cols || row < 0 || row >= b.rows) throw new AddressError(`Cell ${cell} is outside the sheet (columns 1–${b.cols}, rows A–${String.fromCharCode(64 + b.rows)})`);
+  return { a: { x: hx + (col - 1) * b.colW, y: hy + row * b.rowH }, b: { x: hx + col * b.colW, y: hy + (row + 1) * b.rowH } };
+}
 const snap = (doc: Doc, p: Pt): Pt => {
   const g = doc.grid?.size || 10;
   return { x: Math.round((p.x - 5) / g) * g + 5, y: Math.round((p.y - 5) / g) * g + 5 };
@@ -265,7 +275,12 @@ export function componentsText(doc: Doc, o: { page?: Page; query?: string; limit
   else list = list.filter((x) => x.e.info.label || !isSplice(x.def));
   const limit = o.limit ?? 300;
   const head = "reference | page·cell | symbol [category] | data | pins | id";
-  const rows = list.slice(0, limit).map((x) => `${refOf(doc, x)}${x.e.refLocked ? " (locked)" : ""} | ${sheetNo(doc, x.page)}·${cell(doc, x.page, x.e) || "?"} | ${symbolText(x.def)} | ${infoText(x.e) || "-"} | ${x.def?.pins.map((p) => pinLabel(p, x.def)).join(",") || "-"} | ${short(x.e.id)}`);
+  const byId = new Map(allElements(doc).map((x) => [x.e.id, x]));
+  const mated = (x: Located) => {
+    const o = x.e.mate ? byId.get(x.e.mate.id) : undefined;
+    return o ? ` (mated ↔ ${refOf(doc, o)}${o.page !== x.page ? `@${sheetNo(doc, o.page)}` : ""})` : "";
+  };
+  const rows = list.slice(0, limit).map((x) => `${refOf(doc, x)}${x.e.refLocked ? " (locked)" : ""}${mated(x)} | ${sheetNo(doc, x.page)}·${cell(doc, x.page, x.e) || "?"} | ${symbolText(x.def)} | ${infoText(x.e) || "-"} | ${x.def?.pins.map((p) => pinLabel(p, x.def)).join(",") || "-"} | ${short(x.e.id)}`);
   return [`${list.length} component${list.length === 1 ? "" : "s"}${list.length > limit ? ` (first ${limit}; narrow with page or query)` : ""}${!q && splices ? `; ${splices} wire splices not listed` : ""}. "→K1" = a contact or part linked to device K1.`, head, ...rows].join("\n");
 }
 
@@ -316,6 +331,18 @@ export function componentText(doc: Doc, parts: Located[]): string {
     out.push(`  at x=${x.e.x} y=${x.e.y}, rotation ${x.e.rot * 90}°${x.e.mirror ? ", mirrored" : ""}`);
     const info = Object.entries(x.e.info).filter(([k, v]) => !HIDDEN_INFO.has(k) && v);
     if (info.length) out.push(`  data: ${info.map(([k, v]) => `${k}=${v}`).join("; ")}`);
+    const flags = [x.e.locked && "locked in place", x.e.hidden && "hidden", x.e.scale && x.e.scale !== 1 && `size ${Math.round(x.e.scale * 100)} %`].filter(Boolean);
+    if (flags.length) out.push(`  ${flags.join(", ")}`);
+    if (x.e.mate) {
+      const o = idx.get(x.e.mate.id);
+      out.push(`  mated with ${o ? `${refOf(doc, o)} on page ${sheetNo(doc, o.page)}` : "a missing component"} (this side ${x.e.mate.gender}; pins connect by number)`);
+    }
+    if (isReport(x.def)) {
+      const ls = (x.e.links ?? []).map((id) => idx.get(id)).filter((o): o is NonNullable<typeof o> => !!o);
+      out.push(`  off-page arrow (${x.def!.linkType === "next_report" ? "going" : "coming"}): ${ls.length ? `linked to ${ls.map((o) => `${refOf(doc, o)}@${sheetNo(doc, o.page)}·${cell(doc, o.page, o.e) || "?"}`).join(", ")}` : "NOT LINKED — the conductor ends here"}`);
+    }
+    if (x.e.group) out.push(`  part of block "${x.e.group.name}" rev ${x.e.group.revision} (${x.e.group.mode})`);
+    if (x.def?.source?.libraryElementId) out.push(`  symbol from the library: ${x.def.source.libraryElementId} rev ${x.def.source.revision ?? "?"}`);
     for (const pin of x.def?.pins ?? []) {
       const net = netOfPin.get(`p:${x.e.id}/${pin.id}`) ?? netOfPin.get(`${x.e.id}/${pin.id}`);
       const others = net

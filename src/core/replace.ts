@@ -9,7 +9,8 @@ import { ensureDef, ensureInstanceTexts, refreshAttached } from "./ops";
 
 function mapPins(from: ElementDef, to: ElementDef, used: string[]): Map<string, string> {
   const m = new Map<string, string>();
-  const free = to.pins.filter((p) => !used.includes(p.id));
+  // every pin of the new symbol is available (its ids may coincide with the old symbol's: QET "t0", "t1" …)
+  const free = [...to.pins];
   const take = (old: PinDef, pick: (p: PinDef) => boolean) => {
     const p = free.find(pick);
     if (!p) return false;

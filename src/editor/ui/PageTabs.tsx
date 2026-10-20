@@ -6,56 +6,10 @@ import { useEditorUI } from "./context";
 import { runCommand } from "./commands";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { cn } from "@/lib/utils";
-import { uid } from "@/core/ids";
-import type { Doc } from "@/core/model";
+import { duplicatePage, reorderPages } from "@/core/pages";
 import { PagePeers } from "./LivePresence";
 
-export function reorderPages(d: Doc, id: string, dir: -1 | 1) {
-  const pages = [...d.pages].sort((a, b) => a.order - b.order);
-  const i = pages.findIndex((p) => p.id === id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= pages.length) return;
-  [pages[i], pages[j]] = [pages[j], pages[i]];
-  pages.forEach((p, k) => {
-    const dp = d.pages.find((x) => x.id === p.id)!;
-    dp.order = k;
-  });
-}
-
-export function duplicatePage(d: Doc, id: string): string {
-  const src = d.pages.find((p) => p.id === id);
-  if (!src) return id;
-  const copy = JSON.parse(JSON.stringify(src)) as typeof src;
-  const map = new Map<string, string>();
-  copy.id = uid();
-  copy.title = src.title + " (copy)";
-  copy.qet = undefined;
-  for (const e of copy.elements) {
-    const n = uid();
-    map.set(e.id, n);
-    e.id = n;
-    e.qet = undefined;
-  }
-  for (const j of copy.junctions) {
-    const n = uid();
-    map.set(j.id, n);
-    j.id = n;
-  }
-  for (const w of copy.wires) {
-    w.id = uid();
-    w.qet = undefined;
-    for (const k of ["a", "b"] as const) {
-      const e = w[k];
-      if (e.k === "pin") e.el = map.get(e.el) ?? e.el;
-      if (e.k === "junction") e.j = map.get(e.j) ?? e.j;
-    }
-  }
-  for (const t of copy.texts) (t.id = uid()), (t.qet = undefined);
-  for (const p of d.pages) if (p.order > src.order) p.order++;
-  copy.order = src.order + 1;
-  d.pages.push(copy);
-  return copy.id;
-}
+export { reorderPages, duplicatePage } from "@/core/pages";
 
 export function PageTabs() {
   const pages = useEditor((s) => s.doc.pages);

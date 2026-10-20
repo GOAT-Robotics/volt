@@ -83,6 +83,8 @@ type State = {
   panels: { left: "library" | "pages" | "outline" | null; right: "inspector" | "review" | "validate" | "history" | null };
   snapSettings: { pins: boolean; junctions: boolean; wires: boolean; guides: boolean; grid: boolean; order: ("pin" | "junction" | "wire" | "guide" | "grid")[] };
   gridVisible: boolean;
+  /** comment pins hidden on the drawing (per person, remembered in this browser) */
+  commentsHidden: boolean;
   /** shape tool: kind to draw and the style new shapes get (last used) */
   shapeKind: DrawKind;
   shapeStyle: DrawStyle;
@@ -123,6 +125,23 @@ export type EditorStore = State & Actions;
 
 const HISTORY_LIMIT = 300;
 
+const COMMENTS_HIDDEN_KEY = "volt.commentsHidden";
+function readCommentsHidden(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(COMMENTS_HIDDEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+/** hide or show comment pins on the drawing, remembered in this browser */
+export function setCommentsHidden(hidden: boolean) {
+  useEditor.getState().set("commentsHidden", hidden);
+  try {
+    if (hidden) localStorage.setItem(COMMENTS_HIDDEN_KEY, "1");
+    else localStorage.removeItem(COMMENTS_HIDDEN_KEY);
+  } catch {}
+}
+
 export const useEditor = create<EditorStore>((set, get) => ({
   doc: null as unknown as Doc,
   pageId: "",
@@ -146,6 +165,7 @@ export const useEditor = create<EditorStore>((set, get) => ({
   panels: { left: "library", right: "inspector" },
   snapSettings: { pins: true, junctions: true, wires: true, guides: true, grid: true, order: ["pin", "junction", "wire", "guide", "grid"] },
   gridVisible: true,
+  commentsHidden: readCommentsHidden(),
   shapeKind: "rect",
   shapeStyle: { color: "#111827", width: 1, dash: "solid", fill: null },
   live: { status: "off", clientId: null, color: null },

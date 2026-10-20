@@ -220,7 +220,7 @@ export class Engine {
         this.mode = { m: "idle" };
       }
     }
-    if (s.sel !== p.sel || s.highlight !== p.highlight || s.comments !== p.comments || s.activeComment !== p.activeComment) this.dirtyOverlay = true;
+    if (s.sel !== p.sel || s.highlight !== p.highlight || s.comments !== p.comments || s.activeComment !== p.activeComment || s.commentsHidden !== p.commentsHidden) this.dirtyOverlay = true;
     if (s.tool !== p.tool || s.place !== p.place || s.shapeKind !== p.shapeKind) {
       this.mode = { m: "idle" };
       this.placeGhost = null;
@@ -428,8 +428,8 @@ export class Engine {
     this.ensureIndex();
     const tol = HIT_PX / this.view.s;
     const page = this.page;
-    // comment pins (screen space)
-    for (const c of this.s.comments) {
+    // comment pins (screen space), unless hidden
+    for (const c of this.s.commentsHidden ? [] : this.s.comments) {
       if (!c.anchor || c.pageId !== page.id) continue;
       const sp = this.toScreen(c.anchor);
       const pp = this.toScreen(p);
@@ -2113,7 +2113,7 @@ export class Engine {
     }
     // comment pins (screen space)
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    for (const cm of s.comments) {
+    for (const cm of s.commentsHidden ? [] : s.comments) {
       if (!cm.anchor || cm.pageId !== page.id) continue;
       const p = this.toScreen(cm.anchor);
       const active = s.activeComment === cm.id;

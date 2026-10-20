@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CornerDownRight, MapPin, RotateCcw, X, MessageSquare, ThumbsUp, ThumbsDown, AlertCircle, Clock, Bot, Sparkles, ChevronDown, ChevronRight } from "lucide-react";
-import { useEditor, type CommentPin } from "../store";
+import { Check, CornerDownRight, MapPin, RotateCcw, X, MessageSquare, ThumbsUp, ThumbsDown, AlertCircle, Clock, Bot, Sparkles, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { setCommentsHidden, useEditor, type CommentPin } from "../store";
 import { useEditorUI } from "./context";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
@@ -57,6 +57,7 @@ type ReviewInfo = {
 export function ReviewPanel() {
   const v = useEditor((s) => s.version);
   const active = useEditor((s) => s.activeComment);
+  const commentsHidden = useEditor((s) => s.commentsHidden);
   const [list, setList] = useState<C[] | null>(null);
   const [filter, setFilter] = useState<"open" | "ai" | "all">("open");
   const [draft, setDraft] = useState<{ pageId: string; anchor: C["anchor"] } | null>(null);
@@ -125,12 +126,25 @@ export function ReviewPanel() {
             </button>
           ))}
         </div>
-        {v.canComment && (
-          <Button size="xs" variant="secondary" onClick={() => setDraft({ pageId: useEditor.getState().pageId, anchor: null })}>
-            <MessageSquare /> Page comment
+        <div className="flex items-center gap-1">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-pressed={commentsHidden}
+            aria-label={commentsHidden ? "Show comments on the drawing" : "Hide comments on the drawing"}
+            title={commentsHidden ? "Show comments on the drawing (⇧C)" : "Hide comments on the drawing (⇧C)"}
+            onClick={() => setCommentsHidden(!commentsHidden)}
+          >
+            {commentsHidden ? <EyeOff className="text-subtle" /> : <Eye />}
           </Button>
-        )}
+          {v.canComment && (
+            <Button size="xs" variant="secondary" onClick={() => setDraft({ pageId: useEditor.getState().pageId, anchor: null })}>
+              <MessageSquare /> Page comment
+            </Button>
+          )}
+        </div>
       </div>
+      {commentsHidden && <p className="border-b border-border bg-panel-2 px-3 py-1.5 text-2xs text-muted">Comments are hidden on the drawing. They stay listed here.</p>}
       {draft && (
         <Composer
           placeholder={draft.anchor ? "Comment on this spot… use @name to mention" : "Comment on this page… use @name to mention"}

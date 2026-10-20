@@ -15,6 +15,8 @@ import {
   Magnet,
   Grid3x3,
   Map as MapIcon,
+  MessageSquare,
+  MessageSquareOff,
   Plus,
   Minus,
   Maximize,
@@ -305,6 +307,8 @@ function ZoomControls({ fps, minimap, setMinimap }: { fps: number; minimap: bool
   const zoom = useEditor((s) => s.zoom);
   const cursor = useEditor((s) => s.cursor);
   const grid = useEditor((s) => s.gridVisible);
+  const commentsHidden = useEditor((s) => s.commentsHidden);
+  const hasComments = useEditor((s) => s.comments.length > 0 || s.commentsHidden);
   const snap = useEditor((s) => s.snapSettings);
   const ui = useEditorUI();
   const run = (id: string) => runCommand(id, ui);
@@ -347,6 +351,13 @@ function ZoomControls({ fps, minimap, setMinimap }: { fps: number; minimap: bool
             <Grid3x3 />
           </Button>
         </Tip>
+        {hasComments && (
+          <Tip content={commentsHidden ? "Show comments" : "Hide comments"} shortcut="⇧C">
+            <Button variant="tool" size="icon-sm" active={!commentsHidden} aria-label={commentsHidden ? "Show comments" : "Hide comments"} aria-pressed={!commentsHidden} onClick={() => run("toggleComments")}>
+              {commentsHidden ? <MessageSquareOff /> : <MessageSquare />}
+            </Button>
+          </Tip>
+        )}
         <Tip content="Minimap">
           <Button variant="tool" size="icon-sm" active={minimap} aria-label="Toggle minimap" onClick={() => setMinimap(!minimap)}>
             <MapIcon />

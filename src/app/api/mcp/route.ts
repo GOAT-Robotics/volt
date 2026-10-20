@@ -19,10 +19,19 @@ function rpcError(status: number, message: string, id: unknown = null, headers: 
   return NextResponse.json({ jsonrpc: "2.0", id, error: { code: status === 401 ? -32001 : status === 403 ? -32003 : status === 429 ? -32029 : -32000, message } }, { status, headers });
 }
 
+/** this server's public address, for links in tool results (download links) */
+function originOf(req: Request) {
+  const configured = (process.env.APP_URL ?? process.env.AUTH_URL ?? "").replace(/\/$/, "");
+  if (configured) return configured;
+  const u = new URL(req.url);
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? u.host;
+  return `${req.headers.get("x-forwarded-proto") ?? u.protocol.replace(":", "")}://${host}`;
+}
+
 export async function POST(req: Request) {
   let env;
   try {
-    env = await ctxFromBearer(req);
+    env = { ...(await ctxFromBearer(req)), origin: originOf(req), protocol: req.headers.get("mcp-protocol-version") ?? undefined };
   } catch (e) {
     const s = e instanceof HttpError ? e.status : 500;
     return rpcError(s, e instanceof HttpError ? e.message : "Internal error", null, s === 401 ? { "WWW-Authenticate": 'Bearer realm="volt", error="invalid_token"' } : {});

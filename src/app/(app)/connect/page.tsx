@@ -21,7 +21,7 @@ export default async function ConnectPage() {
       allowEdits={ctx.settings.mcp.allowEdits}
       workspace={ctx.workspace.name}
       tokens={rows.map(tokenDto)}
-      tools={TOOLS.map((t) => ({ name: t.name, title: t.title, access: t.access }))}
+      tools={TOOLS.map((t) => ({ name: t.name, title: t.title, access: t.access, area: t.area }))}
     />
   );
 }

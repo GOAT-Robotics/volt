@@ -13,7 +13,7 @@ import { api } from "@/lib/fetcher";
 import { cn, fmtDate, relTime } from "@/lib/utils";
 
 type Token = { id: string; name: string; prefix: string; scope: "READ" | "EDIT"; expiresAt: string | null; lastUsedAt: string | null; createdAt: string; expired: boolean };
-type ToolRow = { name: string; title: string; access: "read" | "comment" | "edit" };
+type ToolRow = { name: string; title: string; access: "read" | "comment" | "edit"; area: string };
 
 function CopyBox({ value, label, secret }: { value: string; label?: string; secret?: boolean }) {
   const [done, setDone] = React.useState(false);
@@ -226,7 +226,7 @@ export function ConnectView({ url, enabled, allowEdits, workspace, tokens, tools
             <Setup url={url} token="<token>" />
           </div>
         </Section>
-        <Section title="What an assistant can do" description="Working versions (Draft, Changes requested) only — versions in review, approved, signed or released are never changed, and approving, signing and releasing stay with people. Every change is shown live in open editors and recorded in the audit log as made via MCP.">
+        <Section title="What an assistant can do" description="Everything you can do in the editor, on working versions (Draft, Changes requested) only — versions in review, approved, signed or released are never changed. Assistants submit for review or take a version back only when asked; approving, signing and releasing stay with people. Every change is shown live in open editors, can be undone, and is recorded in the audit log as made via MCP.">
           <div className="grid gap-3 p-4 md:grid-cols-3">
             {groups.map((g) => (
               <div key={g.access} className="rounded-md border border-border p-3">
@@ -234,20 +234,25 @@ export function ConnectView({ url, enabled, allowEdits, workspace, tokens, tools
                   {g.icon} {g.title}
                 </p>
                 <p className="mb-2 text-2xs text-muted">{g.hint}</p>
-                <ul className="space-y-0.5">
-                  {tools
-                    .filter((t) => t.access === g.access)
-                    .map((t) => (
-                      <li key={t.name} className="text-2xs">
-                        {t.title} <span className="font-mono text-subtle">{t.name}</span>
-                      </li>
-                    ))}
-                </ul>
+                {[...new Set(tools.filter((t) => t.access === g.access).map((t) => t.area))].map((area) => (
+                  <div key={area} className="mb-2 last:mb-0">
+                    <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-subtle">{area}</p>
+                    <ul className="space-y-0.5">
+                      {tools
+                        .filter((t) => t.access === g.access && t.area === area)
+                        .map((t) => (
+                          <li key={t.name} className="text-2xs">
+                            {t.title} <span className="font-mono text-subtle">{t.name}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
           <p className="border-t border-border px-4 py-2.5 text-2xs text-muted">
-            Ready-made prompts: <b>review_drawing</b> (an engineering review posted as comments) and <b>fix_naming</b> (references and wire numbers). Try: “Review DEMO-001 and comment on anything wrong” or “Close the gaps in the K references of DEMO-001 and number the new wires”.
+            Ready-made prompts: <b>review_drawing</b> (an engineering review posted as comments), <b>fix_connectors</b> (mate plugs and sockets, proper connector symbols and part data) and <b>fix_naming</b> (references and wire numbers). Try: “Review DEMO-001 and comment on anything wrong”, “Mate the connectors on sheet 9 of DEMO-001” or “Add a cover sheet and a terminal diagram to DEMO-001 and export it as PDF”.
           </p>
         </Section>
       </div>

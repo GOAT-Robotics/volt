@@ -5,7 +5,7 @@ import { collectStrips } from "@/core/terminals";
 import { applyRefChanges, deleteImpact, needsConfirmation, planCloseGaps } from "@/core/impact";
 import { applyWireNumbers, planWireNumbers } from "@/core/wirenumber";
 import { closeGapsDefault, performDelete } from "./dialogs/DeleteDialog";
-import { useEditor, type EditorStore } from "../store";
+import { setCommentsHidden, useEditor, type EditorStore } from "../store";
 import type { EditorUI } from "./context";
 import {
   copySelection,
@@ -344,7 +344,18 @@ export const COMMANDS: Command[] = [
   },
   { id: "tool-text", label: "Text tool", section: "Tools", keys: "T", enabled: editable, run: (_, s) => s.setTool("text") },
   { id: "tool-pan", label: "Pan tool", section: "Tools", keys: "H", run: (_, s) => s.setTool("pan") },
-  { id: "tool-comment", label: "Comment tool", section: "Tools", keys: "C", enabled: (s) => !!s.version?.canComment, run: (_, s) => s.setTool("comment") },
+  {
+    id: "tool-comment",
+    label: "Comment tool",
+    section: "Tools",
+    keys: "C",
+    enabled: (s) => !!s.version?.canComment,
+    run: (_, s) => {
+      // commenting shows the comments again (a new pin would otherwise be invisible)
+      if (s.commentsHidden) setCommentsHidden(false);
+      s.setTool("comment");
+    },
+  },
   { id: "convertLines", label: "Convert selected lines to wires", section: "Tools", enabled: (s) => editable(s) && selLines(s).length > 0, run: (ui, s) => convertLines(ui, s, selLines(s).map((x) => x.id)) },
   {
     id: "convertPageLines",
@@ -375,6 +386,16 @@ export const COMMANDS: Command[] = [
   { id: "zoomIn", label: "Zoom in", section: "View", keys: "+", run: (ui) => ui.engine.current?.zoomAt(1.25) },
   { id: "zoomOut", label: "Zoom out", section: "View", keys: "−", run: (ui) => ui.engine.current?.zoomAt(0.8) },
   { id: "grid", label: "Toggle grid", section: "View", keys: "G", run: (_, s) => s.set("gridVisible", !s.gridVisible) },
+  {
+    id: "toggleComments",
+    label: "Hide / show comments on the drawing",
+    section: "View",
+    keys: "⇧C",
+    run: (ui, s) => {
+      setCommentsHidden(!s.commentsHidden);
+      ui.toast(s.commentsHidden ? "Comments shown on the drawing" : "Comments hidden on the drawing — ⇧C shows them again");
+    },
+  },
   {
     id: "addPage",
     label: "Add page",
