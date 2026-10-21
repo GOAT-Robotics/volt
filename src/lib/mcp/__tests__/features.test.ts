@@ -7,8 +7,8 @@ import { projectNets } from "@/core/erc";
 import { collectStrips } from "@/core/terminals";
 import { toScene } from "@/core/geometry";
 import type { Doc } from "@/core/model";
-import { allElements, findComponent, findComponents, findPage, findPin, findWires, sheets, short } from "../doc";
-import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, moveComponent, replaceSymbols, routeWire, setCable, setComponentDataMany, setSymbolPins, setWires, straighten, styleComponents } from "../edits";
+import { allElements, componentText, findComponent, findComponents, findPage, findPin, findWires, sheets, short } from "../doc";
+import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, moveComponent, replaceSymbols, routeWire, setCable, setComponentDataMany, setNoConnectPins, setSymbolPins, setWires, straighten, styleComponents } from "../edits";
 import { moveCableTag, moveLabels } from "../labels";
 import { parseArgs } from "../args";
 import { z } from "zod";
@@ -87,6 +87,23 @@ describe("MCP: labels, conductors, batches", () => {
     expect(findComponent(r.doc, "SP1@2").e.xrefPos).toBeUndefined();
     expect(() => edit(doc, (d) => moveLabels(d, ["H1"], ["xref"], { dx: 5 }))).toThrow(/None of them shows cross-reference/);
     expect(() => edit(doc, (d) => moveLabels(d, ["SP1"], ["all"], {}))).toThrow(/Say where/);
+  });
+
+  it("marks pins no connect: listed pins, a component's free pins, clear; wired pins are refused", () => {
+    const { doc } = chain();
+    // H1's only pin is wired; the terminal X1 has its two pins wired; the arrow SP1@1 too — add a spare part
+    const spare = newElement(doc, doc.pages[0], mkDef("ic", [{ id: "1", x: -10, y: 0, orient: "w", number: "1" }, { id: "2", x: 10, y: 0, orient: "e", number: "2", name: "NC" }], { name: "IC", prefix: "U" }), { x: 505, y: 305 });
+    spare.info.label = "U7";
+    let r = edit(doc, (d) => setNoConnectPins(d, { pins: ["U7:NC", "H1:1"] }));
+    expect(r.out).toMatch(/^Marked 1 pin no connect: U7:2/);
+    expect(r.out).toMatch(/Not marked — connected: H1:1/);
+    expect(findComponent(r.doc, "U7").e.noConnect).toEqual(["2"]);
+    r = edit(r.doc, (d) => setNoConnectPins(d, { components: ["U7"], freePins: true }));
+    expect([...(findComponent(r.doc, "U7").e.noConnect ?? [])].sort()).toEqual(["1", "2"]);
+    expect(componentText(r.doc, findComponents(r.doc, "U7"))).toMatch(/pin 1 .*: no connect \(left open on purpose\)/);
+    r = edit(r.doc, (d) => setNoConnectPins(d, { components: ["U7"], clear: true }));
+    expect(findComponent(r.doc, "U7").e.noConnect).toBeUndefined();
+    expect(() => edit(doc, (d) => setNoConnectPins(d, { components: ["U7"] }))).toThrow(/free_pins/);
   });
 
   it("sets data on many components at once, listing the ones it cannot find", () => {

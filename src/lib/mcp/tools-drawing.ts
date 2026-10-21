@@ -5,7 +5,7 @@
  */
 import "server-only";
 import { z } from "zod";
-import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, replaceSymbols, routeWire, setCable, setSymbolPins, straighten, styleComponents, type EndSpec } from "./edits";
+import { arrangeComponents, convertLines, copyComponents, drawWire, folioReports, mateConnectors, replaceSymbols, routeWire, setCable, setNoConnectPins, setSymbolPins, straighten, styleComponents, type EndSpec } from "./edits";
 import { cablesText } from "./project";
 import { moveCableTag, moveLabels, type LabelWhich } from "./labels";
 import { colour, component, editDrawing, guard, immer, page, point, readVersion, symbolFor, tool, version, vName, type Tool } from "./kit";
@@ -88,6 +88,22 @@ export const DRAWING_TOOLS: Tool[] = [
       const which = (x.labels ?? ["all"]).map((l) => (l === "name" ? "reference" : l === "cross_reference" ? "xref" : l)) as LabelWhich[];
       return editDrawing(env, x.version, "move_labels", (d) => guard(() => moveLabels(d, x.components, which, { side: x.side, dx: x.dx, dy: x.dy, reset: x.reset, page: x.page === undefined ? undefined : String(x.page), onlyArrows: x.only_arrows })));
     },
+  }),
+  tool({
+    name: "set_no_connect",
+    title: "Mark pins no connect",
+    area: "Components",
+    description:
+      "Mark pins \"no connect\" — left open on purpose, like KiCad's ✕ flag: an ✕ is drawn on the pin end and check_drawing no longer reports it as unconnected (it warns if a wire lands on it later). pins = addresses like \"U1:5\" or \"A1:NC\"; components + free_pins = every pin of those components that connects to nothing; clear = remove the flag (on the listed pins, or all of a component's). Wired pins are not marked.",
+    access: "edit",
+    input: z.object({
+      version,
+      pins: z.array(z.string()).max(1000).optional().describe("Pin addresses, e.g. [\"U1:5\", \"U1:6\"]"),
+      components: z.array(z.string()).max(500).optional(),
+      free_pins: z.boolean().optional().describe("With components: all their free pins"),
+      clear: z.boolean().optional(),
+    }),
+    run: async (x, env) => editDrawing(env, x.version, "set_no_connect", (d) => guard(() => setNoConnectPins(d, { pins: x.pins, components: x.components, freePins: x.free_pins, clear: x.clear }))),
   }),
   tool({
     name: "style_components",

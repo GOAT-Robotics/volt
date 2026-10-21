@@ -866,6 +866,19 @@ export function drawElement(
     }
   }
 
+  // "no connect" pins: an ✕ on the pin end (part of the drawing, exported too); gone once wired
+  if (e.noConnect?.length && o.lod > 0.15) {
+    const b = new PathBuilder();
+    const k = NC_HALF;
+    for (const id of e.noConnect) {
+      const pin = def.pins.find((p) => p.id === id);
+      if (!pin || (o.degrees?.pin.get(e.id + "/" + id) ?? 0) > 0) continue;
+      const p = toScene(e, pin);
+      b.M(p.x - k, p.y - k).L(p.x + k, p.y + k).M(p.x - k, p.y + k).L(p.x + k, p.y - k);
+    }
+    pt.stroke(b.build(), { color: o.tint ?? styles.graphics.wire.color, width: 0.9, minPx: 1, alpha: o.alpha });
+  }
+
   if (o.pins && o.lod > 0.5) {
     const pc = styles.graphics.pin;
     if (pc.showPoint) {
@@ -873,7 +886,7 @@ export function drawElement(
       const r = pc.size / Math.max(1, o.lod) + 0.6;
       for (const pin of def.pins) {
         const key = e.id + "/" + pin.id;
-        if ((o.degrees?.pin.get(key) ?? 0) > 0) continue;
+        if ((o.degrees?.pin.get(key) ?? 0) > 0 || e.noConnect?.includes(pin.id)) continue;
         const p = toScene(e, pin);
         b.E(p.x, p.y, r, r);
       }
@@ -881,6 +894,9 @@ export function drawElement(
     }
   }
 }
+
+/** half the size of a "no connect" ✕, scene units */
+export const NC_HALF = 3;
 
 /* ------------------------------------------------------------------ */
 /* Border & title block                                                 */

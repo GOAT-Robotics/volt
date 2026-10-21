@@ -34,7 +34,13 @@ export function replaceSymbol(doc: Doc, page: Page, el: ElemInst, def: ElementDe
   if (!old || old.id === def.id) return { moved: 0, loose: 0 };
   ensureDef(doc, def);
   const used = [...new Set(page.wires.flatMap((w) => [w.a, w.b].filter((x) => x.k === "pin" && x.el === el.id).map((x) => (x as { pin: string }).pin)))];
-  const map = mapPins(old, def, used);
+  const map = mapPins(old, def, [...new Set([...used, ...(el.noConnect ?? [])])]);
+  // "no connect" flags go to the matching pins of the new symbol
+  if (el.noConnect) {
+    const nc = el.noConnect.map((id) => map.get(id)).filter((x): x is string => !!x);
+    if (nc.length) el.noConnect = [...new Set(nc)];
+    else delete el.noConnect;
+  }
   let moved = 0, loose = 0;
   // a one-pin symbol carries wires in both directions on its single pin: split them by the way they leave
   const up = def.pins.find((p) => p.orient === "n" || p.orient === "w");
@@ -89,6 +95,20 @@ export function updateInstancesDef(doc: Doc, oldDefIds: Set<string>, def: Elemen
     for (const e of page.elements)
       if (oldDefIds.has(e.defId)) {
         oldOf.set(e.id, doc.defs[e.defId]);
+        // "no connect" flags follow the pin (same id, else same number, else same name)
+        if (e.noConnect) {
+          const old = doc.defs[e.defId];
+          const nc = e.noConnect
+            .map((id) => {
+              if (byId.has(id)) return id;
+              const o = old?.pins.find((p) => p.id === id);
+              const num = o?.number?.trim(), name = o?.name?.trim();
+              return ((num && def.pins.find((p) => p.number?.trim() === num)) || (name && def.pins.find((p) => p.name?.trim() === name)) || null)?.id;
+            })
+            .filter((x): x is string => !!x);
+          if (nc.length) e.noConnect = [...new Set(nc)];
+          else delete e.noConnect;
+        }
         e.defId = def.id;
         touched.add(e.id);
         instances++;

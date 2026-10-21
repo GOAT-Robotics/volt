@@ -15,6 +15,7 @@ import { convertShapesToWires, isOpenPath } from "@/core/shapes";
 import { despike, gridFriendlyScales, offGridComponents, straightenWires } from "@/core/straighten";
 import { computeNets } from "@/core/topology";
 import { projectNets } from "@/core/erc";
+import { freePins, setNoConnect } from "@/core/noconnect";
 import { wireNumberingOf } from "@/core/wirenumber";
 import { planRenumber, duplicateRefs, type RefChange } from "@/core/numbering";
 import { applyRefChanges, planCloseGaps } from "@/core/impact";
@@ -1044,3 +1045,46 @@ function stayedText(stayed: { id: string; why: string }[], name: (id: string) =>
 }
 
 export { AddressError };
+
+/* ------------------------------------------------------------------ */
+/* No connect                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Mark pins "no connect" (left open on purpose: drawn with an ✕, not reported as open) or clear the
+ * flag: listed pins, and / or every free pin of components (free = connected to nothing at all).
+ */
+export function setNoConnectPins(doc: Doc, o: { pins?: string[]; components?: string[]; freePins?: boolean; clear?: boolean }): string {
+  const on = !o.clear;
+  const done: string[] = [];
+  const refused: string[] = [];
+  const nets = projectNets(doc).netOfPin;
+  const name = (e: ElemInst, def: ElementDef | undefined, pinId: string) => {
+    const p = def?.pins.find((q) => q.id === pinId);
+    return `${e.info.label || short(e.id)}:${p ? pinLabel(p, def) : pinId}`;
+  };
+  const flag = (pageId: string, elId: string, pinIds: string[]) => {
+    const e = getPage(doc, pageId).elements.find((x) => x.id === elId)!;
+    const def = doc.defs[e.defId];
+    const ok = on ? pinIds.filter((id) => (nets.has(`${e.id}/${id}`) ? (refused.push(name(e, def, id)), false) : true)) : pinIds;
+    const change = ok.filter((id) => !!e.noConnect?.includes(id) !== on);
+    setNoConnect(e, ok, on);
+    done.push(...change.map((id) => name(e, def, id)));
+  };
+  for (const spec of o.pins ?? []) {
+    const p = findPin(doc, spec);
+    flag(p.page.id, p.e.id, [p.pin.id]);
+  }
+  for (const ref of o.components ?? []) {
+    const parts = findComponents(doc, ref);
+    for (const x of parts) {
+      if (!x.def) continue;
+      if (on && !o.freePins) throw new EditError(`Say which pins of ${ref} (pins), or free_pins: true for all its free pins`);
+      const ids = on ? freePins(doc, x.e, nets) : [...(x.e.noConnect ?? [])];
+      flag(x.page.id, x.e.id, ids);
+    }
+  }
+  if (!o.pins?.length && !o.components?.length) throw new EditError("Give pins (\"U1:5\") or components");
+  const head = done.length ? `${on ? "Marked" : "Cleared no connect on"} ${done.length} pin${done.length === 1 ? "" : "s"}${on ? " no connect" : ""}: ${done.slice(0, 60).join(", ")}${done.length > 60 ? " …" : ""}` : on ? "No pins changed (already marked, or wired)" : "No pins were marked no connect";
+  return `${head}${refused.length ? `\nNot marked — connected: ${refused.slice(0, 40).join(", ")}${refused.length > 40 ? " …" : ""} (remove the wire first)` : ""}`;
+}

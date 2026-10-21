@@ -91,6 +91,7 @@ The standard library, blocks and title blocks install automatically when the con
   - Right: inspector, comments & review, checks, and history & versions. Comment pins can be hidden on the drawing (⇧C, or the speech-bubble button by the zoom controls); the choice is remembered in the browser.
   - Command palette (⌘K), context menus, keyboard shortcuts (`?`), and undo/redo.
   - Autosave with conflict detection.
+- **No connect.** Pins left open on purpose get KiCad's ✕: the No-connect tool (Q) flags or clears a pin with a click, *Mark free pins no connect* (right-click) does every free pin of the selected components, and the inspector's pin table has an ✕ per pin. The ✕ is part of the drawing (PDF, SVG, PNG, DXF); the checks stop reporting those pins as open, and warn if a wire lands on one later.
 - **Labels.** A component's reference, its description lines, an off-page arrow's cross-reference ("5-3B") and a connector's counterpart label can each be dragged; they follow the component afterwards, and *Restore default label placement* puts them all back. An arrow's cross-reference goes past the arrow's own name rather than over it. A cable's tag is dragged the same way (its mark slides along the wires).
 - **Clickable labels (cross references).** Component references (K1 coil ↔ K1 contacts), wire numbers, and folio-report / master–slave links are links.
   - ⌘/Ctrl-click a label to jump to its next occurrence on any page; on read-only versions a plain click works. Press `L` to follow the selection, ⌘[ or Alt+← to go back.

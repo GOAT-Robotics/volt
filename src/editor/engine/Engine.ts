@@ -5,8 +5,9 @@ import type { Doc, ElemInst, ElementDef, Page, Pt, Rect, Shape, Styles, TextRole
 import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, toLocal, eqPt, dist, unionRect } from "@/core/geometry";
 import { CanvasPainter, imageLoadListeners, measureText } from "@/core/render/canvas";
 import { DASHES, PathBuilder } from "@/core/render/painter";
-import { cableLabelRect, contentBounds, docStyles, drawPage, drawShape, elementBounds, layoutElementTexts, mateLabelLayout, pageGeometry, reportLabelLayout, shapeLabelLayout, shapeLabelStyle, textBounds, freeTextBounds, wireStroke, drawElement } from "@/core/render/scene";
+import { cableLabelRect, contentBounds, docStyles, drawPage, drawShape, elementBounds, layoutElementTexts, mateLabelLayout, NC_HALF, pageGeometry, reportLabelLayout, shapeLabelLayout, shapeLabelStyle, textBounds, freeTextBounds, wireStroke, drawElement } from "@/core/render/scene";
 import { INFO_BLOCK, MATE_LABEL, moveLabel, XREF_LABEL } from "@/core/label-place";
+import { setNoConnect, wiredPins } from "@/core/noconnect";
 import { isReportDef } from "@/core/reports";
 import { symbolFor } from "@/core/render/symbol";
 import { deepMerge } from "@/core/styles";
@@ -673,6 +674,10 @@ export class Engine {
     }
     if (s.tool === "shape" && editable) {
       this.drawDown(wp, sp, e.shiftKey);
+      return;
+    }
+    if (s.tool === "noconnect" && editable) {
+      this.noConnectClick(wp);
       return;
     }
     if (s.tool === "wire" && editable) {
@@ -1403,6 +1408,32 @@ export class Engine {
     });
   }
 
+  /** No-connect tool: a click on a pin flags it (✕) or clears the flag */
+  private noConnectClick(wp: Pt) {
+    const h = this.hitTest(wp);
+    if (h?.k !== "pin") {
+      this.hooks.onToast?.("Click the end of a pin to mark it “no connect”");
+      return;
+    }
+    const s = this.s;
+    const e = this.page.elements.find((x) => x.id === h.el);
+    const def = e && this.doc.defs[e.defId];
+    if (!e || !def) return;
+    const on = !e.noConnect?.includes(h.pin);
+    const pin = def.pins.find((p) => p.id === h.pin);
+    const name = `${e.info.label || def.name}:${pin?.number || pin?.name || h.pin}`;
+    if (on && wiredPins(this.page, e.id).has(h.pin)) {
+      this.hooks.onToast?.(`${name} is wired — remove its wire to leave it open`);
+      return;
+    }
+    const pid = s.pageId;
+    s.apply(on ? "No connect" : "Clear no connect", (d) => {
+      const x = getPage(d, pid).elements.find((q) => q.id === h.el);
+      if (x) setNoConnect(x, [h.pin], on);
+    });
+    this.hooks.onAnnounce?.(`${name} ${on ? "marked no connect" : "no longer marked no connect"}`);
+  }
+
   /** the shape whose text is being typed (not drawn on the canvas meanwhile) */
   private editingLabel: string | null = null;
   setEditingLabel(id: string | null) {
@@ -2010,6 +2041,12 @@ export class Engine {
       } else if (h.k === "shape" && !(sel.shapes ?? []).includes(h.id)) {
         const sh = page.shapes.find((x) => x.id === h.id);
         if (sh) painter.stroke(new PathBuilder().poly(shapeOutline(sh)).build(), { color: accent, width: px(3), cap: "round", join: "round", alpha: 0.25 });
+      } else if (h.k === "pin" && this.editable && s.tool === "noconnect") {
+        // the ✕ it would get (or lose)
+        const on = !this.elById.get(h.el)?.noConnect?.includes(h.pin);
+        const k = NC_HALF;
+        const b = new PathBuilder().M(h.p.x - k, h.p.y - k).L(h.p.x + k, h.p.y + k).M(h.p.x - k, h.p.y + k).L(h.p.x + k, h.p.y - k);
+        painter.stroke(b.build(), { color: on ? accent : "#dc2626", width: px(1.5), alpha: 0.9 });
       } else if (h.k === "pin" && this.editable) {
         painter.stroke(new PathBuilder().E(h.p.x, h.p.y, px(5), px(5)).build(), { color: "#16a34a", width: px(1.5) });
       } else if (h.k === "etext") {

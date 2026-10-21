@@ -398,7 +398,7 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
       if (!want) continue;
       const n = netOfPin.get(`${id}/${p.id}`);
       if (!n) {
-        if (want.kind === "PE" && !isTerminal(def) && !isConnector(def)) {
+        if (want.kind === "PE" && !isTerminal(def) && !isConnector(def) && !e.noConnect?.includes(p.id)) {
           const crit = EQUIPMENT_NEEDS_PE.test(textOf(def)) || isMotor(def, e);
           onEl(
             { level: crit ? "error" : "warning", code: "erc.peOpen", category: "safety", message: `${elName(id)}: protective earth terminal ${p.number || p.name} is not connected`, suggestion: "Connect the PE terminal to the protective bonding circuit (IEC 60204-1 8.2 / IEC 60364-5-54).", ids: [id] },
@@ -466,7 +466,11 @@ export function checkElectrical(doc: Doc): ErcFinding[] {
       continue;
     }
     const wired = def.pins.filter((p) => netOfPin.has(`${id}/${p.id}`));
-    if (!wired.length && !isTerminal(def) && !e.mate)
+    // pins flagged "no connect" are open on purpose — unless a wire landed on one after all
+    const ncWired = wired.filter((p) => e.noConnect?.includes(p.id));
+    if (ncWired.length)
+      onEl({ level: "warning", code: "erc.noConnectWired", category: "connection", message: `${elName(id)}: pin${ncWired.length === 1 ? "" : "s"} ${ncWired.map((p) => p.number || p.name || p.id).join(", ")} ${ncWired.length === 1 ? "is" : "are"} marked "no connect" but connected`, suggestion: "Remove the wire, or clear the no-connect flag if the pin is meant to be used.", ids: [id] }, id);
+    if (!wired.length && !isTerminal(def) && !e.mate && !def.pins.every((p) => e.noConnect?.includes(p.id)))
       onEl({ level: "info", code: "erc.unwired", category: "connection", message: `${elName(id)} on "${page.title}" has no connections`, suggestion: "Wire it, or remove it if it is not part of the circuit.", ids: [id] }, id);
     if (def.linkType === "slave" && !e.links?.some((l) => idx.has(l)))
       onEl({ level: "warning", code: "erc.slaveOrphan", category: "connection", message: `Contact ${elName(id)} is not linked to a coil / master device`, suggestion: "Link the contact to the relay, contactor or switch that operates it so the cross-reference is correct.", ids: [id] }, id);

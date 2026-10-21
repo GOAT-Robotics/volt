@@ -44,6 +44,7 @@ import {
   FileText,
   MoveRight,
   TextCursorInput,
+  X,
 } from "lucide-react";
 import { Engine, type EditRequest } from "../engine/Engine";
 import { toast } from "sonner";
@@ -170,6 +171,7 @@ function ToolRail() {
     { id: "text", icon: <Type />, label: "Text", key: "T", on: editable, active: tool === "text", run: () => set("text") },
     { id: "textbox", icon: <TextCursorInput />, label: "Text box — drag a box, then type in it", key: "B", on: editable, active: textbox, run: () => runCommand("draw-textbox", ui) },
     { id: "shape", icon: <Shapes />, label: "Shapes (boxes, circles, diamonds, arrows, polygons …)", key: "S", on: editable, active: tool === "shape" && !textbox, run: () => (kind === "textbox" ? runCommand("draw-rect", ui) : set("shape")) },
+    { id: "noconnect", icon: <X />, label: "No connect — click pins left open on purpose (✕)", key: "Q", on: editable, active: tool === "noconnect", run: () => set("noconnect") },
     { id: "pan", icon: <Hand />, label: "Pan", key: "H / Space", on: true, active: tool === "pan", run: () => set("pan") },
     { id: "comment", icon: <MessageSquarePlus />, label: "Comment", key: "C", on: canComment, active: tool === "comment", run: () => set("comment") },
   ] as const;
@@ -216,6 +218,12 @@ function SelectionBar() {
       </Hint>
     );
   if (tool === "comment") return <Hint>Click on an element, wire or anywhere to leave a comment</Hint>;
+  if (tool === "noconnect" && editable)
+    return (
+      <Hint>
+        Click a pin to mark it <b>no connect</b> (✕) — click again to clear · all free pins of selected parts: right-click → <b>Mark free pins no connect</b> · <b>Esc</b> done
+      </Hint>
+    );
   if (tool === "shape" && editable) return <ShapeBar />;
   if (!n || !editable) return null;
   const B = ({ id, icon, label }: { id: string; icon: React.ReactNode; label: string }) => (
@@ -662,6 +670,8 @@ function CanvasContextMenu() {
               <I id="rotateCcw" icon={<RotateCcw />} label="Rotate counter-clockwise" keys="⇧R" />
               <I id="mirror" icon={<FlipHorizontal2 />} label="Mirror" keys="X" />
               <I id="resetText" icon={<Type />} label="Restore default label placement" />
+              <I id="noConnectFree" icon={<X />} label="Mark free pins no connect" />
+              <I id="noConnectClear" icon={<X />} label="Clear no connect" />
               <I id="resetOverrides" icon={<Eraser />} label="Reset style overrides" />
               <I id="lock" icon={<Lock />} label="Lock / unlock" keys="⌘L" />
               <ContextMenuSeparator />

@@ -371,7 +371,7 @@ export function componentText(doc: Doc, parts: Located[]): string {
         return w ? `${w.label || "·"} ${short(w.id)}` : "";
       }).filter(Boolean) ?? [];
       const at = toScene(x.e, pin);
-      out.push(`  pin ${pinLabel(pin, x.def)}${pin.name && pin.name !== pin.number ? ` (${pin.name})` : ""} at (${fmt(at.x)}, ${fmt(at.y)}) facing ${ORIENT_NAME[rotOrient(pin.orient, x.e.rot, x.e.mirror)]}: ${others.length ? others.join(", ") : "not connected"}${ws.length ? ` — wires ${ws.slice(0, 8).join(", ")}${ws.length > 8 ? " …" : ""}` : ""}`);
+      out.push(`  pin ${pinLabel(pin, x.def)}${pin.name && pin.name !== pin.number ? ` (${pin.name})` : ""} at (${fmt(at.x)}, ${fmt(at.y)}) facing ${ORIENT_NAME[rotOrient(pin.orient, x.e.rot, x.e.mirror)]}: ${others.length ? others.join(", ") : x.e.noConnect?.includes(pin.id) ? "no connect (left open on purpose)" : "not connected"}${others.length && x.e.noConnect?.includes(pin.id) ? " — but marked no connect" : ""}${ws.length ? ` — wires ${ws.slice(0, 8).join(", ")}${ws.length > 8 ? " …" : ""}` : ""}`);
     }
   }
   return out.join("\n");

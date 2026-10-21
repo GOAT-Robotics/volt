@@ -84,7 +84,7 @@ function validatePage(doc: Doc, page: Page, issues: Issue[], styles: ReturnType<
     if (def.name === "volt_junction") continue;
     const needsRef = def.pins.length > 0 && !!prefixFor(doc, def) && def.linkType !== "next_report" && def.linkType !== "previous_report";
     if (needsRef && !e.info.label) issues.push({ level: "warning", code: "ref.missing", message: `${P}: ${def.name} has no reference`, pageId: page.id, ids: [e.id] });
-    for (const pin of def.pins) if (pin.required && !connected.has(e.id + "/" + pin.id)) issues.push({ level: "warning", code: "pin.unconnected", message: `${P}: ${e.info.label || def.name} pin ${pin.number || pin.name || pin.id} must be connected`, pageId: page.id, ids: [e.id] });
+    for (const pin of def.pins) if (pin.required && !connected.has(e.id + "/" + pin.id) && !e.noConnect?.includes(pin.id)) issues.push({ level: "warning", code: "pin.unconnected", message: `${P}: ${e.info.label || def.name} pin ${pin.number || pin.name || pin.id} must be connected`, pageId: page.id, ids: [e.id] });
     for (const t of layoutElementTexts(e, symbolFor(def), styles, measure)) labelRects.push({ r: textBounds(t), id: e.id, text: t.text });
   }
   // overlapping labels (bucketed)

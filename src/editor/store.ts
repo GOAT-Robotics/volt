@@ -10,7 +10,7 @@ import type { DocDiff } from "@/core/diff";
 enablePatches();
 setAutoFreeze(false);
 
-export type Tool = "select" | "wire" | "text" | "pan" | "comment" | "place" | "shape";
+export type Tool = "select" | "wire" | "text" | "pan" | "comment" | "place" | "shape" | "noconnect";
 /** what the shape tool draws */
 /** what the shape tool draws: box shapes (text box, rounded box, flowchart forms …) and paths (line, arrow, polygon, polyline) */
 export type DrawKind = import("@/core/shape-presets").ShapePreset;

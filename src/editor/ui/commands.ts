@@ -25,6 +25,8 @@ import { newCover } from "@/core/render/cover";
 import { convertShapesToWires, isOpenPath } from "@/core/shapes";
 import { straightenWires, type StraightenResult } from "@/core/straighten";
 import { INFO_BLOCK, MATE_LABEL, resetLabel, XREF_LABEL } from "@/core/label-place";
+import { freePins, setNoConnect } from "@/core/noconnect";
+import { projectNets } from "@/core/erc";
 import { uid } from "@/core/ids";
 
 export type Command = {
@@ -365,6 +367,38 @@ export const COMMANDS: Command[] = [
     },
   },
   { id: "tool-text", label: "Text tool", section: "Tools", keys: "T", enabled: editable, run: (_, s) => s.setTool("text") },
+  { id: "tool-noconnect", label: "No-connect tool (✕ on pins left open on purpose)", section: "Tools", keys: "Q", enabled: editable, run: (_, s) => s.setTool("noconnect") },
+  {
+    id: "noConnectFree",
+    label: "Mark the free pins of the selection “no connect”",
+    section: "Edit",
+    enabled: (s) => editable(s) && hasEls(s),
+    run: (ui, s) => {
+      let n = 0;
+      s.apply("No connect on free pins", (d) => {
+        const ids = new Set(s.sel.elements);
+        const nets = projectNets(d).netOfPin;
+        for (const e of getPage(d, s.pageId).elements) {
+          if (!ids.has(e.id)) continue;
+          const free = freePins(d, e, nets).filter((p) => !e.noConnect?.includes(p));
+          n += free.length;
+          if (free.length) setNoConnect(e, free, true);
+        }
+      });
+      ui.toast(n ? `${n} free pin${n === 1 ? "" : "s"} marked no connect` : "No free pins without the flag in the selection", { undo: n > 0 });
+    },
+  },
+  {
+    id: "noConnectClear",
+    label: "Clear “no connect” on the selection",
+    section: "Edit",
+    enabled: (s) => editable(s) && hasEls(s) && s.page().elements.some((e) => s.sel.elements.includes(e.id) && e.noConnect?.length),
+    run: (ui, s) =>
+      void s.apply("Clear no connect", (d) => {
+        const ids = new Set(s.sel.elements);
+        for (const e of getPage(d, s.pageId).elements) if (ids.has(e.id)) delete e.noConnect;
+      }),
+  },
   {
     id: "editText",
     label: "Edit the text of the selected shape or text",

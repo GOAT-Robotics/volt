@@ -31,6 +31,7 @@ import { templateVariables } from "@/core/titleblock-edit";
 import { gridFriendlyScales } from "@/core/straighten";
 import { boxPresetOf, PRESET_NAMES, setBoxPreset, shapeName, type BoxPreset } from "@/core/shape-presets";
 import { isOpenPath } from "@/core/shape-geom";
+import { setNoConnect } from "@/core/noconnect";
 import { symbolThumb } from "../thumb";
 import { pinDegree } from "../engine/snap";
 import { polylineLength } from "@/core/geometry";
@@ -606,17 +607,32 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
                   <th className="px-2 py-1 text-left font-medium">No.</th>
                   <th className="px-2 py-1 text-left font-medium">Name</th>
                   <th className="px-2 py-1 text-right font-medium">Wires</th>
+                  <th className="px-1 py-1 text-center font-medium" title="No connect: left open on purpose (✕ on the drawing)">NC</th>
                 </tr>
               </thead>
               <tbody>
                 {def.pins.map((p) => {
                   const n = deg.get(e.id + "/" + p.id) ?? 0;
+                  const nc = !!e.noConnect?.includes(p.id);
                   return (
                     <tr key={p.id} className="border-t border-border">
                       <td className="px-2 py-1 font-mono">{p.number || "—"}</td>
                       <td className="px-2 py-1">{p.name || <span className="text-subtle">—</span>}</td>
                       <td className="px-2 py-1 text-right">
-                        {n ? <span className="inline-flex items-center gap-0.5 text-success"><Link2 className="size-2.5" />{n}</span> : <span className={cn("inline-flex items-center gap-0.5", p.required ? "text-warning" : "text-subtle")}><Unlink className="size-2.5" />0</span>}
+                        {n ? <span className={cn("inline-flex items-center gap-0.5", nc ? "text-warning" : "text-success")} title={nc ? "Marked no connect, but wired" : undefined}><Link2 className="size-2.5" />{n}</span> : nc ? <span className="text-subtle">open</span> : <span className={cn("inline-flex items-center gap-0.5", p.required ? "text-warning" : "text-subtle")}><Unlink className="size-2.5" />0</span>}
+                      </td>
+                      <td className="px-1 py-0.5 text-center">
+                        <button
+                          type="button"
+                          disabled={!editable || (!nc && n > 0)}
+                          aria-pressed={nc}
+                          aria-label={`No connect on pin ${p.number || p.name || p.id}`}
+                          title={nc ? "No connect — click to clear" : n > 0 ? "Wired — remove the wire to leave it open" : "Mark no connect (left open on purpose)"}
+                          onClick={() => upd(nc ? "Clear no connect" : "No connect", (x) => setNoConnect(x, [p.id], !nc))}
+                          className={cn("inline-flex size-5 items-center justify-center rounded font-mono text-[11px] leading-none disabled:opacity-30", nc ? "bg-accent/15 font-bold text-accent" : "text-subtle hover:bg-panel-2")}
+                        >
+                          ✕
+                        </button>
                       </td>
                     </tr>
                   );

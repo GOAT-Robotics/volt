@@ -246,6 +246,8 @@ export type ElemInst = {
   mate?: { id: string; gender: "male" | "female"; label?: "auto" | "show" | "hide"; labelPos?: Pt };
   /** off-page arrows: where the cross-reference ("5-3B") was moved — its top-left relative to the component origin; unset = automatic */
   xrefPos?: Pt;
+  /** pins left unconnected on purpose (KiCad's "no connect"): drawn with an ✕, not reported as open */
+  noConnect?: string[];
   qet?: { idx?: number; terminalIds?: Record<string, string> }; // original node index; pinId -> original terminal id
 };
 
