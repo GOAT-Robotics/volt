@@ -55,7 +55,7 @@ node -e '
   const set=(k,v)=>{const re=new RegExp(`^${k}=.*$`,"m");s=re.test(s)?s.replace(re,`${k}="${v}"`):s+`\n${k}="${v}"`;};
   set("AUTH_MICROSOFT_ENTRA_ID_ID",process.argv[1]);
   set("AUTH_MICROSOFT_ENTRA_ID_SECRET",process.argv[2]);
-  set("AUTH_MICROSOFT_ENTRA_ID_ISSUER",`https://login.microsoftonline.com/${process.argv[3]}/v2.0/`);
+  set("AUTH_MICROSOFT_ENTRA_ID_ISSUER",`https://login.microsoftonline.com/${process.argv[3]}/v2.0`);
   fs.writeFileSync(".env",s);' "$APP_ID" "$SECRET" "$TENANT"
 
 echo
