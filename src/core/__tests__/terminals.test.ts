@@ -130,6 +130,31 @@ describe("terminal connections through folio reports", () => {
     expect(r.conn2[0]).toMatchObject({ to: ["K1:A1"], wire: "201" });
   });
 
+  it("takes the conductor's colour and cross-section from its continuation on the other sheet", () => {
+    const { doc, p2 } = folioProject();
+    Object.assign(p2.wires[0], { insulation: "BU", section: "0.75 mm²" });
+    const c = side2(doc).conn2[0];
+    expect(c).toMatchObject({ color: "BU", hex: "#1f5fd1", section: "0.75 mm²" });
+    expect(c.wires).toHaveLength(2);
+  });
+
+  it("a colour on the wire at the terminal wins; a junction branch is another conductor", () => {
+    const { doc, p1, p2, c2, k1 } = folioProject();
+    p1.wires[0].insulation = "RD";
+    p2.wires[0].insulation = "BU";
+    expect(side2(doc).conn2[0]).toMatchObject({ color: "RD" });
+    // sheet 2: arrow → junction → K1 (blue): the branch after the junction is not this conductor's colour
+    delete p1.wires[0].insulation;
+    p2.wires = [
+      { ...wire([c2.id, "r"], [k1.id, "a1"]), b: { k: "junction", j: "j1" } } as Wire,
+      { ...wire([k1.id, "a1"], [k1.id, "a1"], { insulation: "BU" }), a: { k: "junction", j: "j1" } } as Wire,
+    ];
+    const c = side2(doc).conn2[0];
+    expect(c.to).toEqual(["K1:A1"]);
+    expect(c.wires).toHaveLength(2);
+    expect(c.hex).toBeUndefined();
+  });
+
   it("an arrow that is not linked is where the conductor ends", () => {
     const { doc, g, c2 } = folioProject();
     delete g.links;

@@ -8,10 +8,11 @@
  *
  * The layout is shared by rendering and cross references (click a terminal → its schematic symbol).
  */
-import type { Doc, Page, Rect, Styles } from "../model";
+import type { Doc, Page, Rect, Styles, Wire } from "../model";
 import { collectStrips, type StripView, type TerminalConn, type TerminalRowView } from "../terminals";
 import { PathBuilder, type Painter } from "./painter";
 import { sheetArea } from "./cover";
+import { insulationHex } from "./wire-color";
 
 type Measure = Painter["measure"];
 
@@ -113,10 +114,14 @@ export function terminalDiagramLayout(doc: Doc, page: Page, styles: Styles, view
   return l;
 }
 
-const sideText = (c: TerminalConn[]) => ({
+/**
+ * texts of one conductor line, and its colour exactly as the schematic draws the conductor: the
+ * first of its wires (at the terminal, then its continuation through folio reports) with a colour
+ */
+const sideText = (c: TerminalConn[], color: (x: TerminalConn) => { hex: string; hex2?: string } | null) => ({
   wire: [...new Set(c.map((x) => [x.wire, x.cable ? `(${x.cable})` : ""].filter(Boolean).join(" ")).filter(Boolean))].join(" / "),
   to: [...new Set(c.flatMap((x) => x.to))].join(", "),
-  hex: c.find((x) => x.hex)?.hex,
+  look: c.map(color).find(Boolean) ?? null,
 });
 
 function fitText(t: string, max: number, size: number, font: string, measure: Measure) {
@@ -162,6 +167,17 @@ export function drawTerminalDiagram(pt: Painter, doc: Doc, page: Page, styles: S
   const topRoom = box.y - (a.y + 40 * u);
   const botRoom = a.y + a.h - (box.y + box.h) - 6;
   const tsize = Math.min(8.5 * u, Math.max(6 * u, cw * 0.4));
+  const wireById = new Map<string, Wire>();
+  for (const p of doc.pages) if (!p.archived) for (const w of p.wires) wireById.set(w.id, w);
+  const conductorColor = (x: TerminalConn) => {
+    for (const id of x.wires) {
+      const w = wireById.get(id);
+      const h = w && insulationHex(doc, w);
+      if (h) return h;
+    }
+    return null;
+  };
+  const wireInk = styles.graphics.wire.color;
   for (const c of cells) {
     for (const side of [1, 2] as const) {
       const all = side === 1 ? c.row.conn1 : c.row.conn2;
@@ -171,7 +187,7 @@ export function drawTerminalDiagram(pt: Painter, doc: Doc, page: Page, styles: S
       const n = groups.length;
       const step = n > 1 ? Math.min(cw * 0.32, (cw * 0.8) / (n - 1)) : 0;
       groups.forEach((conns, gi) => {
-        const t = sideText(conns);
+        const t = sideText(conns, conductorColor);
         const x = c.cx + (gi - (n - 1) / 2) * step;
         const ts = n > 1 ? tsize * 0.85 : tsize;
         const room = side === 1 ? topRoom : botRoom;
@@ -180,8 +196,13 @@ export function drawTerminalDiagram(pt: Painter, doc: Doc, page: Page, styles: S
         const len = Math.min(room, Math.max(28 * u, ww + tw + 22 * u));
         const yEdge = side === 1 ? box.y : box.y + box.h;
         const yEnd = side === 1 ? yEdge - len : yEdge + len;
-        const col = t.hex && t.hex.toLowerCase() !== "#ffffff" ? t.hex : ink;
-        pt.stroke(new PathBuilder().M(x, yEdge).L(x, yEnd).build(), { color: col, width: 1, minPx: 1 });
+        // white insulation would vanish on the paper: drawn in the wire colour like an uncoloured conductor
+        const hex = t.look?.hex;
+        const col = hex && hex.toLowerCase() !== "#ffffff" ? hex : wireInk;
+        const line = new PathBuilder().M(x, yEdge).L(x, yEnd).build();
+        pt.stroke(line, { color: col, width: 1, minPx: 1 });
+        // two-colour insulation (green-yellow …): second colour as stripes, as on the schematic
+        if (t.look?.hex2) pt.stroke(line, { color: t.look.hex2, width: 1, minPx: 1, dash: [3, 3], cap: "butt" });
         pt.stroke(new PathBuilder().E(x, yEdge, 1.6, 1.6).build(), { color: ink, width: 0.7, minPx: 0.75 });
         // texts read bottom to top, left of the conductor: wire number next to the strip, then the destination
         const tx = x - 1.5;

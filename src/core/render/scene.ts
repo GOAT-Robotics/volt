@@ -14,8 +14,8 @@ import { fitContain, LOGO_MIME, logoKey, logoSize } from "../logos";
 import { defaultTitleBlock } from "../doc";
 import { DASHES, PathBuilder, type Painter, type PathData, type StrokeStyle } from "./painter";
 import { PT, symbolFor, type CompiledSymbol } from "./symbol";
-import { circuitOf } from "../circuit";
-import { cableMarks, colorOf, sectionWeight, wireAnnotation, wireEndLabel, wireInfo, wiringOf, type CableMark } from "../wiring";
+import { insulationHex, type WireLookDoc } from "./wire-color";
+import { cableMarks, sectionWeight, wireAnnotation, wireEndLabel, wireInfo, wiringOf, type CableMark } from "../wiring";
 
 /* ------------------------------------------------------------------ */
 /* Style cache                                                          */
@@ -486,7 +486,6 @@ export function wirePath(w: Wire): PathData {
   return p;
 }
 type WireGroup = { style: StrokeStyle; paths: PathData[]; dim: boolean };
-type WireLookDoc = Pick<Doc, "wiring" | "cables">;
 const groupCache = new WeakMap<Wire[], { styles: Styles; wiring: unknown; cables: unknown; whole: unknown; groups: WireGroup[] }>();
 function wireGroups(styles: Styles, wires: Wire[], doc: WireLookDoc, tint?: Map<string, string>, dim?: Set<string>): WireGroup[] {
   const cacheable = !tint && !dim;
@@ -521,21 +520,6 @@ function wireGroups(styles: Styles, wires: Wire[], doc: WireLookDoc, tint?: Map<
 }
 function wireSecondColor(doc: WireLookDoc, w: Wire): string | null {
   return insulationHex(doc, w)?.hex2 ?? null;
-}
-/**
- * Colour a wire is drawn in from its conductor data: an explicit color (on the wire or its cable
- * core) always; the standard color of its function only with "draw in standard colors" on.
- */
-function insulationHex(doc: WireLookDoc, w: Wire): { hex: string; hex2?: string } | null {
-  if (!w.insulation && !w.core && !doc.wiring?.colorize) return null;
-  const i = wireInfo(doc, w);
-  if (i.look && (i.colorSource !== "standard" || doc.wiring?.colorize)) return { hex: i.look.hex, hex2: i.look.hex2 };
-  // "draw in standard colors": a wire without its own potential / use takes the detected circuit's colour
-  if (doc.wiring?.colorize && "pages" in doc) {
-    const c = colorOf(circuitOf(doc as Doc, w.id)?.color);
-    if (c) return { hex: c.hex, hex2: c.hex2 };
-  }
-  return null;
 }
 const degCache = new WeakMap<Wire[], Degrees>();
 export function cachedDegrees(page: Page): Degrees {

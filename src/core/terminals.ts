@@ -77,8 +77,12 @@ export type TerminalRowView = {
   conn1: TerminalConn[];
   conn2: TerminalConn[];
 };
-/** one conductor at a terminal side: where it goes, its wire number, cable / core and colour */
-export type TerminalConn = { to: string[]; wire: string; cable: string; color?: string; hex?: string; section?: string };
+/**
+ * one conductor at a terminal side: where it goes, its wire number, cable / core and colour.
+ * `wires`: the wire at the terminal and the wires continuing it on other sheets through folio
+ * reports (nearest first) — the same physical conductor, where its colour may be set.
+ */
+export type TerminalConn = { to: string[]; wire: string; cable: string; color?: string; hex?: string; section?: string; wires: string[] };
 export type StripView = { tag: string; strip: TerminalStrip | null; sep: string; rows: TerminalRowView[] };
 
 type Found = { e: ElemInst; def: ElementDef; page: Page; sheet: number; tag: string; num: string | null; sep: string };
@@ -129,23 +133,31 @@ function elementIndex(doc: Doc): Map<string, ElAt> {
  * where the conductor ends, so it is returned as the end point. Returns those pins and the wires
  * passed (nearest first).
  */
-function followConductor(at: Map<string, ElAt>, page: Page, start: Wire, from: { el: string; pin: string }): { pins: { el: string; pin: string }[]; wires: Wire[] } {
+function followConductor(at: Map<string, ElAt>, page: Page, start: Wire, from: { el: string; pin: string }): { pins: { el: string; pin: string }[]; wires: Wire[]; chain: Wire[] } {
   const seenW = new Set<string>([start.id]);
   const seenJ = new Set<string>();
   const seenR = new Set<string>();
   const pins: { el: string; pin: string }[] = [];
   const wires: Wire[] = [start];
-  const queue: { w: Wire; page: Page }[] = [{ w: start, page }];
-  const enter = (pg: Page, list: Wire[] | undefined) => {
-    for (const n of list ?? []) if (!seenW.has(n.id)) (seenW.add(n.id), wires.push(n), queue.push({ w: n, page: pg }));
+  // the same conductor: the start wire and what continues it through folio reports (not junction branches)
+  const chain: Wire[] = [start];
+  const queue: { w: Wire; page: Page; same: boolean }[] = [{ w: start, page, same: true }];
+  const enter = (pg: Page, list: Wire[] | undefined, same: boolean) => {
+    for (const n of list ?? [])
+      if (!seenW.has(n.id)) {
+        seenW.add(n.id);
+        wires.push(n);
+        if (same) chain.push(n);
+        queue.push({ w: n, page: pg, same });
+      }
   };
   /** an arrow passes the conductor on: its own other wires, and every wire at its linked counterparts */
-  const passReport = (r: ElAt) => {
+  const passReport = (r: ElAt, same: boolean) => {
     const stack = [r];
     while (stack.length) {
       const x = stack.pop()!;
       const ix = wireIndex(x.page);
-      for (const p of x.def?.pins ?? []) enter(x.page, ix.byPin.get(`${x.e.id}/${p.id}`));
+      for (const p of x.def?.pins ?? []) enter(x.page, ix.byPin.get(`${x.e.id}/${p.id}`), same);
       for (const l of x.e.links ?? []) {
         const o = at.get(l);
         if (o && isReportDef(o.def) && !seenR.has(l)) (seenR.add(l), stack.push(o));
@@ -153,7 +165,7 @@ function followConductor(at: Map<string, ElAt>, page: Page, start: Wire, from: {
     }
   };
   while (queue.length) {
-    const { w, page: pg } = queue.shift()!;
+    const { w, page: pg, same } = queue.shift()!;
     for (const end of [w.a, w.b]) {
       if (end.k === "pin") {
         if (end.el === from.el && end.pin === from.pin) continue;
@@ -162,7 +174,7 @@ function followConductor(at: Map<string, ElAt>, page: Page, start: Wire, from: {
           if (seenR.has(end.el)) continue;
           seenR.add(end.el);
           if ((x.e.links ?? []).some((l) => isReportDef(at.get(l)?.def))) {
-            passReport(x);
+            passReport(x, same);
             continue;
           }
           // not linked: the conductor ends at this arrow
@@ -170,11 +182,11 @@ function followConductor(at: Map<string, ElAt>, page: Page, start: Wire, from: {
         if (!pins.some((p) => p.el === end.el && p.pin === end.pin)) pins.push({ el: end.el, pin: end.pin });
       } else if (end.k === "junction" && !seenJ.has(end.j)) {
         seenJ.add(end.j);
-        enter(pg, wireIndex(pg).byJunction.get(end.j));
+        enter(pg, wireIndex(pg).byJunction.get(end.j), false);
       }
     }
   }
-  return { pins, wires };
+  return { pins, wires, chain };
 }
 
 /** which side a wire leaves a terminal pin to: 1 = up / left, 2 = down / right (falls back to the pin direction) */
@@ -224,9 +236,12 @@ function connections(doc: Doc, f: Found, at: Map<string, ElAt>): { side1: string
       const reach = followConductor(at, f.page, wire, { el: f.e.id, pin: pin.id });
       const targets = [...new Set(reach.pins.filter((p) => !isSelf(p.el)).map(name))];
       const label = wire.label?.trim() || reach.wires.find((w) => w.label?.trim())?.label?.trim() || "";
-      const wi = wireInfo(doc, wire);
-      const conn: TerminalConn = { to: targets, wire: label, cable: wire.cable ? `${wire.cable}${wire.core ? `:${wire.core}` : ""}` : "", color: wi.color, hex: wi.look?.hex, section: wi.section };
-      const parts = [wire.cable ? `${wire.cable}${wire.core ? ` ${wire.core}` : ""}` : "", label, !wire.cable && wi.section ? wi.section : ""].filter(Boolean);
+      // colour and cross-section of the conductor: set on the wire at the terminal or on its continuation on another sheet
+      const infos = reach.chain.map((w) => wireInfo(doc, w));
+      const wi = infos.find((i) => i.colorSource === "wire" || i.colorSource === "core") ?? infos.find((i) => i.color) ?? infos[0];
+      const section = infos.find((i) => i.section)?.section;
+      const conn: TerminalConn = { to: targets, wire: label, cable: wire.cable ? `${wire.cable}${wire.core ? `:${wire.core}` : ""}` : "", color: wi.color, hex: wi.look?.hex, section, wires: reach.chain.map((w) => w.id) };
+      const parts = [wire.cable ? `${wire.cable}${wire.core ? ` ${wire.core}` : ""}` : "", label, !wire.cable && section ? section : ""].filter(Boolean);
       const text = (targets.length ? targets.join(", ") : "—") + (parts.length ? ` (${parts.join(" · ")})` : "");
       if (!into.includes(text)) into.push(text);
       if (!cinto.some((c) => c.wire === conn.wire && c.to.join() === conn.to.join())) cinto.push(conn);

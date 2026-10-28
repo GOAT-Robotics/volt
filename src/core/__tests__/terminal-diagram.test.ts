@@ -7,7 +7,9 @@ import { insertTerminalDiagram, terminalDiagramLayout, drawTerminalDiagram, term
 import { buildXref } from "../xref";
 import { docStyles } from "../render/scene";
 import { duplicateRefs } from "../numbering";
-import { mkDoc, twoPin } from "./helpers";
+import { mkDef, mkDoc, twoPin } from "./helpers";
+import { wiringOf } from "../wiring";
+import type { Doc, ElemInst, Page, PinDef } from "../model";
 
 const measure = (t: string, s: number) => t.length * s * 0.6;
 
@@ -117,5 +119,66 @@ describe("terminal connections on both sides", () => {
     const row = collectStrips(doc).find((v) => v.tag === "X1")!.rows[0];
     expect(row.conn1.map((q) => q.to[0]).sort()).toEqual(["F1:2", "F2:2"]);
     expect(row.conn2.map((q) => q.to[0])).toEqual(["M1:1"]);
+  });
+});
+
+describe("terminal diagram conductor colours (as on the schematic)", () => {
+  type St = { color: string; dash?: number[] | null };
+  function draw(doc: Doc, afterPageId: string) {
+    const [id] = insertTerminalDiagram(doc, "X1", { afterPageId, newPage });
+    const sheet = doc.pages.find((p) => p.id === id)!;
+    const strokes: St[] = [], texts: string[] = [];
+    const pt = { kind: "svg", save() {}, restore() {}, transform() {}, stroke: (_p: unknown, st: St) => strokes.push(st), fill() {}, text: (t: { text: string }) => texts.push(t.text), measure, scale: () => 1 } as never;
+    drawTerminalDiagram(pt, doc, sheet, docStyles(doc), measure);
+    return { strokes, texts };
+  }
+  const has = (s: St[], color: string, dashed = false) => s.some((x) => x.color === color && !!x.dash === dashed);
+
+  it("two-colour insulation is drawn striped", () => {
+    const { doc, page } = project();
+    page.wires.find((w) => w.label === "B001A")!.insulation = "GNYE";
+    const { strokes } = draw(doc, page.id);
+    expect(has(strokes, "#1f8a3b")).toBe(true);
+    expect(has(strokes, "#e6c200", true)).toBe(true);
+  });
+
+  it("standard colours only with “draw in standard colors” on", () => {
+    for (const colorize of [false, true]) {
+      const { doc, page } = project();
+      const w = page.wires.find((x) => x.label === "B001A")!;
+      delete w.insulation;
+      w.pot = "PE";
+      doc.wiring = { ...wiringOf(doc), colorize };
+      expect(has(draw(doc, page.id).strokes, "#1f8a3b")).toBe(colorize);
+    }
+  });
+
+  it("follows a folio report to the coloured wire on the other sheet", () => {
+    const { doc, page } = mkDoc();
+    const t = builtinTerminalDef();
+    const going = mkDef("go", [{ id: "r", x: 0, y: 0, orient: "n" }], { linkType: "next_report", name: "report going", prefix: "" });
+    const coming = mkDef("come", [{ id: "r", x: 0, y: 0, orient: "s" }], { linkType: "previous_report", name: "report coming", prefix: "" });
+    const x1 = newElement(doc, page, t, { x: 200, y: 300 });
+    x1.info.label = "X1:1";
+    const g = newElement(doc, page, going, { x: 200, y: 400 });
+    g.info.label = "24V";
+    const pin = (e: ElemInst, p: PinDef) => ({ k: "pin" as const, el: e.id, pin: p.id, p: toScene(e, p) });
+    const a = pin(x1, t.pins[1]), b = pin(g, going.pins[0]);
+    addWire(page, a, b, [a.p, b.p]);
+    const p2: Page = newPage(1, "Sheet 2");
+    doc.pages.push(p2);
+    const c = newElement(doc, p2, coming, { x: 200, y: 100 });
+    c.info.label = "24V";
+    const q = newElement(doc, p2, twoPin("q"), { x: 200, y: 300 });
+    q.info.label = "Q1";
+    const qd = doc.defs[q.defId];
+    const c0 = pin(c, coming.pins[0]), q0 = pin(q, qd.pins[0]);
+    addWire(p2, c0, q0, [c0.p, { x: c0.p.x, y: q0.p.y }, q0.p], { label: "201", insulation: "RD" });
+    g.links = [c.id];
+    c.links = [g.id];
+    const { strokes, texts } = draw(doc, page.id);
+    expect(has(strokes, "#d62828")).toBe(true);
+    expect(texts).toContain("201");
+    expect(texts.some((x) => x.startsWith("Q1:"))).toBe(true);
   });
 });
