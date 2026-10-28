@@ -12,6 +12,7 @@ import type { Doc, ElemInst, ElementDef, Page, StripRow, TerminalStrip, Terminal
 import { rotOrient } from "./geometry";
 import { wireInfo } from "./wiring";
 import { uid } from "./ids";
+import { isReportDef } from "./reports";
 
 export const TERMINAL_TYPES: { id: TerminalType; label: string; short: string }[] = [
   { id: "feed", label: "Feed-through", short: "" },
@@ -113,26 +114,63 @@ function wireIndex(page: Page): WireIndex {
   return ix;
 }
 
+/** every drawn element of the project (not archived sheets) by id, with its sheet */
+type ElAt = { e: ElemInst; def: ElementDef | undefined; page: Page };
+function elementIndex(doc: Doc): Map<string, ElAt> {
+  const m = new Map<string, ElAt>();
+  for (const page of doc.pages) if (!page.archived) for (const e of page.elements) m.set(e.id, { e, def: doc.defs[e.defId], page });
+  return m;
+}
+
 /**
- * Follow one conductor that leaves a terminal pin: through junctions and further wires, up to the
- * device pins it reaches (not back into the terminal). Returns those pins and the wires passed.
+ * Follow one conductor that leaves a terminal pin: through junctions, further wires and folio
+ * reports (an off-page arrow continues at its linked counterpart(s) on other sheets), up to the
+ * device pins it reaches (not back into the terminal). An arrow that is not linked to anything is
+ * where the conductor ends, so it is returned as the end point. Returns those pins and the wires
+ * passed (nearest first).
  */
-function followConductor(page: Page, start: Wire, from: { el: string; pin: string }): { pins: { el: string; pin: string }[]; wires: Wire[] } {
-  const ix = wireIndex(page);
+function followConductor(at: Map<string, ElAt>, page: Page, start: Wire, from: { el: string; pin: string }): { pins: { el: string; pin: string }[]; wires: Wire[] } {
   const seenW = new Set<string>([start.id]);
   const seenJ = new Set<string>();
+  const seenR = new Set<string>();
   const pins: { el: string; pin: string }[] = [];
   const wires: Wire[] = [start];
-  const queue: Wire[] = [start];
+  const queue: { w: Wire; page: Page }[] = [{ w: start, page }];
+  const enter = (pg: Page, list: Wire[] | undefined) => {
+    for (const n of list ?? []) if (!seenW.has(n.id)) (seenW.add(n.id), wires.push(n), queue.push({ w: n, page: pg }));
+  };
+  /** an arrow passes the conductor on: its own other wires, and every wire at its linked counterparts */
+  const passReport = (r: ElAt) => {
+    const stack = [r];
+    while (stack.length) {
+      const x = stack.pop()!;
+      const ix = wireIndex(x.page);
+      for (const p of x.def?.pins ?? []) enter(x.page, ix.byPin.get(`${x.e.id}/${p.id}`));
+      for (const l of x.e.links ?? []) {
+        const o = at.get(l);
+        if (o && isReportDef(o.def) && !seenR.has(l)) (seenR.add(l), stack.push(o));
+      }
+    }
+  };
   while (queue.length) {
-    const w = queue.shift()!;
+    const { w, page: pg } = queue.shift()!;
     for (const end of [w.a, w.b]) {
       if (end.k === "pin") {
         if (end.el === from.el && end.pin === from.pin) continue;
+        const x = at.get(end.el);
+        if (x && isReportDef(x.def)) {
+          if (seenR.has(end.el)) continue;
+          seenR.add(end.el);
+          if ((x.e.links ?? []).some((l) => isReportDef(at.get(l)?.def))) {
+            passReport(x);
+            continue;
+          }
+          // not linked: the conductor ends at this arrow
+        }
         if (!pins.some((p) => p.el === end.el && p.pin === end.pin)) pins.push({ el: end.el, pin: end.pin });
       } else if (end.k === "junction" && !seenJ.has(end.j)) {
         seenJ.add(end.j);
-        for (const n of ix.byJunction.get(end.j) ?? []) if (!seenW.has(n.id)) (seenW.add(n.id), wires.push(n), queue.push(n));
+        enter(pg, wireIndex(pg).byJunction.get(end.j));
       }
     }
   }
@@ -152,17 +190,24 @@ function sideOfWire(w: Wire, el: string, pin: string, fallback: 1 | 2): 1 | 2 {
 }
 
 /**
- * Destinations of one terminal instance, per side: "Q1:2 (W1 · 101)". Every conductor on the
+ * Destinations of one terminal instance, per side: "Q1:2 (W1 · 101)" — the device the conductor
+ * really lands on, also when it continues on another sheet through folio reports. Every conductor on the
  * terminal counts on the side it leaves from — a one-pin terminal drawn in a line with the wire
  * coming from above and going on below has a top AND a bottom connection.
  */
-function connections(doc: Doc, f: Found): { side1: string[]; side2: string[]; conn1: TerminalConn[]; conn2: TerminalConn[] } {
+function connections(doc: Doc, f: Found, at: Map<string, ElAt>): { side1: string[]; side2: string[]; conn1: TerminalConn[]; conn2: TerminalConn[] } {
   const side1: string[] = [], side2: string[] = [];
   const conn1: TerminalConn[] = [], conn2: TerminalConn[] = [];
-  const els = new Map(f.page.elements.map((x) => [x.id, x]));
   const ix = wireIndex(f.page);
+  const myRef = (f.e.info.label ?? "").trim();
+  // the same terminal drawn on another sheet (reached through a folio report) is not a destination
+  const isSelf = (el: string) => {
+    if (el === f.e.id) return true;
+    const x = at.get(el);
+    return !!f.num && !!x && isTerminalDef(x.def) && (x.e.info.label ?? "").trim() === myRef;
+  };
   const name = (p: { el: string; pin: string }) => {
-    const x = els.get(p.el);
+    const x = at.get(p.el)?.e;
     const d = x && doc.defs[x.defId];
     const pd = d?.pins.find((q) => q.id === p.pin);
     const ref = x?.info.label || d?.names.en || d?.name || "?";
@@ -176,8 +221,8 @@ function connections(doc: Doc, f: Found): { side1: string[]; side2: string[]; co
       const side = f.def.pins.length === 1 ? sideOfWire(wire, f.e.id, pin.id, pinSide) : pinSide;
       const into = side === 1 ? side1 : side2;
       const cinto = side === 1 ? conn1 : conn2;
-      const reach = followConductor(f.page, wire, { el: f.e.id, pin: pin.id });
-      const targets = [...new Set(reach.pins.filter((p) => p.el !== f.e.id).map(name))];
+      const reach = followConductor(at, f.page, wire, { el: f.e.id, pin: pin.id });
+      const targets = [...new Set(reach.pins.filter((p) => !isSelf(p.el)).map(name))];
       const label = wire.label?.trim() || reach.wires.find((w) => w.label?.trim())?.label?.trim() || "";
       const wi = wireInfo(doc, wire);
       const conn: TerminalConn = { to: targets, wire: label, cable: wire.cable ? `${wire.cable}${wire.core ? `:${wire.core}` : ""}` : "", color: wi.color, hex: wi.look?.hex, section: wi.section };
@@ -197,6 +242,7 @@ export function stripOf(doc: Doc, tag: string): TerminalStrip | null {
 /** All strips of the project (defined ones and those found on the drawings), terminals in strip order. */
 export function collectStrips(doc: Doc): StripView[] {
   const found = findTerminals(doc);
+  const at = elementIndex(doc);
   const tags = new Set<string>([...(doc.terminalStrips ?? []).map((s) => s.tag), ...found.map((f) => f.tag)]);
   const views: StripView[] = [];
   for (const tag of tags) {
@@ -213,7 +259,7 @@ export function collectStrips(doc: Doc): StripView[] {
         byKey.set(key, r);
       }
       r.instances.push({ el: f.e.id, pageId: f.page.id, sheet: f.sheet });
-      const c = connections(doc, f);
+      const c = connections(doc, f, at);
       for (const t of c.side1) if (!r.side1.includes(t)) r.side1.push(t);
       for (const t of c.side2) if (!r.side2.includes(t)) r.side2.push(t);
       for (const t of c.conn1) if (!r.conn1.some((x) => x.wire === t.wire && x.to.join() === t.to.join())) r.conn1.push(t);

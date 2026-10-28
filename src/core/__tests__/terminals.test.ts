@@ -101,3 +101,69 @@ describe("terminal strips", () => {
     expect(t.manufacturer).toBe("Phoenix Contact");
   });
 });
+
+describe("terminal connections through folio reports", () => {
+  const going: ElementDef = { ...terminal, id: "go", uuid: "go", name: "report_going", names: { en: "Folio report (going)" }, linkType: "next_report", prefix: "", pins: [pin("r", 0, 0, "n")] };
+  const coming: ElementDef = { ...going, id: "come", uuid: "come", name: "report_coming", names: { en: "Folio report (coming)" }, linkType: "previous_report" };
+  const coil: ElementDef = { ...mcb, id: "coil", uuid: "coil", name: "coil", names: { en: "Coil" }, pins: [pin("a1", 0, -10, "n", "A1"), pin("a2", 0, 10, "s", "A2")] };
+  const page = (id: string, order: number): Page => ({ id, title: id, order, elements: [], wires: [], junctions: [], texts: [], shapes: [], meta: {} } as unknown as Page);
+  const link = (a: ElemInst, b: ElemInst) => ((a.links = [...(a.links ?? []), b.id]), (b.links = [...(b.links ?? []), a.id]));
+
+  function folioProject() {
+    const p1 = page("p1", 0), p2 = page("p2", 1), p3 = page("p3", 2);
+    const x1 = el("term", "X1:1"), g = el("go", "24V");
+    const c2 = el("come", "24V"), k1 = el("coil", "K1");
+    p1.elements.push(x1, g);
+    p1.wires.push(wire([x1.id, "t2"], [g.id, "r"])); // no wire number on this sheet
+    p2.elements.push(c2, k1);
+    p2.wires.push(wire([c2.id, "r"], [k1.id, "a1"], { label: "201" }));
+    link(g, c2);
+    const doc = { pages: [p1, p2, p3], defs: { term: terminal, mcb, go: going, come: coming, coil }, wiring: undefined, cables: [] } as unknown as Doc;
+    return { doc, p1, p2, p3, x1, g, c2, k1 };
+  }
+  const side2 = (doc: Doc) => collectStrips(doc).find((v) => v.tag === "X1")!.rows[0];
+
+  it("shows the device the conductor lands on, not the arrow", () => {
+    const { doc } = folioProject();
+    const r = side2(doc);
+    expect(r.side2).toEqual(["K1:A1 (201)"]);
+    expect(r.conn2[0]).toMatchObject({ to: ["K1:A1"], wire: "201" });
+  });
+
+  it("an arrow that is not linked is where the conductor ends", () => {
+    const { doc, g, c2 } = folioProject();
+    delete g.links;
+    delete c2.links;
+    expect(side2(doc).side2).toEqual(["24V"]);
+  });
+
+  it("follows one going arrow to every coming arrow, and chains over several sheets", () => {
+    const { doc, p2, p3, g, k1 } = folioProject();
+    // a second coming arrow on sheet 3 feeding Q1
+    const c3 = el("come", "24V"), q1 = el("mcb", "Q1");
+    p3.elements.push(c3, q1);
+    p3.wires.push(wire([c3.id, "r"], [q1.id, "m1"]));
+    link(g, c3);
+    // and K1:A2 goes on from sheet 2 through another pair back to sheet 3 — not part of this conductor
+    const g2 = el("go", "A2"), c4 = el("come", "A2"), k2 = el("coil", "K2");
+    p2.elements.push(g2);
+    p2.wires.push(wire([k1.id, "a2"], [g2.id, "r"]));
+    p3.elements.push(c4, k2);
+    p3.wires.push(wire([c4.id, "r"], [k2.id, "a1"]));
+    link(g2, c4);
+    expect(side2(doc).conn2[0].to.sort()).toEqual(["K1:A1", "Q1:1"]);
+  });
+
+  it("does not list the same terminal drawn on the other sheet as its own destination", () => {
+    const { doc, p2, c2 } = folioProject();
+    const x1b = el("term", "X1:1");
+    p2.elements.push(x1b);
+    p2.wires.push(wire([c2.id, "r"], [x1b.id, "t1"]));
+    const r = side2(doc);
+    expect(r.instances).toHaveLength(2);
+    expect(r.side2).toEqual(["K1:A1 (201)"]);
+    // the sheet 2 instance's top shares the coming arrow with K1:A1; X1:1 on sheet 1 is itself, not a destination
+    expect(r.side1).toEqual(["K1:A1 (201)"]);
+    expect([...r.side1, ...r.side2].some((t) => t.includes("X1:1"))).toBe(false);
+  });
+});
