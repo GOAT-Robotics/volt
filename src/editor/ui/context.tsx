@@ -22,6 +22,7 @@ export type DialogName =
   | "shortcuts"
   | "newVersion"
   | "submit"
+  | "release"
   | "compare"
   | "projectProps"
   | "createElement"

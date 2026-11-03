@@ -9,7 +9,7 @@ import { Checkbox, Spinner } from "@/components/ui/misc";
 import { PromptDialog } from "@/components/volt/common";
 import { api } from "@/lib/fetcher";
 
-export function SignForm({ signatureId, fullName, projectId }: { signatureId: string; fullName: string; projectId: string }) {
+export function SignForm({ signatureId, fullName, projectId, versionId }: { signatureId: string; fullName: string; projectId: string; versionId: string }) {
   const router = useRouter();
   const [name, setName] = React.useState("");
   const [accept, setAccept] = React.useState(false);
@@ -22,8 +22,8 @@ export function SignForm({ signatureId, fullName, projectId }: { signatureId: st
     setBusy(true);
     try {
       const j = await api<{ versionStatus: string }>(`/api/signatures/${signatureId}/sign`, { method: "POST", json: { fullName: name, accept: true } });
-      toast.success(j.versionStatus === "SIGNED" ? "Signed — all signatures are complete" : "Signed — the next signatory has been notified");
-      router.push(`/projects/${projectId}?tab=signatures`);
+      toast.success(j.versionStatus === "SIGNED" ? "Signed — all signatures are complete. Next: a project owner releases it." : "Signed — the next signatory has been notified");
+      router.push(`/projects/${projectId}/v/${versionId}`);
     } catch (err) {
       toast.error((err as Error).message);
       setBusy(false);

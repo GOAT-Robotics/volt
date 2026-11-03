@@ -5,6 +5,7 @@ import type { Doc } from "@/core/model";
 import { db, J } from "../db";
 import { canonicalPages, versionHashes } from "./canonical";
 import { getProvider, type SignatureEvidence } from "./provider";
+import type { PdfCertInfo } from "./pdf-cert";
 
 type Fonts = { regular: PDFFont; bold: PDFFont; italic: PDFFont };
 
@@ -108,8 +109,11 @@ class Writer {
 
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC") : "—");
 
-/** Canonical drawing PDF + appended "Approval & signature record" pages. */
-export async function buildReleasePdf(versionId: string, verifyBase: string): Promise<{ bytes: Uint8Array; filename: string }> {
+/**
+ * Canonical drawing PDF + appended "Approval & signature record" pages. `digital`: the certificate
+ * that will digitally sign this file (release-signed.ts) — described on the record page.
+ */
+export async function buildReleasePdf(versionId: string, verifyBase: string, opts: { digital?: PdfCertInfo } = {}): Promise<{ bytes: Uint8Array; filename: string }> {
   const v = await db.version.findUniqueOrThrow({ where: { id: versionId }, include: { project: true, reviews: { include: { assignments: true }, orderBy: { createdAt: "asc" } }, signatures: { orderBy: [{ createdAt: "asc" }, { order: "asc" }] } } });
   const doc = J.parse<Doc>(v.doc, null as unknown as Doc);
   const h = await versionHashes(doc, v.label);
@@ -175,13 +179,14 @@ export async function buildReleasePdf(versionId: string, verifyBase: string): Pr
       w.rule();
 
       w.heading("Electronic signatures");
-      if (!v.signatures.length) w.text("No signatures were requested for this version.", { size: 9, color: [0.4, 0.4, 0.45] });
+      w.text("Each approval is the approver’s electronic signature: they typed their full name to confirm the statement below, and Volt sealed the evidence.", { size: 8, color: [0.35, 0.35, 0.4], gap: 6 });
+      if (!v.signatures.length) w.text("No signatures for this version.", { size: 9, color: [0.4, 0.4, 0.45] });
       for (const s of v.signatures) {
         const ev = J.parse<SignatureEvidence | null>(s.evidence, null);
-        w.text(`${nm(s.signatoryId)} — ${s.status}`, { size: 10, font: "bold", gap: 2 });
+        w.text(`${nm(s.signatoryId)} — ${s.kind === "APPROVAL" ? (s.status === "SIGNED" ? "APPROVED & SIGNED" : `APPROVAL ${s.status}`) : s.status}`, { size: 10, font: "bold", gap: 2 });
         w.kv("Purpose", s.purpose, 8);
-        w.kv("Requested by", `${nm(s.requestedById)} on ${iso(s.createdAt)}`, 8);
-        if (s.status === "DECLINED" || s.status === "CANCELLED") w.kv("Reason", s.declineReason ?? "", 8);
+        w.kv(s.kind === "APPROVAL" ? "Review submitted by" : "Requested by", `${nm(s.requestedById)} on ${iso(s.createdAt)}`, 8);
+        if (s.status === "DECLINED" || s.status === "CANCELLED" || s.status === "INVALIDATED") w.kv("Reason", s.declineReason ?? "", 8);
         if (ev && s.seal) {
           w.kv("Signatory", `${ev.signatory.name} <${ev.signatory.email}>${ev.signatory.entraOid ? ` · Entra OID ${ev.signatory.entraOid}` : ""}`, 8);
           w.kv("Signed at", iso(ev.signedAt), 8);
@@ -197,6 +202,17 @@ export async function buildReleasePdf(versionId: string, verifyBase: string): Pr
         w.y -= 6;
       }
       w.rule();
+      if (opts.digital) {
+        const d = opts.digital;
+        w.heading("Digital signature of this file");
+        w.text("Volt digitally signed this PDF when the version was released (PAdES, SHA-256). Your PDF reader’s signature panel shows whether the file changed since; any change breaks the signature.", { size: 8.5, color: [0.35, 0.35, 0.4], gap: 6 });
+        w.kv("Signed by", d.subject);
+        w.kv("Issued by", `${d.issuer}${d.selfSigned ? " (self-signed organization certificate)" : ""}`);
+        w.kv("Certificate SHA-256", d.fingerprint);
+        w.kv("Valid", `${iso(d.notBefore)} to ${iso(d.notAfter)}`);
+        if (d.selfSigned) w.text("To see the signer as trusted, add this organization certificate to your PDF reader’s trusted certificates (ask your administrator for the .cer file).", { size: 8, color: [0.35, 0.35, 0.4] });
+        w.rule();
+      }
       w.heading("Verification key");
       if (keyInfo) {
         w.kv("Algorithm", keyInfo.algorithm);

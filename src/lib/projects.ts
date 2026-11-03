@@ -5,7 +5,7 @@ import { defaultStyles } from "@/core/styles";
 import type { Doc, Styles } from "@/core/model";
 import { docHash, nextLabel, reindexVersion } from "./versioning";
 import { parseTemplateContent, type ProjectTemplateContent } from "./templates";
-import { DEFAULT_SETTINGS, type ApprovalPolicy, type WorkspaceSettings } from "./settings";
+import { DEFAULT_SETTINGS, withApprovalFloor, type ApprovalPolicy, type WorkspaceSettings } from "./settings";
 
 /** Base styles for new documents: explicit template, else the workspace default approved template, else built-in. */
 export async function baseStylesFor(workspaceId: string, styleTemplateId?: string | null): Promise<{ styles: Styles; ref?: Doc["baseStylesRef"] }> {
@@ -27,7 +27,8 @@ export async function templateFor(workspaceId: string, templateId: string | null
 export async function effectivePolicy(project: { workspaceId: string; templateId: string | null }, settings?: WorkspaceSettings): Promise<ApprovalPolicy> {
   const base = settings?.approval ?? DEFAULT_SETTINGS.approval;
   const t = await templateFor(project.workspaceId, project.templateId);
-  return { ...base, ...(t?.approval ?? {}) };
+  // a project template may tighten the policy, never go below the minimum number of approvals
+  return withApprovalFloor({ ...base, ...(t?.approval ?? {}) });
 }
 
 export async function requiredFieldsFor(project: { workspaceId: string; templateId: string | null }): Promise<string[]> {

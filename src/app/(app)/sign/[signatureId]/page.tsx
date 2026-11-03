@@ -173,7 +173,7 @@ export default async function SignPage({ params }: { params: Promise<{ signature
               </form>
             </section>
           ) : (
-            <SignForm signatureId={s.id} fullName={ctx.user.name} projectId={v.projectId} />
+            <SignForm signatureId={s.id} fullName={ctx.user.name} projectId={v.projectId} versionId={v.id} />
           )}
         </aside>
       </div>

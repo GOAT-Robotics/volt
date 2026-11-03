@@ -22,7 +22,7 @@ const Settings = z.object({
   sessionHours: z.number().int().min(1).max(24 * 30),
   signReauthMinutes: z.number().int().min(1).max(24 * 60),
   approval: z.object({
-    minApprovals: z.number().int().min(1).max(20),
+    minApprovals: z.number().int().min(2, "Every release needs at least 2 approvals").max(20),
     sequentialDefault: z.boolean(),
     allowSelfApproval: z.boolean(),
     requireCommentsResolved: z.boolean(),

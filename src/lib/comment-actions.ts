@@ -22,8 +22,8 @@ export type NewComment = {
   mentions?: string[];
 };
 
-/** `via`: added to the audit entry (e.g. "mcp: <token name>") */
-export async function addComment(ctx: Ctx, versionId: string, b: NewComment, opts: { via?: string } = {}) {
+/** `via`: added to the audit entry (e.g. "mcp: <token name>"); `quiet`: no notifications (bulk closing) */
+export async function addComment(ctx: Ctx, versionId: string, b: NewComment, opts: { via?: string; quiet?: boolean } = {}) {
   const a = await loadVersion(ctx, versionId, { withDoc: false });
   if (!a.canComment) throw new HttpError(403, "You cannot comment on this project");
   if (!(await guestMayComment(ctx, versionId))) throw new HttpError(403, "Guests can comment only on versions shared with them for review");
@@ -51,6 +51,7 @@ export async function addComment(ctx: Ctx, versionId: string, b: NewComment, opt
   await audit({ workspaceId: a.project.workspaceId, projectId: a.project.id, versionId, actorId: ctx.user.id, type: "comment.create", data: { commentId: c.id, reply: !!b.parentId, label: a.version.label, ...(opts.via ? { via: opts.via } : {}) } });
   const link = editorLink(a.project.id, versionId, `?${pageId ? `page=${encodeURIComponent(pageId)}&` : ""}comment=${b.parentId ?? c.id}`);
   const snippet = b.body.length > 160 ? b.body.slice(0, 157) + "…" : b.body;
+  if (opts.quiet) return commentDto(c);
   if (mentions.length) {
     await notify(mentions, { type: "comment.mention", title: `${ctx.user.name} mentioned you on ${a.project.name} v${a.version.label}`, body: snippet, link, workspaceId: a.project.workspaceId });
   }
@@ -90,4 +91,26 @@ export async function setCommentStatus(ctx: Ctx, commentId: string, status: "OPE
     if (r) await evaluateReview(r.id, ctx.user.id);
   }
   return commentDto(u);
+}
+
+/**
+ * Closes many open threads at once (Resolve / Won't fix) with one note, posted as a reply on each
+ * so the review record says why. Threads the person may not close are skipped and reported; the
+ * review completes as usual once the last open thread is closed.
+ */
+export async function closeThreads(ctx: Ctx, versionId: string, ids: string[], status: "RESOLVED" | "REJECTED", note: string) {
+  const roots = await db.comment.findMany({ where: { id: { in: ids }, versionId, parentId: null, status: { in: ["OPEN", "REOPENED"] } }, select: { id: true }, orderBy: { createdAt: "asc" } });
+  const errors = new Set<string>();
+  let closed = 0;
+  for (const r of roots) {
+    try {
+      await setCommentStatus(ctx, r.id, status, { via: "bulk close" });
+      closed++;
+    } catch (e) {
+      errors.add((e as Error).message);
+      continue;
+    }
+    await addComment(ctx, versionId, { body: note, parentId: r.id }, { via: "bulk close", quiet: true }).catch(() => {});
+  }
+  return { closed, skipped: ids.length - closed, errors: [...errors].slice(0, 3) };
 }

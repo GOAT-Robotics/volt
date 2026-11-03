@@ -3,6 +3,50 @@
 Volt ships a **provider-neutral** signature layer (`src/lib/signing/provider.ts`) and a **built-in provider**
 (`src/lib/signing/builtin.ts`) that produces tamper-evident, application-level signature records.
 
+## The process: approving is signing
+
+Reviewing, approving and signing are **one role** — the **Approver** (the earlier Reviewer and Signatory roles
+are read as Approver). There is no separate signing round:
+
+1. The designer submits a version; it is frozen and its `docHash` recorded.
+2. Each assigned approver approves by **typing their full name** (it must match their account name) to confirm
+   the workspace's approval statement (Administration → General → Signatures). The server re-computes `docHash`
+   and `pdfHash`, refuses if the stored document changed, builds the evidence below and seals it. The sealed
+   record is a `Signature` row with `kind = APPROVAL`, `batch` = the review id, status `SIGNED`.
+3. Every release needs **at least two approvals** from different people (`MIN_APPROVALS`; the policy can ask for
+   more, never fewer; authors and submitters do not count unless self-approval is allowed).
+4. When the approvals are in and, with the default policy, no comment is open, the version becomes `APPROVED`
+   and is **released at once** (`RELEASED`; the line's earlier release is superseded).
+5. At release Volt builds the **release PDF** and **digitally signs it** (below). It is stored and served for
+   download from then on.
+
+Approval signatures stop counting — status `INVALIDATED`, with the reason — when the review is recalled to draft,
+changes are requested, the version is rejected or withdrawn, or an approval expires (`approvalExpiryDays`).
+
+## Digitally signed release PDF
+
+`src/lib/signing/release-signed.ts` builds the release PDF (canonical drawing pages + "Approval & signature
+record", which also describes the signing certificate), adds a signature field and signs it with
+`@signpdf/signpdf` (CMS / `adbe.pkcs7.detached`, SHA-256 over the byte range). The signed file is stored as an
+`Attachment` (`ownerType = RELEASE`, `ownerId` = the version) and audited (`release.pdf_signed` with its SHA-256),
+so `GET /api/versions/{id}/release.pdf` returns the same bytes every time. It is made in the background right
+after release and, if missing (e.g. versions released before this), on first download.
+
+The certificate (`src/lib/signing/pdf-cert.ts`), first match:
+
+1. `PDF_SIGNING_P12` (base64 PKCS#12) and `PDF_SIGNING_P12_PASSWORD`;
+2. `${DATA_DIR}/pdf-signing.p12` and `pdf-signing.pass` (0600) — uploaded under Administration → General →
+   Signatures (a CA-issued `.p12` / `.pfx`, RSA), or
+3. generated on first use: a self-signed RSA-3072 certificate for the organization, valid 10 years.
+
+With the generated certificate, PDF readers show the file as signed and unchanged but the signer as not yet
+trusted. Either add the certificate to the readers' trusted certificates (Administration → *Download certificate
+(.cer)*; Acrobat: Preferences → Signatures → Identities & Trusted Certificates, or push it through your
+organization's trust list), or upload a certificate from a CA in the Adobe Approved Trust List for a green check
+everywhere. **Back up** `pdf-signing.p12` and `pdf-signing.pass` with the database. A new certificate signs new
+releases; already signed PDFs keep their signature. No RFC 3161 timestamp is added yet (the signing time comes
+from the server clock).
+
 ## What is signed
 
 A signature always refers to an **immutable** version (status `APPROVED` when requested). Two hashes are fixed
@@ -15,7 +59,10 @@ when signatures are requested and re-computed by the server at signing and verif
 
 If either hash no longer matches, signing is refused and verification fails.
 
-## The signing ceremony (built-in provider)
+## Signature requests (the earlier process)
+
+Versions approved before approvals became signatures may still carry signature requests. They keep working as
+described here; new requests are no longer offered in the app.
 
 1. A project owner requests signatures (`POST /api/versions/{id}/signatures`) from users with the **Signatory**
    or **Admin** role. Requests carry a purpose, an order (signing is sequential) and an expiry
@@ -69,8 +116,9 @@ Offline verification: take the evidence JSON, serialize it with sorted keys and 
 
 ## Release PDF
 
-`GET /api/versions/{id}/release.pdf` (versions that are APPROVED, SIGNED, RELEASED or SUPERSEDED) returns the
-canonical drawing pages followed by an **"Approval & signature record"**: version metadata and both hashes, every
+`GET /api/versions/{id}/release.pdf` (versions that are APPROVED, SIGNED, RELEASED or SUPERSEDED; released ones
+get the stored, digitally signed file above) returns the canonical drawing pages followed by an **"Approval &
+signature record"**: version metadata and both hashes, every
 review with each assignee's decision, name, date and reason, each signature's evidence and seal, the public-key
 fingerprint and the verification URL.
 

@@ -1,10 +1,10 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CornerDownRight, MapPin, RotateCcw, X, MessageSquare, ThumbsUp, ThumbsDown, AlertCircle, Clock, Bot, Sparkles, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { Check, CornerDownRight, MapPin, RotateCcw, X, MessageSquare, ThumbsDown, AlertCircle, Clock, Bot, Sparkles, ChevronDown, ChevronRight, Eye, EyeOff, PenLine } from "lucide-react";
 import { setCommentsHidden, useEditor, type CommentPin } from "../store";
 import { useEditorUI } from "./context";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { Avatar, Badge, Empty, Spinner } from "@/components/ui/misc";
 import { StatusBadge } from "@/components/ui/status";
 import { api } from "@/lib/fetcher";
@@ -12,6 +12,11 @@ import { cn, relTime, fmtDate } from "@/lib/utils";
 import { emptySel } from "@/core/ops";
 import { ChangeList, locateChange } from "./HistoryPanel";
 import type { Change } from "@/core/diff";
+import { WorkflowCard } from "./WorkflowCard";
+import { refreshFlow } from "./flow";
+
+/** versions whose threads can still be resolved or reopened (lib/comment-actions › OPEN_FOR_COMMENTS) */
+const THREADS_OPEN = ["DRAFT", "CHANGES_REQUESTED", "IN_REVIEW", "IMPORTED"];
 
 type C = {
   id: string;
@@ -51,7 +56,12 @@ type ReviewInfo = {
   canApprove: boolean;
   canRecall?: boolean;
   versionStatus?: string;
+  /** why this viewer cannot decide or approve */
   blockers: string[];
+  /** what the review still needs before it completes */
+  waiting?: string[];
+  /** approving signs: the statement the approver confirms and the name they type */
+  signing?: { statement: string; name: string };
 };
 
 export function ReviewPanel() {
@@ -62,6 +72,9 @@ export function ReviewPanel() {
   const [filter, setFilter] = useState<"open" | "ai" | "all">("open");
   const [draft, setDraft] = useState<{ pageId: string; anchor: C["anchor"] } | null>(null);
   const [review, setReview] = useState<ReviewInfo | null>(null);
+  const [bulk, setBulk] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const focus = useEditor((s) => s.reviewFocus);
   const ui = useEditorUI();
 
   const load = useCallback(async () => {
@@ -79,6 +92,7 @@ export function ReviewPanel() {
       ui.toast((e as Error).message, { tone: "error" });
     }
     api<ReviewInfo>(`/api/versions/${v.versionId}/review`).then(setReview).catch(() => setReview(null));
+    void refreshFlow();
   }, [v, ui]);
 
   useEffect(() => {
@@ -99,6 +113,19 @@ export function ReviewPanel() {
     [list, filter],
   );
 
+  // "Review & approve" / "Go through open comments" from the workflow card or the header
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.target === "comments" && filter !== "open") return setFilter("open");
+    const el = focus.target === "decide" ? document.getElementById("volt-review-decide") : listRef.current;
+    if (!el) return; // not rendered yet: tried again when the review / comments have loaded
+    el.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (focus.target === "decide") el.querySelector("textarea")?.focus({ preventScroll: true });
+    useEditor.getState().set("reviewFocus", null);
+  }, [focus, filter, review, list]);
+
+  const closable = roots.filter((c) => c.status === "OPEN" || c.status === "REOPENED");
+
   const locate = (c: C) => {
     const s = useEditor.getState();
     s.set("activeComment", c.id);
@@ -115,6 +142,7 @@ export function ReviewPanel() {
   if (!v) return null;
   return (
     <div className="flex h-full flex-col">
+      <WorkflowCard />
       {review?.review && <ReviewBox info={review} reload={load} />}
       <AiReviewBox versionId={v.versionId} onDone={load} />
       <VersionChanges versionId={v.versionId} />
@@ -127,6 +155,11 @@ export function ReviewPanel() {
           ))}
         </div>
         <div className="flex items-center gap-1">
+          {v.canComment && THREADS_OPEN.includes(v.status) && filter !== "all" && closable.length >= 2 && (
+            <Button size="xs" variant="ghost" aria-expanded={bulk} onClick={() => setBulk((x) => !x)} title="Resolve or mark won’t fix all the threads listed below, with one note">
+              <Check /> Close all…
+            </Button>
+          )}
           <Button
             size="icon-sm"
             variant="ghost"
@@ -145,6 +178,18 @@ export function ReviewPanel() {
         </div>
       </div>
       {commentsHidden && <p className="border-b border-border bg-panel-2 px-3 py-1.5 text-2xs text-muted">Comments are hidden on the drawing. They stay listed here.</p>}
+      {bulk && closable.length > 0 && (
+        <BulkClose
+          versionId={v.versionId}
+          ids={closable.map((c) => c.id)}
+          what={filter === "ai" ? "open AI findings" : "open threads"}
+          onCancel={() => setBulk(false)}
+          onDone={() => {
+            setBulk(false);
+            void load();
+          }}
+        />
+      )}
       {draft && (
         <Composer
           placeholder={draft.anchor ? "Comment on this spot… use @name to mention" : "Comment on this page… use @name to mention"}
@@ -156,7 +201,7 @@ export function ReviewPanel() {
           }}
         />
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
         {!list ? (
           <div className="flex justify-center p-6 text-subtle">
             <Spinner />
@@ -176,15 +221,23 @@ export function ReviewPanel() {
 function ReviewBox({ info, reload }: { info: ReviewInfo; reload: () => void }) {
   const r = info.review!;
   const [reason, setReason] = useState("");
+  const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
   const ui = useEditorUI();
+  const norm = (x: string) => x.trim().replace(/\s+/g, " ").toLowerCase();
+  const nameOk = !!info.signing && norm(fullName) === norm(info.signing.name);
   const decide = async (decision: "APPROVED" | "REJECTED" | "CHANGES_REQUESTED") => {
     if (decision !== "APPROVED" && !reason.trim()) return ui.toast("Please give a reason", { tone: "error" });
     setBusy(true);
     try {
-      await api(`/api/reviews/${r.id}/decision`, { method: "POST", json: { decision, reason } });
-      ui.toast(decision === "APPROVED" ? "Approved" : decision === "REJECTED" ? "Rejected" : "Changes requested");
-      setTimeout(() => location.reload(), 600);
+      const j = await api<{ versionStatus: string }>(`/api/reviews/${r.id}/decision`, { method: "POST", json: { decision, reason, ...(decision === "APPROVED" ? { fullName } : {}) } });
+      setReason("");
+      setFullName("");
+      // the workflow card shows the new state; changes requested makes the version a draft again (reload)
+      const f = await refreshFlow();
+      if (decision !== "APPROVED") ui.toast(decision === "REJECTED" ? "Rejected — the author is notified" : "Changes requested — the version is back with the author");
+      else if (j.versionStatus === "RELEASED") ui.toast("Approved and signed — the version is released. Its digitally signed PDF is ready in a moment.", { tone: "success" });
+      else ui.toast(`Your approval is signed and recorded. Still waiting for ${f?.waiting.join("; ") || "the other approvers"}.`, { tone: "success" });
     } catch (e) {
       ui.toast((e as Error).message, { tone: "error" });
     } finally {
@@ -193,7 +246,7 @@ function ReviewBox({ info, reload }: { info: ReviewInfo; reload: () => void }) {
     }
   };
   return (
-    <div className="border-b border-border bg-panel-2 p-3">
+    <div id="volt-review-decide" className="scroll-mt-2 border-b border-border p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-semibold">Review{r.importedFrom ? <span className="font-normal text-muted"> at {r.importedFrom}</span> : null}</span>
         <StatusBadge status={r.status} />
@@ -214,20 +267,41 @@ function ReviewBox({ info, reload }: { info: ReviewInfo; reload: () => void }) {
           </li>
         ))}
       </ul>
-      {info.canRecall && <RecallButton approved={info.versionStatus === "APPROVED"} />}
       {info.canDecide && r.status === "OPEN" && (
         <div className="space-y-1.5">
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (required to reject or request changes)" rows={2} onKeyDown={(e) => e.stopPropagation()} />
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Comment (required to reject or request changes)" rows={2} onKeyDown={(e) => e.stopPropagation()} />
           {info.blockers.length > 0 && (
             <p className="flex items-start gap-1 text-2xs text-warning">
               <AlertCircle className="mt-0.5 size-3 shrink-0" />
               {info.blockers.join(" · ")}
             </p>
           )}
+          {info.canApprove && info.signing && (
+            <form
+              className="space-y-1.5 rounded-md border border-border bg-panel-2 p-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (nameOk && !busy) void decide("APPROVED");
+              }}
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-subtle">Approve & sign</p>
+              <p className="text-2xs leading-relaxed text-muted">“{info.signing.statement}”</p>
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
+                placeholder={info.signing.name}
+                aria-label={`Type your full name (${info.signing.name}) to sign`}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-[10px] text-subtle">Type your full name exactly as {info.signing.name} — this is your electronic signature on this version.</p>
+              <Button type="submit" size="xs" variant="primary" disabled={busy || !nameOk} className="w-full">
+                {busy ? <><Spinner /> Signing…</> : <><PenLine /> Approve & sign</>}
+              </Button>
+            </form>
+          )}
           <div className="flex gap-1">
-            <Button size="xs" variant="primary" disabled={busy || !info.canApprove} onClick={() => decide("APPROVED")}>
-              <ThumbsUp /> Approve
-            </Button>
             <Button size="xs" variant="secondary" disabled={busy} onClick={() => decide("CHANGES_REQUESTED")}>
               Request changes
             </Button>
@@ -561,49 +635,6 @@ function AiReviewBox({ versionId, onDone }: { versionId: string; onDone: () => v
   );
 }
 
-function RecallButton({ approved }: { approved: boolean }) {
-  const v = useEditor((s) => s.version);
-  const ui = useEditorUI();
-  const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  if (!v) return null;
-  if (!open)
-    return (
-      <Button size="xs" variant="ghost" className="mb-2" onClick={() => setOpen(true)} title="The version returns to draft so it can be edited; the review is closed as recalled">
-        <RotateCcw /> {approved ? "Take back approval" : "Recall to draft to fix"}
-      </Button>
-    );
-  return (
-    <div className="mb-2 space-y-1.5 rounded-md border border-border bg-panel p-2">
-      <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why (e.g. fixing the AI review findings)" rows={2} onKeyDown={(e) => e.stopPropagation()} />
-      <div className="flex justify-end gap-1">
-        <Button size="xs" variant="ghost" onClick={() => setOpen(false)}>
-          Cancel
-        </Button>
-        <Button
-          size="xs"
-          variant="primary"
-          disabled={busy || !reason.trim()}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await api(`/api/versions/${v.versionId}/recall`, { method: "POST", json: { reason } });
-              ui.toast(`v${v.label} is a draft again`);
-              setTimeout(() => location.reload(), 500);
-            } catch (e) {
-              ui.toast((e as Error).message, { tone: "error" });
-              setBusy(false);
-            }
-          }}
-        >
-          {busy ? <Spinner /> : approved ? "Take back approval" : "Recall to draft"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /** what this version changes against where it started — the "files changed" of a pull request */
 function VersionChanges({ versionId }: { versionId: string }) {
   const [open, setOpen] = useState(false);
@@ -622,6 +653,59 @@ function VersionChanges({ versionId }: { versionId: string }) {
         {data && !data.initial && <span className="ml-auto text-2xs font-normal text-subtle">{data.total} vs {data.base}</span>}
       </button>
       {open && (!data ? <Spinner /> : data.initial ? <p className="mt-1 text-2xs text-subtle">First version — everything is new.</p> : <ChangeList changes={data.changes} onPick={(c) => locateChange(c, ui)} />)}
+    </div>
+  );
+}
+
+/** Resolve / won't-fix every listed thread with one note (posted on each thread for the record). */
+function BulkClose({ versionId, ids, what, onCancel, onDone }: { versionId: string; ids: string[]; what: string; onCancel: () => void; onDone: () => void }) {
+  const ui = useEditorUI();
+  const [status, setStatus] = useState<"RESOLVED" | "REJECTED">("RESOLVED");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const before = useEditor((s) => s.flow?.status);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const j = await api<{ closed: number; skipped: number; errors: string[] }>(`/api/versions/${versionId}/comments/close`, { method: "POST", json: { ids, status, note } });
+      const f = await refreshFlow();
+      const done = `${j.closed} thread${j.closed === 1 ? "" : "s"} ${status === "RESOLVED" ? "resolved" : "marked won’t fix"}`;
+      const skipped = j.skipped ? ` · ${j.skipped} skipped${j.errors[0] ? `: ${j.errors[0]}` : ""}` : "";
+      const next = f && f.status !== before && f.status === "APPROVED" ? ` — the version is approved. ${f.short}.` : "";
+      ui.toast(`${done}${skipped}${next}`, { tone: j.skipped ? "error" : "success" });
+      onDone();
+    } catch (e) {
+      ui.toast((e as Error).message, { tone: "error" });
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-1.5 border-b border-border bg-panel-2 p-3">
+      <p className="text-2xs text-muted">
+        Close the {ids.length} {what} listed below in one go. Your note is posted on each thread, so the review record says why.
+      </p>
+      <div className="flex rounded-md border border-border p-0.5 text-2xs" role="radiogroup" aria-label="Close as">
+        {(["RESOLVED", "REJECTED"] as const).map((k) => (
+          <button key={k} role="radio" aria-checked={status === k} onClick={() => setStatus(k)} className={cn("flex-1 rounded px-2 py-0.5", status === k ? "bg-hover font-medium" : "text-subtle")}>
+            {k === "RESOLVED" ? "Resolved" : "Won’t fix"}
+          </button>
+        ))}
+      </div>
+      <Textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={2}
+        placeholder={status === "RESOLVED" ? "e.g. Checked — correct as drawn" : "e.g. Accepted for v1; folio arrows get linked in the next revision"}
+        onKeyDown={(e) => e.stopPropagation()}
+      />
+      <div className="flex justify-end gap-1">
+        <Button size="xs" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="xs" variant="primary" disabled={busy || !note.trim()} onClick={run}>
+          {busy ? <Spinner /> : `${status === "RESOLVED" ? "Resolve" : "Close"} ${ids.length} thread${ids.length === 1 ? "" : "s"}`}
+        </Button>
+      </div>
     </div>
   );
 }

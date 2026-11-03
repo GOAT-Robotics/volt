@@ -584,8 +584,6 @@ function ProjectTemplateEditor({ t, styles, layouts }: { t: AdminData["projectTe
             {overrideRow("sequentialDefault", "Sequential review by default", "bool")}
             {overrideRow("requireCommentsResolved", "Require comments resolved", "bool")}
             {overrideRow("allowSelfApproval", "Allow self-approval", "bool")}
-            {overrideRow("signatureRequiredForRelease", "Signatures required for release", "bool")}
-            {overrideRow("requiredSignatories", "Required signatories", "num")}
           </div>
         </Section>
       </div>

@@ -11,19 +11,84 @@ import { effectivePolicy } from "../projects";
 import { versionHashes } from "./canonical";
 import { getProvider, type SignatureEvidence } from "./provider";
 import { loadKeys } from "./builtin";
+import { parseRoles } from "../roles";
 
 export const SIGNABLE_STATUSES = ["APPROVED"];
 export const IMMUTABLE_SIGNED = ["APPROVED", "SIGNED", "RELEASED", "SUPERSEDED"];
+/** what an approval signature is for (Signature.kind APPROVAL) */
+export const APPROVAL_PURPOSE = "Approval for release";
 
-/** Project members eligible to sign through their workspace SIGNATORY or ADMIN role. */
+const normName = (x: string) => x.trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * An approval is the approver's electronic signature. Checks the typed full name, hashes the
+ * frozen document and its canonical PDF, and seals the evidence like any signature. Returns the
+ * Signature row to write together with the decision (lib/workflow › decide).
+ */
+export async function approvalSignature(ctx: Ctx, input: { versionId: string; reviewId: string; requestedById: string; order: number; fullName: string; ip: string | null; userAgent: string }) {
+  if (normName(input.fullName) !== normName(ctx.user.name)) throw new HttpError(400, `Type your full name exactly as “${ctx.user.name}” to sign your approval`);
+  const v = await db.version.findUnique({ where: { id: input.versionId }, include: { project: true } });
+  if (!v) throw new HttpError(404, "Version not found");
+  const h = await versionHashes(parseDoc(v.doc), v.label);
+  if (v.docHash && v.docHash !== h.docHash) throw new HttpError(409, "Document hash mismatch — the version changed after it was submitted. Approval refused.");
+  const user = await db.user.findUniqueOrThrow({ where: { id: ctx.user.id } });
+  const ws = await db.workspace.findUnique({ where: { id: v.project.workspaceId } });
+  const settings = parseSettings(ws?.settings);
+  const provider = await getProvider("builtin");
+  const signedAt = new Date();
+  const evidence: SignatureEvidence = {
+    signatory: { id: user.id, name: user.name, email: user.email, entraOid: user.entraOid },
+    authTime: ctx.authTime,
+    signedAt: signedAt.toISOString(),
+    ip: input.ip,
+    userAgent: input.userAgent.slice(0, 400),
+    versionId: v.id,
+    label: v.label,
+    projectId: v.projectId,
+    docHash: h.docHash,
+    pdfHash: h.pdfHash,
+    purpose: APPROVAL_PURPOSE,
+    statement: settings.signature.statement,
+    provider: provider.id,
+    keyId: provider.id === "builtin" ? loadKeys().keyId : undefined,
+  };
+  const { seal, providerRef } = await provider.complete({ signatureId: `approval:${input.reviewId}:${user.id}`, providerRef: null, evidence });
+  return {
+    versionId: v.id,
+    kind: "APPROVAL",
+    signatoryId: user.id,
+    requestedById: input.requestedById,
+    purpose: APPROVAL_PURPOSE,
+    order: input.order,
+    status: "SIGNED",
+    docHash: h.docHash,
+    pdfHash: h.pdfHash,
+    provider: provider.id,
+    providerRef: providerRef ?? null,
+    evidence: JSON.stringify(evidence),
+    seal,
+    signedAt,
+    batch: input.reviewId,
+  };
+}
+
+/** Approval signatures of a review stop counting (recalled, changes requested, rejected, expired). */
+export async function invalidateApprovals(where: { versionId: string; reviewId?: string; signatoryIds?: string[] }, reason: string) {
+  await db.signature.updateMany({
+    where: { versionId: where.versionId, kind: "APPROVAL", status: "SIGNED", ...(where.reviewId ? { batch: where.reviewId } : {}), ...(where.signatoryIds ? { signatoryId: { in: where.signatoryIds } } : {}) },
+    data: { status: "INVALIDATED", declineReason: reason },
+  });
+}
+
+/** Project members eligible to sign through their workspace Approver (formerly Signatory) or Admin role. */
 export async function eligibleSignatories(workspaceId: string, projectId: string) {
   const pms = await db.projectMember.findMany({ where: { projectId }, select: { userId: true } });
   const mems = await db.membership.findMany({ where: { workspaceId, userId: { in: pms.map((m) => m.userId) } }, include: { user: true } });
   const out: { id: string; name: string; email: string }[] = [];
   for (const m of mems) {
     if (m.user.disabled) continue;
-    const r = m.roles.split(",");
-    if (r.includes("SIGNATORY") || r.includes("ADMIN")) out.push({ id: m.user.id, name: m.user.name, email: m.user.email });
+    const r = parseRoles(m.roles);
+    if (r.includes("APPROVER") || r.includes("ADMIN")) out.push({ id: m.user.id, name: m.user.name, email: m.user.email });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -161,8 +226,8 @@ export async function signSignature(ctx: Ctx, signatureId: string, input: { full
       await notify([s.requestedById, v.createdById, ...mgr], {
         type: "version.released",
         title: `${v.project.name} v${v.label} is fully signed`,
-        body: "All requested signatures are complete. It can now be released.",
-        link: `/projects/${v.projectId}?tab=signatures`,
+        body: "All requested signatures are complete. Next: release it.",
+        link: `/projects/${v.projectId}/v/${v.id}`,
         workspaceId: v.project.workspaceId,
       });
     }
@@ -212,7 +277,8 @@ export async function verifySignature(signatureId: string): Promise<{ valid: boo
     const { pdfHash } = await versionHashes(doc, s.version.label);
     checks.push({ name: "Drawing PDF hash", ok: pdfHash === ev.pdfHash, detail: pdfHash === ev.pdfHash ? `sha256 ${pdfHash}` : `Canonical PDF now hashes to ${pdfHash}` });
   }
-  const immutable = IMMUTABLE_SIGNED.includes(s.version.status);
+  // an approval signature is given while the version is frozen for review
+  const immutable = IMMUTABLE_SIGNED.includes(s.version.status) || (s.kind === "APPROVAL" && s.version.status === "IN_REVIEW");
   checks.push({ name: "Version immutable", ok: immutable, detail: immutable ? `Version is ${s.version.status.toLowerCase()}` : `Version is ${s.version.status.toLowerCase().replace("_", " ")}` });
   return {
     valid: checks.every((c) => c.ok),

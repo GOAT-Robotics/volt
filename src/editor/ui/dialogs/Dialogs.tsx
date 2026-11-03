@@ -17,6 +17,7 @@ const TerminalStripDialog = dynamic(() => import("./TerminalStripDialog").then((
 const ExportDialog = dynamic(() => import("./ExportDialog").then((m) => m.ExportDialog), { ssr: false });
 import { CompatDialog, PageDialog, ProjectPropsDialog, ConnectDialog } from "./MiscDialogs";
 import { NewVersionDialog, SubmitDialog, CompareDialog, DiffDrawer } from "./WorkflowDialogs";
+import { ReleaseDialog } from "./SignoffDialogs";
 import { BlockDialog, CreateElementDialog } from "./LibraryDialogs";
 import { WiringDialog } from "./WiringDialog";
 import { TitleBlockEditor } from "./TitleBlockEditor";
@@ -47,6 +48,7 @@ export function Dialogs({ dialog, onClose }: { dialog: { name: DialogName; arg?:
       {open("connect") && <ConnectDialog onClose={onClose} />}
       {open("newVersion") && <NewVersionDialog onClose={onClose} />}
       {open("submit") && <SubmitDialog onClose={onClose} />}
+      {open("release") && <ReleaseDialog onClose={onClose} />}
       {open("compare") && <CompareDialog onClose={onClose} arg={dialog?.arg as { versionId?: string } | undefined} />}
       {open("block") && <BlockDialog onClose={onClose} />}
       {open("createElement") && <CreateElementDialog onClose={onClose} arg={dialog?.arg as { fromDef?: string } | undefined} />}

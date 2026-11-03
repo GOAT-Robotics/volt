@@ -5,6 +5,7 @@ import { notify } from "./notify";
 import { HttpError, type Ctx } from "./session";
 import { effectivePolicy } from "./projects";
 import { docHash, parseDoc } from "./versioning";
+import { scheduleSignedRelease } from "./signing/release-signed";
 
 async function audience(projectId: string, extra: string[] = []) {
   const members = await db.projectMember.findMany({ where: { projectId }, select: { userId: true } });
@@ -20,32 +21,50 @@ export async function releaseVersion(ctx: Ctx, versionId: string, note: string) 
   if (!allowed.includes(v.status)) {
     throw new HttpError(409, policy.signatureRequiredForRelease && v.status === "APPROVED" ? "Workspace policy requires signatures before release" : `A ${v.status.toLowerCase().replace("_", " ")} version cannot be released`);
   }
+  return release(v, ctx.user.id, note);
+}
+
+/** The last approval releases the version (lib/workflow › evaluateReview): no separate step. */
+export async function releaseOnApproval(versionId: string, actorId: string | null, note: string) {
+  const v = await db.version.findUnique({ where: { id: versionId }, include: { project: true } });
+  if (!v || v.status !== "APPROVED") return null;
+  return release(v, actorId, note);
+}
+
+type ReleasableVersion = NonNullable<Awaited<ReturnType<typeof db.version.findUnique<{ where: { id: string }; include: { project: true } }>>>>;
+
+async function release(v: ReleasableVersion, actorId: string | null, note: string) {
   if (v.docHash && v.docHash !== docHash(parseDoc(v.doc))) throw new HttpError(409, "Document integrity check failed — stored hash differs");
   const now = new Date();
   // only the same line: a variant's release does not replace the main release, nor the other way round
   const prev = await db.version.findMany({ where: { projectId: v.projectId, variantId: v.variantId, status: "RELEASED", id: { not: v.id } }, omit: { doc: true } });
   // signed but never released versions before this one are dead ends now
   const stale = await db.version.findMany({ where: { projectId: v.projectId, variantId: v.variantId, status: "SIGNED", seq: { lt: v.seq } }, omit: { doc: true } });
-  await db.$transaction([
-    db.version.update({ where: { id: v.id }, data: { status: "RELEASED", releasedAt: now } }),
-    ...prev.map((p) => db.version.update({ where: { id: p.id }, data: { status: "SUPERSEDED", endedAt: now, endReason: `Superseded by v${v.label}` } })),
-    ...stale.map((p) => db.version.update({ where: { id: p.id }, data: { status: "OBSOLETE", endedAt: now, endReason: `Replaced by v${v.label}` } })),
-    db.project.update({ where: { id: v.projectId }, data: { updatedAt: now } }),
-  ]);
-  const base = { workspaceId: v.project.workspaceId, projectId: v.projectId, actorId: ctx.user.id };
+  const done = await db.$transaction(async (tx) => {
+    const r = await tx.version.updateMany({ where: { id: v.id, status: v.status }, data: { status: "RELEASED", releasedAt: now } });
+    if (!r.count) return false;
+    for (const p of prev) await tx.version.update({ where: { id: p.id }, data: { status: "SUPERSEDED", endedAt: now, endReason: `Superseded by v${v.label}` } });
+    for (const p of stale) await tx.version.update({ where: { id: p.id }, data: { status: "OBSOLETE", endedAt: now, endReason: `Replaced by v${v.label}` } });
+    await tx.project.update({ where: { id: v.projectId }, data: { updatedAt: now } });
+    return true;
+  });
+  if (!done) throw new HttpError(409, "The version changed meanwhile — reload and try again");
+  const base = { workspaceId: v.project.workspaceId, projectId: v.projectId, actorId };
   await audit({ ...base, versionId: v.id, type: "version.release", data: { label: v.label, note: note || undefined, docHash: v.docHash } });
   for (const p of prev) await audit({ ...base, versionId: p.id, type: "version.supersede", data: { label: p.label, by: v.label, reason: `Superseded by v${v.label}` } });
   for (const p of stale) await audit({ ...base, versionId: p.id, type: "version.obsolete", data: { label: p.label, by: v.label, reason: `Replaced by v${v.label}` } });
+  // the release PDF with the approval record, digitally signed — made in the background, stored for download
+  scheduleSignedRelease(v.id);
   const who = await audience(v.projectId, [v.createdById]);
-  await notify(who.filter((u) => u !== ctx.user.id), {
+  await notify(who.filter((u) => u !== actorId), {
     type: "version.released",
     title: `${v.project.name} v${v.label} released`,
-    body: note || v.summary,
-    link: `/projects/${v.projectId}?tab=versions`,
+    body: `${note || v.summary}${note || v.summary ? " · " : ""}The digitally signed PDF is ready to download.`,
+    link: `/projects/${v.projectId}/v/${v.id}`,
     workspaceId: v.project.workspaceId,
   });
   if (prev.length) {
-    await notify(who.filter((u) => u !== ctx.user.id), {
+    await notify(who.filter((u) => u !== actorId), {
       type: "version.superseded",
       title: `${v.project.name} ${prev.map((p) => `v${p.label}`).join(", ")} superseded`,
       body: `Replaced by v${v.label}. Use the new release for manufacturing and site work.`,
@@ -64,8 +83,9 @@ export async function releaseVersion(ctx: Ctx, versionId: string, note: string) 
 const WITHDRAWABLE = ["IN_REVIEW", "APPROVED"];
 const SIGNED_MSG = "A signed version cannot be taken back. Start a new version from it — this one is then marked obsolete.";
 
+/** a signing round was completed (approval signatures alone do not lock a version under review) */
 async function assertNoSignature(versionId: string) {
-  const n = await db.signature.count({ where: { versionId, status: "SIGNED" } });
+  const n = await db.signature.count({ where: { versionId, status: "SIGNED", kind: { not: "APPROVAL" } } });
   if (n) throw new HttpError(409, SIGNED_MSG, "SIGNED");
 }
 
@@ -81,6 +101,7 @@ export async function withdrawVersion(ctx: Ctx, versionId: string, reason: strin
     db.version.update({ where: { id: v.id }, data: { status: "WITHDRAWN", endedAt: now, endReason: reason.trim() } }),
     db.review.updateMany({ where: { versionId: v.id, status: "OPEN" }, data: { status: "CANCELLED", closedAt: now } }),
     db.signature.updateMany({ where: { versionId: v.id, status: "REQUESTED" }, data: { status: "CANCELLED", declineReason: "Version withdrawn" } }),
+    db.signature.updateMany({ where: { versionId: v.id, kind: "APPROVAL", status: "SIGNED" }, data: { status: "INVALIDATED", declineReason: "Version withdrawn" } }),
   ]);
   await audit({ workspaceId: v.project.workspaceId, projectId: v.projectId, versionId: v.id, actorId: ctx.user.id, type: "version.withdraw", data: { label: v.label, from: v.status, reason } });
   const who = await audience(v.projectId, [v.createdById]);
@@ -126,6 +147,8 @@ export async function recallVersion(ctx: Ctx, versionId: string, reason: string)
     db.version.updateMany({ where: { id: v.id, status: v.status }, data: { status: "DRAFT", approvedAt: null, submittedAt: null } }),
     db.review.updateMany({ where: { id: { in: reviews.map((r) => r.id) } }, data: { status: "RECALLED", closedAt: now } }),
     db.signature.updateMany({ where: { versionId: v.id, status: "REQUESTED" }, data: { status: "CANCELLED", declineReason: "Version recalled to draft" } }),
+    // approvals given in the recalled review no longer count (they are kept, marked invalidated)
+    db.signature.updateMany({ where: { versionId: v.id, kind: "APPROVAL", status: "SIGNED" }, data: { status: "INVALIDATED", declineReason: `Review recalled: ${reason.trim()}` } }),
   ]);
   if (!res[0].count) throw new HttpError(409, "The version changed meanwhile — reload and try again");
   await audit({ workspaceId: v.project.workspaceId, projectId: v.projectId, versionId: v.id, actorId: ctx.user.id, type: "version.recall", data: { label: v.label, from: v.status, reason } });

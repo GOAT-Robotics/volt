@@ -87,9 +87,9 @@ async function main() {
   let approver = admin;
   if (DEV) {
     approver = await user(`approver@${domain}`, "Asha Approver", "APPROVER", ws.id);
-    await user(`signer@${domain}`, "Sam Signatory", "SIGNATORY,VIEWER", ws.id);
+    await user(`signer@${domain}`, "Sam Signatory", "APPROVER", ws.id);
     await user(`designer@${domain}`, "Dev Designer", "DESIGNER", ws.id);
-    await user(`reviewer@${domain}`, "Riya Reviewer", "REVIEWER", ws.id);
+    await user(`reviewer@${domain}`, "Riya Reviewer", "APPROVER", ws.id);
     console.log(`dev users   approver@ signer@ designer@ reviewer@${domain}`);
   }
 

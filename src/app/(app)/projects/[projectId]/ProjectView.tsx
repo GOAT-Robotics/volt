@@ -69,6 +69,8 @@ export type SignatureRow = {
   order: number;
   purpose: string;
   signatory: { id: string; name: string; email: string };
+  /** APPROVAL: an approver's sealed approval · REQUEST: a signing round of the earlier process */
+  kind?: string;
   requestedBy: string;
   createdAt: string;
   expiresAt: string | null;
@@ -82,11 +84,11 @@ export type SignatureRow = {
 };
 export type VariantRow = { id: string; code: string; name: string; customer: string; description: string; baseVersionId: string; baseLabel: string; state: string; createdBy: string; createdAt: string };
 export type ProjectData = {
-  me: { id: string; isAdmin: boolean };
+  me: { id: string; name: string; isAdmin: boolean };
   perms: { manage: boolean; requestSignatures: boolean; share: boolean; edit: boolean; export: boolean; view: boolean; approve: boolean };
   variants: VariantRow[];
   project: { id: string; name: string; number: string | null; description: string; tags: string[]; folderId: string | null; state: string; versionScheme: string; customScheme: string | null; createdAt: string; favorite: boolean; hasRelease: boolean };
-  policy: { signatureRequiredForRelease: boolean; requiredSignatories: number; minApprovals: number };
+  policy: { signatureRequiredForRelease: boolean; requiredSignatories: number; minApprovals: number; requireCommentsResolved?: boolean };
   folders: FolderRow[];
   versions: VersionRow[];
   reviews: ReviewRow[];
@@ -357,7 +359,7 @@ function StartVersionDialog({ projectId, parent, variant, onClose }: { projectId
   );
 }
 
-type LineAction = "release" | "withdraw" | "supersede" | "sign" | "recall" | "obsolete";
+type LineAction = "release" | "withdraw" | "supersede" | "recall" | "obsolete";
 
 function VersionsTab({ data, onStart, onVariant }: { data: ProjectData; onStart?: (v: VersionRow) => void; onVariant?: (v: VersionRow) => void }) {
   const [showArchived, setShowArchived] = React.useState(false);
@@ -457,6 +459,27 @@ function VersionsTab({ data, onStart, onVariant }: { data: ProjectData; onStart?
   );
 }
 
+/**
+ * The next step of a version for its row in the list (the editor's review panel has the full
+ * picture, lib/flow.ts): a short hint and, when there is one for the viewer, the action.
+ */
+function nextStep(data: ProjectData, v: VersionRow): { hint: string | null; action?: "release" | "signedPdf"; mine?: boolean } {
+  const need = Math.max(2, data.policy.minApprovals);
+  if (v.status === "CHANGES_REQUESTED") return { hint: "Next: fix and submit again" };
+  if (v.status === "IN_REVIEW") {
+    const r = data.reviews.find((x) => x.versionId === v.id && x.status === "OPEN");
+    const have = new Set(r?.assignments.filter((a) => a.canApprove && a.decision === "APPROVED").map((a) => a.decidedBy ?? a.who)).size;
+    const pending = r?.assignments.filter((a) => a.canApprove && a.decision !== "APPROVED") ?? [];
+    const mine = pending.some((a) => a.who === data.me.name);
+    if (pending.length) return { hint: `${have} of ${need} approvals · waiting for ${pending.map((a) => (a.who === data.me.name ? "you" : a.who)).join(", ")}`, mine };
+    return { hint: data.policy.requireCommentsResolved ? `${have} of ${need} approvals · waiting for open comments to be resolved` : `${have} of ${need} approvals` };
+  }
+  // approved or signed under the earlier process, with a separate release step
+  if (v.status === "APPROVED" || v.status === "SIGNED") return data.perms.manage ? { hint: "Next: release", action: "release", mine: true } : { hint: "Next: a project owner releases it" };
+  if (v.releasedAt && data.perms.export && ["RELEASED", "SUPERSEDED", "OBSOLETE"].includes(v.status)) return { hint: v.status === "RELEASED" ? "Digitally signed PDF ready" : null, action: "signedPdf" };
+  return { hint: null };
+}
+
 function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectData; versions: VersionRow[]; onStart?: (v: VersionRow) => void; onVariant?: (v: VersionRow) => void }) {
   const [run] = useMutation();
   const [dlg, setDlg] = React.useState<{ kind: LineAction; v: VersionRow } | null>(null);
@@ -464,7 +487,8 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
   const pid = data.project.id;
   const lineWorking = versions.find((v) => WORKING.includes(v.status));
   const canRelease = (s: string) => (data.policy.signatureRequiredForRelease ? s === "SIGNED" : s === "APPROVED" || s === "SIGNED");
-  const signedBy = (id: string) => data.signatures.some((s) => s.versionId === id && s.status === "SIGNED");
+  // a completed signing round of the earlier process locks the version; approval signatures do not
+  const signedBy = (id: string) => data.signatures.some((s) => s.versionId === id && s.status === "SIGNED" && s.kind !== "APPROVAL");
   const variantsFrom = (id: string) => data.variants.filter((x) => x.baseVersionId === id);
   const releasedInLine = (id: string) => versions.find((x) => x.status === "RELEASED" && x.id !== id);
   return (
@@ -483,10 +507,10 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
         <tbody>
           {versions.map((v) => {
             const frozen = !WORKING.includes(v.status);
-            const pendingSig = data.signatures.some((s) => s.versionId === v.id && s.status === "REQUESTED");
             const signed = signedBy(v.id);
             const branches = variantsFrom(v.id);
             const mayRecall = !signed && ((v.status === "APPROVED" && (data.perms.manage || data.perms.approve)) || (v.status === "IN_REVIEW" && (data.perms.manage || (data.perms.edit && v.createdById === data.me.id))));
+            const next = nextStep(data, v);
             return (
               <tr key={v.id} className="align-top [&>td]:py-2">
                 <td>
@@ -507,7 +531,7 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
                       {v.status === "IMPORTED" ? `${statusLabel(v.imported.status)} at ${v.imported.from}` : `Imported from ${v.imported.server}`}
                     </p>
                   )}
-                  {pendingSig && <p className="mt-1 text-2xs text-muted">Awaiting signatures{signed ? " · partly signed" : ""}</p>}
+                  {next.hint && <p className={cn("mt-1 text-2xs", next.mine ? "font-medium text-accent" : "text-muted")}>{next.hint}</p>}
                   {["SIGNED", "RELEASED"].includes(v.status) && (
                     <p className="mt-1 flex items-center gap-1 text-2xs text-muted">
                       <Lock className="size-3" /> Changes need a new version
@@ -529,6 +553,16 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
                 </td>
                 <td className="text-right">
                   <div className="flex justify-end gap-1">
+                    {next.action === "signedPdf" && (
+                      <Button size="xs" variant={v.status === "RELEASED" ? "primary" : "secondary"} onClick={() => download(`/api/versions/${v.id}/release.pdf`)} title="The release PDF with the approval record, digitally signed when it was released">
+                        <FileSignature /> Signed PDF
+                      </Button>
+                    )}
+                    {next.action === "release" && (
+                      <Button size="xs" variant="primary" onClick={() => setDlg({ kind: "release", v })}>
+                        <Rocket /> Release
+                      </Button>
+                    )}
                     <Button size="xs" variant="ghost" asChild>
                       <Link href={`/projects/${pid}/v/${v.id}`}>
                         {WORKING.includes(v.status) && data.perms.edit ? <PenLine /> : <ExternalLink />} Open
@@ -542,11 +576,6 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
                       </MenuTrigger>
                       <MenuContent align="end" className="w-60">
                         <MenuLabel>v{v.label}</MenuLabel>
-                        {data.perms.requestSignatures && v.status === "APPROVED" && (
-                          <MenuItem onSelect={() => setDlg({ kind: "sign", v })}>
-                            <FileSignature /> Request signatures
-                          </MenuItem>
-                        )}
                         {data.perms.manage && canRelease(v.status) && (
                           <MenuItem onSelect={() => setDlg({ kind: "release", v })}>
                             <Rocket /> Release
@@ -599,7 +628,7 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
                         )}
                         {data.perms.export && ["APPROVED", "SIGNED", "RELEASED", "SUPERSEDED", "OBSOLETE"].includes(v.status) && (
                           <MenuItem onSelect={() => download(`/api/versions/${v.id}/release.pdf`)}>
-                            <FileSignature /> Release PDF with signature record
+                            <FileSignature /> {v.releasedAt ? "Signed release PDF (approval record)" : "Release PDF preview (approval record)"}
                           </MenuItem>
                         )}
                         {data.perms.export && ["RELEASED", "SUPERSEDED", "OBSOLETE"].includes(v.status) && (
@@ -648,7 +677,7 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
           title={dlg.v.status === "APPROVED" ? `Take back the approval of v${dlg.v.label}?` : `Recall v${dlg.v.label} from review?`}
           description={
             dlg.v.status === "APPROVED"
-              ? "The version returns to draft and can be edited again. Its review is closed as recalled and pending signature requests are cancelled; reviewers are notified. Once anyone has signed, this is no longer possible."
+              ? "The version returns to draft and can be edited again. Its review is closed as recalled and the approvals given in it no longer count; approvers are notified."
               : "The version returns to draft and can be edited again. The open review is closed as recalled; reviewers are notified. Comments stay on the version."
           }
           confirmLabel={dlg.v.status === "APPROVED" ? "Take back approval" : "Recall to draft"}
@@ -699,7 +728,6 @@ function VersionTable({ data, versions, onStart, onVariant }: { data: ProjectDat
           }}
         />
       )}
-      {dlg?.kind === "sign" && <RequestSignaturesDialog data={data} v={dlg.v} onClose={() => setDlg(null)} />}
     </>
   );
 }
@@ -814,62 +842,6 @@ function EditVariantDialog({ variant, onClose }: { variant: VariantRow; onClose:
             }}
           >
             {busy && <Spinner />} Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function RequestSignaturesDialog({ data, v, onClose }: { data: ProjectData; v: VersionRow; onClose: () => void }) {
-  const [run, busy] = useMutation();
-  const [picked, setPicked] = React.useState<string[]>([]);
-  const [purpose, setPurpose] = React.useState("Approval for release");
-  const need = Math.max(1, data.policy.requiredSignatories);
-  const toggle = (id: string) => setPicked((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title={`Request signatures for v${v.label}`} description={`Signatories sign in the order you select them. Policy requires at least ${need}.`}>
-        <div className="space-y-3">
-          <Field label="Purpose *">
-            <Input value={purpose} onChange={(e) => setPurpose(e.target.value)} maxLength={500} />
-          </Field>
-          <fieldset>
-            <legend className="mb-1 text-2xs font-medium text-muted">Signatories (users with the Signatory or Admin role)</legend>
-            {data.eligibleSignatories.length === 0 ? (
-              <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted">No one has the Signatory role yet. An administrator can assign it under Administration → Members.</p>
-            ) : (
-              <ul className="max-h-60 overflow-auto rounded-md border border-border">
-                {data.eligibleSignatories.map((u) => {
-                  const i = picked.indexOf(u.id);
-                  return (
-                    <li key={u.id} className="border-b border-border last:border-0">
-                      <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs hover:bg-hover">
-                        <Checkbox checked={i >= 0} onCheckedChange={() => toggle(u.id)} />
-                        <span className="font-medium">{u.name}</span>
-                        <span className="truncate text-muted">{u.email}</span>
-                        {i >= 0 && <span className="ml-auto rounded-full bg-accent px-1.5 text-[10px] font-semibold text-white">#{i + 1}</span>}
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </fieldset>
-          <p className="text-2xs text-muted">The server renders the canonical drawing PDF and records the SHA-256 hashes of the document and PDF; signatories confirm exactly these hashes.</p>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            disabled={busy || picked.length < need || !purpose.trim()}
-            onClick={async () => {
-              if (await run(() => api(`/api/versions/${v.id}/signatures`, { method: "POST", json: { signatoryIds: picked, purpose } }), "Signature requests sent")) onClose();
-            }}
-          >
-            {busy && <Spinner />} Send requests
           </Button>
         </DialogFooter>
       </DialogContent>

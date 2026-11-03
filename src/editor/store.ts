@@ -6,6 +6,7 @@ import type { LiveState, Peer } from "./live/types";
 import type { Doc, Page, PartialStyles, Pt, TitleBlockLogo } from "@/core/model";
 import { emptySel, ensureInstanceTexts, type Sel } from "@/core/ops";
 import type { DocDiff } from "@/core/diff";
+import type { Flow } from "@/lib/flow";
 
 enablePatches();
 setAutoFreeze(false);
@@ -75,6 +76,10 @@ type State = {
   previewStyles: PartialStyles | null;
   diff: { doc: Doc; diff: DocDiff; label: string; mode: "overlay" | "side" } | null;
   comments: CommentPin[];
+  /** where the version is in review → signatures → release, and the viewer's next step (lib/flow.ts) */
+  flow: Flow | null;
+  /** asks the review panel to bring the decision box or the open comments into view */
+  reviewFocus: { target: "decide" | "comments"; at: number } | null;
   activeComment: string | null;
   /** comment being composed (set by the canvas comment tool, consumed by the review panel) */
   pendingComment: { pageId: string; anchor: { type: string; id?: string; x: number; y: number } | null } | null;
@@ -158,6 +163,8 @@ export const useEditor = create<EditorStore>((set, get) => ({
   previewStyles: null,
   diff: null,
   comments: [],
+  flow: null,
+  reviewFocus: null,
   activeComment: null,
   pendingComment: null,
   highlight: null,

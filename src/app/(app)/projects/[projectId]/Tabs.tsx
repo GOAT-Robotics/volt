@@ -115,8 +115,8 @@ export function SignaturesTab({ data }: { data: ProjectData }) {
   if (!data.signatures.length && imported) return <div className="space-y-4">{imported}</div>;
   if (!data.signatures.length)
     return (
-      <Empty icon={<FileSignature />} title="No signatures requested">
-        {data.policy.signatureRequiredForRelease ? "This workspace requires signatures before release. " : ""}Once a version is approved, a project member with the workspace Designer or Owner role—or a workspace Admin—can request signatures from the Versions tab (⋯ → Request signatures).
+      <Empty icon={<FileSignature />} title="No signatures yet">
+        Approvals are the signatures: each approver types their full name when they approve, and the signed approvals appear here. With at least two approvals the version is released and its PDF digitally signed.
       </Empty>
     );
   const byVersion = [...new Set(data.signatures.map((s) => s.versionId))];

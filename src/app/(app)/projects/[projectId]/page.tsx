@@ -4,7 +4,6 @@ import { getCtx, requireCtx, loadProject, HttpError } from "@/lib/session";
 import { db, J } from "@/lib/db";
 import { applyProjectExpiry } from "@/lib/workflow";
 import { effectivePolicy } from "@/lib/projects";
-import { eligibleSignatories } from "@/lib/signing/service";
 import { auditLabel, describeAudit } from "@/lib/describe";
 import { isAdmin, isGuestCtx, isOutsider, canShareProject } from "@/lib/access";
 import { roleNames } from "@/lib/customroles";
@@ -74,7 +73,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const canExport = isGuestCtx(ctx) ? ctx.settings.exports.guestCanExport : can("project.export") && (can("project.edit") || ctx.settings.exports.viewerCanExport);
 
   const data: ProjectData = {
-    me: { id: ctx.user.id, isAdmin: isAdmin(ctx) && project.workspaceId === ctx.workspace.id },
+    me: { id: ctx.user.id, name: ctx.user.name, isAdmin: isAdmin(ctx) && project.workspaceId === ctx.workspace.id },
     perms: { manage: canManage, requestSignatures: canRequestSignatures, share: canShareProject(ctx, canManage), edit: can("project.edit"), export: canExport, view: can("project.view"), approve: can("review.approve") },
     project: {
       id: project.id,
@@ -91,7 +90,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       hasRelease: versions.some((v) => v.releasedAt),
     },
     variants: variants.map((v) => ({ id: v.id, code: v.code, name: v.name, customer: v.customer, description: v.description, baseVersionId: v.baseVersionId, baseLabel: v.baseLabel, state: v.state, createdBy: nm(v.createdById) ?? "", createdAt: v.createdAt.toISOString() })),
-    policy: { signatureRequiredForRelease: policy.signatureRequiredForRelease, requiredSignatories: policy.requiredSignatories, minApprovals: policy.minApprovals },
+    policy: { signatureRequiredForRelease: policy.signatureRequiredForRelease, requiredSignatories: policy.requiredSignatories, minApprovals: policy.minApprovals, requireCommentsResolved: policy.requireCommentsResolved },
     folders: folders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId, count: 0 })),
     versions: versions.map((v) => ({
       id: v.id,
@@ -146,6 +145,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       versionId: s.versionId,
       versionLabel: labelOf.get(s.versionId) ?? "",
       status: s.status,
+      kind: s.kind,
       order: s.order,
       purpose: s.purpose,
       signatory: users.get(s.signatoryId) ? { id: s.signatoryId, name: users.get(s.signatoryId)!.name, email: full ? users.get(s.signatoryId)!.email : "" } : { id: s.signatoryId, name: "Unknown", email: "" },
@@ -165,7 +165,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     members: members.map((m) => ({ userId: m.userId, name: m.user.name, email: full ? m.user.email : "", isGuest: m.user.isGuest, external: m.user.external, disabled: m.user.disabled, roles: memberRoles.get(m.userId) ?? (m.user.isGuest ? ["Guest reviewer"] : []) })),
     attachments: attachments.map((a) => ({ id: a.id, ownerType: a.ownerType, ownerId: a.ownerId, filename: a.filename, mime: a.mime, size: a.size, sha256: a.sha256, uploadedBy: nm(a.userId) ?? "", uploadedById: a.userId, createdAt: a.createdAt.toISOString(), context: a.ownerType === "REVIEW" ? `Review of v${labelOf.get(reviews.find((r) => r.id === a.ownerId)?.versionId ?? "") ?? "?"}` : a.ownerType === "RELEASE" ? `v${labelOf.get(a.ownerId) ?? "?"}` : a.ownerType === "COMMENT" ? "Comment" : "Project" })),
     imports: imports.map((i) => ({ id: i.id, filename: i.filename, sha256: i.sha256, createdAt: i.createdAt.toISOString(), versionLabel: i.versionId ? labelOf.get(i.versionId) ?? null : null, report: J.parse<CompatReport | null>(i.report, null) })),
-    eligibleSignatories: canRequestSignatures ? await eligibleSignatories(project.workspaceId, projectId) : [],
+    eligibleSignatories: [],
     importedSignatures: versions.flatMap((v) =>
       (vImp.get(v.id)?.signatures ?? []).map((s, i) => ({ id: `${v.id}:${i}`, versionId: v.id, versionLabel: v.label, name: s.signatory.name, email: full ? s.signatory.email ?? "" : "", purpose: s.purpose, status: s.status, signedAt: s.signedAt, server: s.server, sealValid: s.sealValid, docHash: s.docHash })),
     ),

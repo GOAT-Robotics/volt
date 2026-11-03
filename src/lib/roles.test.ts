@@ -17,6 +17,24 @@ describe("workspace role permissions", () => {
   });
 });
 
+import { parseRoles as parseLegacy, ASSIGNABLE_ROLES } from "./roles";
+
+describe("one Approver role", () => {
+  it("reads the earlier Reviewer and Signatory roles as Approver", () => {
+    expect(parseLegacy("REVIEWER")).toEqual(["APPROVER"]);
+    expect(parseLegacy("SIGNATORY,VIEWER")).toEqual(["APPROVER", "VIEWER"]);
+    expect(parseLegacy("APPROVER,SIGNATORY,REVIEWER")).toEqual(["APPROVER"]);
+  });
+  it("an Approver reviews, approves and signs", () => {
+    for (const a of ["review.decide", "review.approve", "sign"] as const) expect(rolesAllow(["APPROVER"], a)).toBe(true);
+  });
+  it("only offers the merged role", () => {
+    expect(ASSIGNABLE_ROLES).toContain("APPROVER");
+    expect(ASSIGNABLE_ROLES).not.toContain("REVIEWER");
+    expect(ASSIGNABLE_ROLES).not.toContain("SIGNATORY");
+  });
+});
+
 import { CUSTOM_ALLOWED, isCustomRole, parseRoles as parse2, rolesAllow as allow2, setCustomRoleActions } from "./roles";
 
 describe("custom roles", () => {

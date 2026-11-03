@@ -518,9 +518,12 @@ model Comment {
 }
 
 /// status: REQUESTED | SIGNED | DECLINED | EXPIRED | INVALIDATED | CANCELLED
+/// kind: APPROVAL — an approver's sealed approval in a review (batch = the review id; the approval is
+///   their signature) | REQUEST — a separate signing round (the earlier process, kept for its records)
 model Signature {
   id            String    @id @default(cuid())
   versionId     String
+  kind          String    @default("REQUEST")
   signatoryId   String
   requestedById String
   purpose       String

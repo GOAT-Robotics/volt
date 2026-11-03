@@ -9,7 +9,7 @@ import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Avatar, Badge, Checkbox, Empty, Spinner, Switch, Table, TabsContent, TabsList, TabsRoot, TabsTrigger } from "@/components/ui/misc";
 import { api } from "@/lib/fetcher";
 import { relTime } from "@/lib/utils";
-import { ROLES, ROLE_DESCRIPTION, ROLE_LABEL, type Role } from "@/lib/roles";
+import { ASSIGNABLE_ROLES as ROLES, ROLE_DESCRIPTION, ROLE_LABEL, type Role } from "@/lib/roles";
 import type { WorkspaceSettings } from "@/lib/settings";
 import type { Styles, TitleBlockLogo } from "@/core/model";
 import { logoDataUrl } from "@/core/logos";
@@ -241,9 +241,9 @@ function GeneralTab({ data }: { data: AdminData }) {
           </NativeSelect>
         </Row>
       </Section>
-      <Section title="Approval policy" description="Project templates can override these per project.">
-        <Row label="Minimum approvals" hint="Distinct approvers needed before a version is approved.">
-          <Num value={a.minApprovals} onChange={(n) => up("approval", { minApprovals: n })} min={1} label="Minimum approvals" />
+      <Section title="Approval policy" description="An approval is the approver’s electronic signature. When a version has its approvals and no open comments, Volt releases it and digitally signs the release PDF. Project templates can tighten these per project.">
+        <Row label="Minimum approvals" hint="Distinct approvers needed to release a version — at least 2.">
+          <Num value={Math.max(2, a.minApprovals)} onChange={(n) => up("approval", { minApprovals: Math.max(2, n) })} min={2} label="Minimum approvals" />
         </Row>
         <Row label="Sequential review by default" hint="Approvers decide one after another in the listed order.">
           <Switch checked={a.sequentialDefault} onCheckedChange={(c) => up("approval", { sequentialDefault: c })} aria-label="Sequential by default" />
@@ -257,12 +257,6 @@ function GeneralTab({ data }: { data: AdminData }) {
         <Row label="Approval expiry" hint="Approvals older than this must be given again (checked when the version is opened).">
           <Optional value={a.approvalExpiryDays} onChange={(v) => up("approval", { approvalExpiryDays: v })} label="approval expiry" unit="days" />
         </Row>
-        <Row label="Signatures required for release" hint="Approved versions must be fully signed before release.">
-          <Switch checked={a.signatureRequiredForRelease} onCheckedChange={(c) => up("approval", { signatureRequiredForRelease: c })} aria-label="Signatures required for release" />
-        </Row>
-        <Row label="Required signatories" hint="Minimum number of signatories per signature request.">
-          <Num value={a.requiredSignatories} onChange={(n) => up("approval", { requiredSignatories: n })} min={0} label="Required signatories" />
-        </Row>
         <Row label="Changes to submitted versions" hint="Submitted versions are always frozen; changes go into a new version.">
           <NativeSelect value={a.editSubmitted} onChange={(e) => up("approval", { editSubmitted: e.target.value as "forbid" | "newVersion" })} className="w-60" aria-label="Edit submitted">
             <option value="newVersion">Offer “Start new version”</option>
@@ -270,15 +264,13 @@ function GeneralTab({ data }: { data: AdminData }) {
           </NativeSelect>
         </Row>
       </Section>
-      <Section title="Electronic signatures" description="Built-in provider: Ed25519-sealed evidence records (see docs/SIGNING.md).">
+      <Section title="Signatures" description="Approvers sign their approval by typing their full name; Volt seals each approval (Ed25519 evidence record) and digitally signs the release PDF with the certificate below (see docs/SIGNING.md).">
         <div className="border-b border-border px-4 py-3">
-          <Field label="Signature statement (shown to and recorded for every signatory)">
+          <Field label="Approval statement (shown to and recorded for every approver)">
             <Textarea rows={3} value={s.signature.statement} onChange={(e) => up("signature", { statement: e.target.value })} />
           </Field>
         </div>
-        <Row label="Request expiry" hint="Days until an unsigned request expires (0 = never).">
-          <Num value={s.signature.expiryDays} onChange={(n) => up("signature", { expiryDays: n })} min={0} label="Signature expiry days" />
-        </Row>
+        <PdfCertificate />
       </Section>
       <Section title="Exports">
         <Row label="Viewers can export">
@@ -405,6 +397,101 @@ function GeneralTab({ data }: { data: AdminData }) {
 }
 
 /* ------------------------------------------------------------------ */
+
+type PdfCertInfo = { subject: string; issuer: string; fingerprint: string; notBefore: string; notAfter: string; selfSigned: boolean; source: "environment" | "uploaded" | "generated" };
+
+/** The certificate that digitally signs release PDFs: see it, hand it to IT, replace it with a CA-issued one. */
+function PdfCertificate() {
+  const [info, setInfo] = React.useState<PdfCertInfo | null>(null);
+  const [env, setEnv] = React.useState(false);
+  const [file, setFile] = React.useState<File | null>(null);
+  const [password, setPassword] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
+  React.useEffect(() => {
+    api<{ certificate: PdfCertInfo; fromEnvironment: boolean }>("/api/admin/pdf-certificate")
+      .then((j) => {
+        setInfo(j.certificate);
+        setEnv(j.fromEnvironment);
+      })
+      .catch((e) => toast.error((e as Error).message));
+  }, []);
+  const upload = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("password", password);
+      const r = await fetch("/api/admin/pdf-certificate", { method: "POST", body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "Upload failed");
+      setInfo(j.certificate);
+      setOpen(false);
+      setFile(null);
+      setPassword("");
+      toast.success("Certificate replaced — new releases are signed with it");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="px-4 py-3">
+      <p className="text-xs font-medium">Release PDF certificate</p>
+      <p className="mt-0.5 text-2xs text-muted">Every released version’s PDF is digitally signed with this certificate. PDF readers show any later change to the file.</p>
+      {!info ? (
+        <div className="py-2 text-subtle">
+          <Spinner />
+        </div>
+      ) : (
+        <dl className="mt-2 grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-2xs">
+          <dt className="text-muted">Signed by</dt>
+          <dd className="break-words">{info.subject}</dd>
+          <dt className="text-muted">Issued by</dt>
+          <dd className="break-words">
+            {info.selfSigned ? "Self-signed (generated by Volt)" : info.issuer}
+            {info.source === "uploaded" && " · uploaded"}
+            {info.source === "environment" && " · from PDF_SIGNING_P12"}
+          </dd>
+          <dt className="text-muted">Valid until</dt>
+          <dd>{new Date(info.notAfter).toLocaleDateString(undefined, { dateStyle: "medium" })}</dd>
+          <dt className="text-muted">SHA-256</dt>
+          <dd className="break-all font-mono text-[10px]">{info.fingerprint}</dd>
+        </dl>
+      )}
+      {info?.selfSigned && (
+        <p className="mt-2 rounded-md bg-warning-soft px-2 py-1.5 text-2xs text-warning">
+          PDF readers show these files as signed and unchanged, but the signer as not yet trusted. Give IT the certificate to trust (Acrobat: Preferences → Signatures → Identities &amp; Trusted Certificates), or upload one issued by a trusted CA.
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap gap-1">
+        <Button size="xs" variant="secondary" asChild>
+          <a href="/api/admin/pdf-certificate?download=cer">Download certificate (.cer)</a>
+        </Button>
+        {!env && (
+          <Button size="xs" variant="ghost" onClick={() => setOpen((x) => !x)} aria-expanded={open}>
+            Upload a CA-issued certificate…
+          </Button>
+        )}
+      </div>
+      {open && (
+        <div className="mt-2 grid gap-2 rounded-md border border-border p-2 sm:grid-cols-[1fr_12rem_auto] sm:items-end">
+          <Field label="Certificate with private key (.p12 / .pfx, RSA)">
+            <Input type="file" accept=".p12,.pfx,application/x-pkcs12" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </Field>
+          <Field label="Password">
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
+          </Field>
+          <Button size="sm" variant="primary" disabled={!file || busy} onClick={upload}>
+            {busy ? <Spinner /> : <Save />} Use this certificate
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function RoleChecks({ roles, onChange, disabled, who }: { roles: Role[]; onChange: (r: Role[]) => void; disabled?: boolean; who: string }) {
   return (

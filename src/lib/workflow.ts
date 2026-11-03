@@ -8,6 +8,10 @@ import { parseSettings, type ApprovalPolicy } from "./settings";
 import { effectivePolicy } from "./projects";
 import { usersInGroup, userCan } from "./access";
 import { rolesAllow, type Role } from "./roles";
+import type { VersionAccess } from "./versioning";
+import { computeFlow, type Flow, type FlowInput } from "./flow";
+import { approvalSignature, invalidateApprovals } from "./signing/service";
+import { releaseOnApproval } from "./release";
 
 type ReviewWithAssignments = NonNullable<Awaited<ReturnType<typeof loadReview>>>;
 async function loadReview(reviewId: string) {
@@ -41,7 +45,11 @@ export async function applyExpiry(versionId: string): Promise<void> {
   const cutoff = new Date(now.getTime() - days * 86400_000);
   if (v.status === "IN_REVIEW") {
     const r = await db.review.findFirst({ where: { versionId, status: "OPEN" }, orderBy: { createdAt: "desc" } });
-    if (r) await db.reviewAssignment.updateMany({ where: { reviewId: r.id, decision: "APPROVED", decidedAt: { lt: cutoff } }, data: { decision: "PENDING", reason: "Approval expired", decidedAt: null, decidedById: null } });
+    if (!r) return;
+    const old = await db.reviewAssignment.findMany({ where: { reviewId: r.id, decision: "APPROVED", decidedAt: { lt: cutoff } } });
+    if (!old.length) return;
+    await db.reviewAssignment.updateMany({ where: { id: { in: old.map((a) => a.id) } }, data: { decision: "PENDING", reason: "Approval expired", decidedAt: null, decidedById: null } });
+    await invalidateApprovals({ versionId, reviewId: r.id, signatoryIds: old.map((a) => a.decidedById ?? "").filter(Boolean) }, `Approval expired after ${days} days`);
     return;
   }
   if (v.status === "APPROVED" && v.approvedAt && v.approvedAt < cutoff) {
@@ -120,12 +128,15 @@ function eligibleAssignments(r: ReviewWithAssignments, userId: string, groups: s
 export async function reviewInfo(ctx: Ctx, versionId: string, roles: Role[]) {
   await applyExpiry(versionId);
   const r0 = await db.review.findFirst({ where: { versionId }, orderBy: { createdAt: "desc" }, select: { id: true } });
-  if (!r0) return { review: null, canDecide: false, canApprove: false, canRecall: false, versionStatus: "", blockers: [] as string[] };
+  if (!r0) return { review: null, canDecide: false, canApprove: false, canRecall: false, versionStatus: "", blockers: [] as string[], waiting: [] as string[] };
   const r = (await loadReview(r0.id))!;
   await primeNames(r);
   const policy = await policyForProject(r.version.project);
   const submitter = await db.user.findUnique({ where: { id: r.submittedById }, select: { name: true } });
-  const blockers = r.status === "OPEN" ? await reviewBlockers(r, policy) : [];
+  // waiting: what the review needs before it completes (the same for everyone);
+  // blockers: why this viewer cannot decide or approve
+  const waiting = r.status === "OPEN" ? await reviewBlockers(r, policy) : [];
+  const blockers: string[] = [];
   let canDecide = false;
   let canApprove = false;
   if (r.status === "OPEN" && r.version.status === "IN_REVIEW") {
@@ -147,7 +158,7 @@ export async function reviewInfo(ctx: Ctx, versionId: string, roles: Role[]) {
   }
   // taking the version back to draft (never once signed)
   const st = r.version.status;
-  const signed = st === "IN_REVIEW" || st === "APPROVED" ? await db.signature.count({ where: { versionId, status: "SIGNED" } }) : 1;
+  const signed = st === "IN_REVIEW" || st === "APPROVED" ? await db.signature.count({ where: { versionId, status: "SIGNED", kind: { not: "APPROVAL" } } }) : 1;
   const manage = rolesAllow(roles, "project.manage");
   const canRecall =
     !signed &&
@@ -184,6 +195,9 @@ export async function reviewInfo(ctx: Ctx, versionId: string, roles: Role[]) {
     canDecide,
     canApprove,
     blockers,
+    waiting,
+    /** approving signs: the statement the approver confirms and the name they type */
+    signing: { statement: ctx.settings.signature.statement, name: ctx.user.name },
   };
 }
 
@@ -202,24 +216,28 @@ export async function evaluateReview(reviewId: string, actorId: string | null): 
   const blockers = await reviewBlockers(r, policy);
   if (blockers.length) return r.version.status;
   const now = new Date();
-  const res = await db.version.updateMany({ where: { id: r.versionId, status: "IN_REVIEW" }, data: { status: "APPROVED", approvedAt: now } });
+  // the approvals are the signatures: approved and signed at once, then released
+  const res = await db.version.updateMany({ where: { id: r.versionId, status: "IN_REVIEW" }, data: { status: "APPROVED", approvedAt: now, signedAt: now } });
   if (!res.count) return r.version.status;
   await db.review.update({ where: { id: r.id }, data: { status: "APPROVED", closedAt: now } });
   const p = r.version.project;
   await audit({ workspaceId: p.workspaceId, projectId: p.id, versionId: r.versionId, actorId, type: "version.status", data: { from: "IN_REVIEW", to: "APPROVED", label: r.version.label } });
-  await notify(await stakeholders(r), {
-    type: "review.approved",
-    title: `${p.name} v${r.version.label} approved`,
-    body: policy.signatureRequiredForRelease ? "All approvals are in. Request signatures to release it." : "All approvals are in. It can now be released.",
-    link: `/projects/${p.id}?tab=versions`,
-    workspaceId: p.workspaceId,
+  const approvers = [...new Set(r.assignments.filter((a) => a.decision === "APPROVED" && a.canApprove).map((a) => (a.decidedById && names.get(a.decidedById)) || assigneeName(a)))];
+  const note = `Approved and signed by ${approvers.length > 1 ? `${approvers.slice(0, -1).join(", ")} and ${approvers[approvers.length - 1]}` : approvers.join("")}`;
+  const released = await releaseOnApproval(r.versionId, actorId, note).catch(async (e) => {
+    // the approval stands; a project owner can release it from the versions list
+    await notify(await stakeholders(r), { type: "review.approved", title: `${p.name} v${r.version.label} approved — release failed`, body: (e as Error).message, link: editorLink(p.id, r.versionId), workspaceId: p.workspaceId });
+    return null;
   });
-  return "APPROVED";
+  return released ? "RELEASED" : "APPROVED";
 }
 
 export type Decision = "APPROVED" | "REJECTED" | "CHANGES_REQUESTED";
 
-export async function decide(ctx: Ctx, reviewId: string, projectRoles: Role[], decision: Decision, reason: string) {
+/** approving signs: the typed full name and where the request came from (lib/access › reqMeta) */
+export type ApprovalSigning = { fullName: string; ip: string | null; userAgent: string };
+
+export async function decide(ctx: Ctx, reviewId: string, projectRoles: Role[], decision: Decision, reason: string, signing?: ApprovalSigning) {
   await (async () => {
     const r = await db.review.findUnique({ where: { id: reviewId }, select: { versionId: true } });
     if (r) await applyExpiry(r.versionId);
@@ -247,12 +265,23 @@ export async function decide(ctx: Ctx, reviewId: string, projectRoles: Role[], d
       targets = targets.filter((a) => a.order === o);
     }
   }
+  // an approval is the approver's signature: typed full name, sealed evidence over the frozen document
+  let approval: Awaited<ReturnType<typeof approvalSignature>> | null = null;
+  if (decision === "APPROVED") {
+    if (!signing?.fullName.trim()) throw new HttpError(400, `Type your full name (“${ctx.user.name}”) to sign your approval`);
+    approval = await approvalSignature(ctx, { versionId: r.versionId, reviewId: r.id, requestedById: r.submittedById, order: Math.min(...targets.map((a) => a.order)), ...signing });
+  }
   const at = new Date();
-  await db.reviewAssignment.updateMany({ where: { id: { in: targets.map((a) => a.id) }, decision: "PENDING" }, data: { decision, reason: reason.trim() || null, decidedById: ctx.user.id, decidedAt: at } });
+  await db.$transaction(async (tx) => {
+    const u = await tx.reviewAssignment.updateMany({ where: { id: { in: targets.map((a) => a.id) }, decision: "PENDING" }, data: { decision, reason: reason.trim() || null, decidedById: ctx.user.id, decidedAt: at } });
+    if (!u.count) throw new HttpError(409, "This review changed meanwhile — reload and try again");
+    if (approval) await tx.signature.create({ data: approval });
+  });
   const p = r.version.project;
   const base = { workspaceId: p.workspaceId, projectId: p.id, versionId: r.versionId, actorId: ctx.user.id };
   const link = editorLink(p.id, r.versionId);
 
+  if (decision !== "APPROVED") await invalidateApprovals({ versionId: r.versionId, reviewId: r.id }, `${decision === "REJECTED" ? "Rejected" : "Changes requested"} by ${ctx.user.name}`);
   if (decision === "REJECTED") {
     await db.$transaction([
       db.review.update({ where: { id: r.id }, data: { status: "REJECTED", closedAt: at } }),
@@ -271,7 +300,7 @@ export async function decide(ctx: Ctx, reviewId: string, projectRoles: Role[], d
     await notify(await stakeholders(r), { type: "review.changes", title: `Changes requested on ${p.name} v${r.version.label}`, body: `${ctx.user.name}: ${reason}`, link, workspaceId: p.workspaceId });
     return { versionStatus: "CHANGES_REQUESTED" };
   }
-  await audit({ ...base, type: "review.approve", data: { label: r.version.label, reason: reason || undefined } });
+  await audit({ ...base, type: "review.approve", data: { label: r.version.label, reason: reason || undefined, signed: true } });
   const status = await evaluateReview(r.id, ctx.user.id);
   if (status === "IN_REVIEW" && r.sequential) await notifyNextInOrder(r.id);
   return { versionStatus: status };
@@ -358,4 +387,64 @@ export async function startReview(
     await notifyAssignees(full, full.assignments.filter((a) => !a.canApprove || a.order === o));
   } else await notifyAssignees(full, full.assignments);
   return review;
+}
+
+/* ------------------------------------------------------------------ */
+/* Next step                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Where the version is in draft → review → release, what it waits for and what the viewer can do
+ * now (lib/flow.ts). Reading it changes nothing (apart from the lazy expiry above).
+ */
+export async function versionFlow(ctx: Ctx, a: VersionAccess, roles: Role[]): Promise<Flow> {
+  const versionId = a.version.id;
+  const info = await reviewInfo(ctx, versionId, roles);
+  const v = await db.version.findUnique({ where: { id: versionId }, omit: { doc: true }, include: { project: true } });
+  if (!v) throw new HttpError(404, "Version not found");
+  const r = info.review && !info.review.importedFrom ? await loadReview(info.review.id) : null;
+  const policy = await policyForProject(v.project);
+  const openWhere = { versionId, parentId: null, status: { in: ["OPEN", "REOPENED"] } };
+  const [openComments, openAiComments] = await Promise.all([db.comment.count({ where: openWhere }), db.comment.count({ where: { ...openWhere, author: { isBot: true } } })]);
+
+  let review: FlowInput["review"] = null;
+  if (r) {
+    await primeNames(r);
+    const me = ctx.user.id;
+    const who = (x: ReviewWithAssignments["assignments"][number]) => (x.userId === me ? "you" : (x.groupName ?? assigneeName(x)));
+    const mine = r.assignments.filter((x) => x.userId === me || x.decidedById === me);
+    const back = r.assignments
+      .filter((x) => x.decision === "CHANGES_REQUESTED" || x.decision === "REJECTED")
+      .sort((p, q) => (q.decidedAt?.getTime() ?? 0) - (p.decidedAt?.getTime() ?? 0))[0];
+    const approved = r.assignments.filter((x) => x.canApprove && x.decision === "APPROVED");
+    review = {
+      status: r.status,
+      pending: r.status === "OPEN" ? r.assignments.filter((x) => x.canApprove && x.decision !== "APPROVED").map(who) : [],
+      approvedBy: [...new Set(approved.map((x) => (x.decidedById === me ? "you" : (x.decidedById && names.get(x.decidedById)) || who(x))))],
+      canDecide: info.canDecide,
+      canApprove: info.canApprove,
+      myDecision: mine.length ? (mine.find((x) => x.decision !== "PENDING")?.decision ?? "PENDING") : null,
+      closedBy: back ? { name: (back.decidedById && names.get(back.decidedById)) || "a reviewer", decision: back.decision, reason: back.reason } : null,
+    };
+  }
+
+  const iso = (d: Date | null) => d?.toISOString() ?? null;
+  const canEditOrManage = a.can("project.edit") || a.can("project.manage");
+  return computeFlow({
+    status: v.status,
+    dates: { submittedAt: iso(v.submittedAt), approvedAt: iso(v.approvedAt), releasedAt: iso(v.releasedAt), endedAt: iso(v.endedAt) },
+    endReason: v.endReason,
+    policy: { minApprovals: policy.minApprovals, requireCommentsResolved: policy.requireCommentsResolved },
+    can: {
+      submit: a.editable,
+      release: a.can("project.manage"),
+      closeComments: canEditOrManage || v.createdById === ctx.user.id,
+      newVersion: canEditOrManage && a.project.state === "ACTIVE",
+      exportPdf: a.canExport,
+      recall: info.canRecall,
+    },
+    review,
+    openComments,
+    openAiComments,
+  });
 }

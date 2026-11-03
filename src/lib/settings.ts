@@ -1,12 +1,18 @@
 import type { TitleBlockLogo } from "@/core/model";
 
+/** every release needs at least this many approvals, from different people (an approval is that person's signature) */
+export const MIN_APPROVALS = 2;
+
 export type ApprovalPolicy = {
+  /** never below MIN_APPROVALS */
   minApprovals: number;
   sequentialDefault: boolean;
   allowSelfApproval: boolean;
   requireCommentsResolved: boolean;
   approvalExpiryDays: number | null;
+  /** @deprecated approvals are the signatures and the last approval releases the version; kept for stored settings */
   signatureRequiredForRelease: boolean;
+  /** @deprecated see signatureRequiredForRelease */
   requiredSignatories: number;
   editSubmitted: "forbid" | "newVersion";
 };
@@ -69,13 +75,13 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   sessionHours: 12,
   signReauthMinutes: 10,
   approval: {
-    minApprovals: 1,
+    minApprovals: MIN_APPROVALS,
     sequentialDefault: false,
     allowSelfApproval: false,
     requireCommentsResolved: true,
     approvalExpiryDays: null,
-    signatureRequiredForRelease: true,
-    requiredSignatories: 1,
+    signatureRequiredForRelease: false,
+    requiredSignatories: 0,
     editSubmitted: "newVersion",
   },
   signature: {
@@ -106,7 +112,7 @@ export function parseSettings(s: string | null | undefined): WorkspaceSettings {
   return {
     ...DEFAULT_SETTINGS,
     ...v,
-    approval: { ...DEFAULT_SETTINGS.approval, ...(v.approval ?? {}) },
+    approval: withApprovalFloor({ ...DEFAULT_SETTINGS.approval, ...(v.approval ?? {}) }),
     signature: { ...DEFAULT_SETTINGS.signature, ...(v.signature ?? {}) },
     exports: { ...DEFAULT_SETTINGS.exports, ...(v.exports ?? {}) },
     retention: { ...DEFAULT_SETTINGS.retention, ...(v.retention ?? {}) },
@@ -118,4 +124,9 @@ export function parseSettings(s: string | null | undefined): WorkspaceSettings {
     aiReview: { ...DEFAULT_SETTINGS.aiReview, ...(v.aiReview ?? {}) },
     mcp: { ...DEFAULT_SETTINGS.mcp, ...(v.mcp ?? {}) },
   };
+}
+
+/** the approval rules that always hold: at least MIN_APPROVALS approvals, no separate signing step */
+export function withApprovalFloor(p: ApprovalPolicy): ApprovalPolicy {
+  return { ...p, minApprovals: Math.max(MIN_APPROVALS, Number(p.minApprovals) || 0), signatureRequiredForRelease: false, requiredSignatories: 0 };
 }

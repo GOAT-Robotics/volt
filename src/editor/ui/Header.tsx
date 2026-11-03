@@ -11,6 +11,38 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, MenuLabel } fr
 import { StatusBadge } from "@/components/ui/status";
 import { relTime } from "@/lib/utils";
 import { LiveAvatars } from "./LivePresence";
+import { FLOW_ICON } from "./WorkflowCard";
+import { runFlowAction, useFlowSync } from "./flow";
+import { cn } from "@/lib/utils";
+import type { FlowTone } from "@/lib/flow";
+
+const CHIP: Record<FlowTone, string> = {
+  action: "bg-accent-soft text-accent",
+  waiting: "bg-warning-soft text-warning",
+  done: "bg-success-soft text-success",
+  stopped: "bg-hover text-muted",
+};
+
+/** What happens next with this version — opens the review panel, where the full picture is. */
+function NextStepChip() {
+  const flow = useEditor((s) => s.flow);
+  const v = useEditor((s) => s.version);
+  if (!v) return null;
+  if (!flow || flow.status === "DRAFT") return !v.editable && v.reason ? <span className="hidden truncate text-2xs text-subtle lg:inline">{v.reason}</span> : null;
+  return (
+    <Tip content={flow.headline}>
+      <button
+        onClick={() => {
+          const s = useEditor.getState();
+          s.set("panels", { ...s.panels, right: "review" });
+        }}
+        className={cn("hidden h-6 max-w-80 items-center truncate rounded-md px-2 text-2xs font-medium hover:brightness-95 lg:inline-flex", CHIP[flow.tone])}
+      >
+        <span className="truncate">{flow.short}</span>
+      </button>
+    </Tip>
+  );
+}
 
 function SaveIndicator() {
   const save = useEditor((s) => s.save);
@@ -52,6 +84,9 @@ export function Header() {
   const diff = useEditor((s) => s.diff);
   const ui = useEditorUI();
   const run = (id: string) => runCommand(id, ui);
+  useFlowSync();
+  const flow = useEditor((s) => s.flow);
+  const next = flow?.actions.find((a) => a.primary && a.kind !== "recall" && a.kind !== "submit");
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-panel px-2">
@@ -109,7 +144,7 @@ export function Header() {
           </MenuContent>
         </Menu>
         {v && <StatusBadge status={v.status} />}
-        {v && !v.editable && v.reason && <span className="hidden truncate text-2xs text-subtle lg:inline">{v.reason}</span>}
+        <NextStepChip />
       </div>
 
       <div className="ml-1 flex items-center">
@@ -167,11 +202,15 @@ export function Header() {
         <Button variant="primary" size="sm" onClick={() => run("submit")}>
           <Send /> Submit for review
         </Button>
-      ) : (
+      ) : next ? (
+        <Button variant="primary" size="sm" onClick={() => runFlowAction(next, ui)} title={flow?.headline}>
+          {FLOW_ICON[next.kind]} {next.label}
+        </Button>
+      ) : !flow || flow.tone === "done" || flow.tone === "stopped" ? (
         <Button variant="secondary" size="sm" onClick={() => run("newVersion")}>
           <Plus /> New version
         </Button>
-      )}
+      ) : null}
     </header>
   );
 }

@@ -7,7 +7,8 @@
 import "server-only";
 import { z } from "zod";
 import { db, J } from "../db";
-import { HttpError } from "../session";
+import { HttpError, loadProject } from "../session";
+import { versionFlow } from "../workflow";
 import { loadVersion } from "../versioning";
 import { audit } from "../audit";
 import { flushLive } from "../live/hooks";
@@ -124,7 +125,7 @@ const CORE_TOOLS: Tool[] = [
   tool({
     name: "get_drawing",
     title: "Drawing overview",
-    description: "Start here for a version: status and whether you may edit it, pages with their numbers, component and wire counts, numbering rules and wiring standard, open comments.",
+    description: "Start here for a version: status, its next step in review → signatures → release (what it waits for), whether you may edit it, pages with their numbers, component and wire counts, numbering rules and wiring standard, open comments.",
     access: "read",
     area: "Projects & reading",
     annotations: { readOnlyHint: true },
@@ -133,8 +134,10 @@ const CORE_TOOLS: Tool[] = [
       const { a, doc } = await readVersion(env, v);
       const open = await db.comment.count({ where: { versionId: a.version.id, parentId: null, status: { in: ["OPEN", "REOPENED"] } } });
       const canEdit = a.editable && env.token.scope === "EDIT" && env.ctx.settings.mcp.allowEdits;
+      const flow = await versionFlow(env.ctx, a, (await loadProject(env.ctx, a.project.id)).projectRoles).catch(() => null);
       return [
         `${vName(a)} — version id ${a.version.id}`,
+        flow ? `Next step: ${flow.headline}${flow.waiting.length ? ` — waiting for ${flow.waiting.join("; ")}` : ""}` : "",
         canEdit ? "You can edit this version." : `Read-only for you: ${a.reason ?? (env.token.scope !== "EDIT" ? "read-only token" : "edits by assistants are off")}`,
         a.canComment ? `You can comment. ${open} open comment thread${open === 1 ? "" : "s"}.` : "",
         "",
