@@ -98,8 +98,13 @@ export async function setCommentStatus(ctx: Ctx, commentId: string, status: "OPE
  * so the review record says why. Threads the person may not close are skipped and reported; the
  * review completes as usual once the last open thread is closed.
  */
-export async function closeThreads(ctx: Ctx, versionId: string, ids: string[], status: "RESOLVED" | "REJECTED", note: string) {
-  const roots = await db.comment.findMany({ where: { id: { in: ids }, versionId, parentId: null, status: { in: ["OPEN", "REOPENED"] } }, select: { id: true }, orderBy: { createdAt: "asc" } });
+export async function closeThreads(ctx: Ctx, versionId: string, which: { ids: string[] } | { ai: true }, status: "RESOLVED" | "REJECTED", note: string) {
+  const roots = await db.comment.findMany({
+    where: { versionId, parentId: null, status: { in: ["OPEN", "REOPENED"] }, ...("ids" in which ? { id: { in: which.ids } } : { author: { isBot: true } }) },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const ids = roots.map((r) => r.id);
   const errors = new Set<string>();
   let closed = 0;
   for (const r of roots) {

@@ -53,7 +53,8 @@ describe("computeFlow — draft → approvals → release", () => {
     expect(f.headline).toBe("You approved and signed it (1 of 2 approvals). It is released once nothing is left below.");
     expect(f.waiting).toEqual(["approval from Asha", "37 open comments to be resolved (all from the AI reviewer)"]);
     expect(f.short).toBe("Waiting for approval from Asha");
-    expect(f.actions.map((a) => a.kind)).toEqual(["comments", "recall"]);
+    expect(f.actions.map((a) => a.kind)).toEqual(["comments", "clearAi", "recall"]);
+    expect(f.actions[1].label).toBe("Clear 37 AI findings");
     expect(f.notes.join(" ")).toContain("Volt releases it and digitally signs the release PDF");
     expect(states(f)).toBe("draft:done review:current release:todo");
   });

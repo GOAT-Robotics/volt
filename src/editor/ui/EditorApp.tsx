@@ -260,12 +260,14 @@ export function EditorApp({ doc, version }: { doc: Doc; version: VersionInfo }) 
 
   useBlockPlacement(ui);
 
-  // deep link: ?panel=review or ?comment=<id> opens the review panel (notifications link here)
+  // deep link: ?panel=review or ?comment=<id> opens the comments, ?panel=process the Review panel
+  // (notifications link here)
   useEffect(() => {
     const q = new URLSearchParams(location.search);
     const c = q.get("comment");
-    if (q.get("panel") !== "review" && !c) return;
     const s = useEditor.getState();
+    if (q.get("panel") === "process") return s.set("panels", { ...s.panels, right: "process" });
+    if (q.get("panel") !== "review" && !c) return;
     s.set("panels", { ...s.panels, right: "review" });
     if (c) s.set("activeComment", c);
   }, []);

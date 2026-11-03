@@ -205,7 +205,7 @@ export async function buildReleasePdf(versionId: string, verifyBase: string, opt
       if (opts.digital) {
         const d = opts.digital;
         w.heading("Digital signature of this file");
-        w.text("Volt digitally signed this PDF when the version was released (PAdES, SHA-256). Your PDF reader’s signature panel shows whether the file changed since; any change breaks the signature.", { size: 8.5, color: [0.35, 0.35, 0.4], gap: 6 });
+        w.text("Every downloaded copy of this release is a separate file: each page carries the green release stamp with the copy code, who downloaded it and when, and the copy is digitally signed by Volt (PAdES, SHA-256). Your PDF reader’s signature panel shows whether the file changed since; any change breaks the signature. An administrator can trace a copy — the file, or the code on a printed page — under Verify a PDF.", { size: 8.5, color: [0.35, 0.35, 0.4], gap: 6 });
         w.kv("Signed by", d.subject);
         w.kv("Issued by", `${d.issuer}${d.selfSigned ? " (self-signed organization certificate)" : ""}`);
         w.kv("Certificate SHA-256", d.fingerprint);
@@ -222,7 +222,7 @@ export async function buildReleasePdf(versionId: string, verifyBase: string, opt
       w.text(
         "The seal is an Ed25519 signature by this Volt installation over the canonical (sorted-key JSON) evidence shown above. It binds the signatory's authenticated identity, the time, the statement and the SHA-256 hashes of the stored document and of the canonical drawing PDF (pages 1–" +
           canonicalPages(doc).length +
-          " of this file, regenerated deterministically). It is an application-level electronic signature record; it is not asserted to be a qualified or advanced electronic signature.",
+          " of this file without the release stamp; Volt regenerates it deterministically). It is an application-level electronic signature record; it is not asserted to be a qualified or advanced electronic signature.",
         { size: 8, color: [0.35, 0.35, 0.4] },
       );
     },

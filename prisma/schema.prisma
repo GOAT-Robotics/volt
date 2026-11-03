@@ -658,3 +658,26 @@ model BackupRun {
 
   @@index([status, startedAt])
 }
+
+/// One downloaded copy of a released version's signed PDF. Every download is its own file: the copy
+/// code and who downloaded it are printed on each page and stored in the PDF, so a file (or a print)
+/// that turns up later can be traced — Administration → Verify a PDF (lib/signing/release-signed).
+model ReleaseCopy {
+  id          String   @id @default(cuid())
+  /// printed on every page, e.g. VLT-7KQ2-9XHM
+  code        String   @unique
+  workspaceId String
+  projectId   String
+  versionId   String
+  userId      String
+  /// SHA-256 of exactly the file that was handed out
+  sha256      String
+  size        Int
+  ip          String?
+  userAgent   String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([versionId, createdAt])
+  @@index([sha256])
+}

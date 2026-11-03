@@ -86,11 +86,14 @@ type State = {
   highlight: Set<string> | null; // net highlight / search locate
   cursor: Pt | null;
   zoom: number;
-  panels: { left: "library" | "pages" | "outline" | null; right: "inspector" | "review" | "validate" | "history" | null };
+  /** right panels: "process" is the Review menu (approve, release), "review" the comments */
+  panels: { left: "library" | "pages" | "outline" | null; right: "inspector" | "process" | "review" | "validate" | "history" | null };
   snapSettings: { pins: boolean; junctions: boolean; wires: boolean; guides: boolean; grid: boolean; order: ("pin" | "junction" | "wire" | "guide" | "grid")[] };
   gridVisible: boolean;
   /** comment pins hidden on the drawing (per person, remembered in this browser) */
   commentsHidden: boolean;
+  /** AI reviewer findings hidden from the comments and the drawing (per person, remembered) */
+  aiHidden: boolean;
   /** shape tool: kind to draw and the style new shapes get (last used) */
   shapeKind: DrawKind;
   shapeStyle: DrawStyle;
@@ -139,6 +142,23 @@ function readCommentsHidden(): boolean {
     return false;
   }
 }
+const AI_HIDDEN_KEY = "volt.aiHidden";
+function readAiHidden(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(AI_HIDDEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+/** hide or show AI reviewer findings (comments list and drawing pins), remembered in this browser */
+export function setAiHidden(hidden: boolean) {
+  useEditor.getState().set("aiHidden", hidden);
+  try {
+    if (hidden) localStorage.setItem(AI_HIDDEN_KEY, "1");
+    else localStorage.removeItem(AI_HIDDEN_KEY);
+  } catch {}
+}
+
 /** hide or show comment pins on the drawing, remembered in this browser */
 export function setCommentsHidden(hidden: boolean) {
   useEditor.getState().set("commentsHidden", hidden);
@@ -174,6 +194,7 @@ export const useEditor = create<EditorStore>((set, get) => ({
   snapSettings: { pins: true, junctions: true, wires: true, guides: true, grid: true, order: ["pin", "junction", "wire", "guide", "grid"] },
   gridVisible: true,
   commentsHidden: readCommentsHidden(),
+  aiHidden: readAiHidden(),
   shapeKind: "rect",
   shapeStyle: { color: "#111827", width: 1, dash: "solid", fill: null },
   live: { status: "off", clientId: null, color: null },

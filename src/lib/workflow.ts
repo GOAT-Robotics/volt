@@ -329,7 +329,7 @@ export async function notifyAssignees(r: ReviewWithAssignments, list: ReviewWith
       type: "review.assigned",
       title: `Review requested: ${p.name} v${r.version.label}`,
       body: r.dueDate ? `Due ${r.dueDate.toISOString().slice(0, 10)}. ${r.instructions}` : r.instructions,
-      link: editorLink(p.id, r.versionId),
+      link: editorLink(p.id, r.versionId, "?panel=process"),
       workspaceId: p.workspaceId,
     },
   );

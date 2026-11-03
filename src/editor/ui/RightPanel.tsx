@@ -1,11 +1,12 @@
 "use client";
 import { useState } from "react";
-import { SlidersHorizontal, MessageSquare, ShieldCheck, History, PanelRightClose } from "lucide-react";
+import { SlidersHorizontal, MessageSquare, ShieldCheck, History, PanelRightClose, BadgeCheck } from "lucide-react";
 import { useEditor } from "../store";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/misc";
 import { Inspector } from "./Inspector";
 import { ReviewPanel } from "./ReviewPanel";
+import { ReviewProcessPanel } from "./ReviewProcess";
 import { ValidationPanel } from "./ValidationPanel";
 import { HistoryPanel } from "./HistoryPanel";
 import { Resizer } from "./LeftPanel";
@@ -13,6 +14,8 @@ import { Resizer } from "./LeftPanel";
 export function RightPanel() {
   const panel = useEditor((s) => s.panels.right);
   const comments = useEditor((s) => s.comments.filter((c) => c.status === "OPEN" || c.status === "REOPENED").length);
+  // the Review menu shows a dot when the viewer has something to do there (approve, clear findings …)
+  const todo = useEditor((s) => (s.flow?.tone === "action" && s.flow.status !== "DRAFT" ? 1 : 0));
   const [w, setW] = useState(300);
   const set = (right: typeof panel) => {
     const s = useEditor.getState();
@@ -20,7 +23,8 @@ export function RightPanel() {
   };
   const tabs = [
     { id: "inspector", icon: <SlidersHorizontal />, label: "Properties" },
-    { id: "review", icon: <MessageSquare />, label: "Review & comments", badge: comments },
+    { id: "process", icon: <BadgeCheck />, label: "Review & release", dot: todo },
+    { id: "review", icon: <MessageSquare />, label: "Comments", badge: comments },
     { id: "validate", icon: <ShieldCheck />, label: "Checks" },
     { id: "history", icon: <History />, label: "Version control" },
   ] as const;
@@ -37,6 +41,7 @@ export function RightPanel() {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {panel === "inspector" && <Inspector />}
+            {panel === "process" && <ReviewProcessPanel />}
             {panel === "review" && <ReviewPanel />}
             {panel === "validate" && <ValidationPanel />}
             {panel === "history" && <HistoryPanel />}
@@ -48,6 +53,7 @@ export function RightPanel() {
           <Tip key={t.id} content={t.label} side="left">
             <Button variant="tool" size="icon" active={panel === t.id} aria-pressed={panel === t.id} aria-label={t.label} onClick={() => set(t.id)} className="relative">
               {t.icon}
+              {"dot" in t && t.dot > 0 && <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-accent ring-2 ring-panel" aria-label="Your action is needed" />}
               {"badge" in t && t.badge > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-purple-600 px-1 text-[9px] font-semibold text-white">{t.badge}</span>}
             </Button>
           </Tip>

@@ -23,7 +23,7 @@ const CHIP: Record<FlowTone, string> = {
   stopped: "bg-hover text-muted",
 };
 
-/** What happens next with this version — opens the review panel, where the full picture is. */
+/** What happens next with this version — opens the Review panel, where the full picture is. */
 function NextStepChip() {
   const flow = useEditor((s) => s.flow);
   const v = useEditor((s) => s.version);
@@ -34,7 +34,7 @@ function NextStepChip() {
       <button
         onClick={() => {
           const s = useEditor.getState();
-          s.set("panels", { ...s.panels, right: "review" });
+          s.set("panels", { ...s.panels, right: "process" });
         }}
         className={cn("hidden h-6 max-w-80 items-center truncate rounded-md px-2 text-2xs font-medium hover:brightness-95 lg:inline-flex", CHIP[flow.tone])}
       >

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FolderKanban, Library, Inbox, Search, Settings, Moon, Sun, Monitor, LogOut, ChevronsUpDown, ScrollText, Bot } from "lucide-react";
+import { FolderKanban, Library, Inbox, Search, Settings, Moon, Sun, Monitor, LogOut, ChevronsUpDown, ScrollText, Bot, FileSearch } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Avatar, TooltipProvider } from "@/components/ui/misc";
@@ -21,7 +21,7 @@ export function AppShell({ user, children, inboxCount }: { user: ShellUser; chil
     { href: "/reviews", label: "My reviews", icon: <Inbox />, badge: inboxCount },
     { href: "/search", label: "Search", icon: <Search /> },
     ...(user.mcp ? [{ href: "/connect", label: "Connect AI", icon: <Bot /> }] : []),
-    ...(user.isAdmin ? [{ href: "/admin", label: "Administration", icon: <Settings /> }, { href: "/admin/audit", label: "Audit log", icon: <ScrollText /> }] : []),
+    ...(user.isAdmin ? [{ href: "/admin", label: "Administration", icon: <Settings /> }, { href: "/admin/audit", label: "Audit log", icon: <ScrollText /> }, { href: "/admin/verify", label: "Verify a PDF", icon: <FileSearch /> }] : []),
   ];
   return (
     <TooltipProvider delayDuration={350}>
@@ -58,7 +58,7 @@ export function AppShell({ user, children, inboxCount }: { user: ShellUser; chil
           </div>
           <nav className="flex-1 space-y-0.5 px-2 py-2" aria-label="Main">
             {nav.map((n) => {
-              const active = n.href === "/admin" ? path === "/admin" || (path.startsWith("/admin/") && !path.startsWith("/admin/audit")) : path.startsWith(n.href);
+              const active = n.href === "/admin" ? path === "/admin" || (path.startsWith("/admin/") && !path.startsWith("/admin/audit") && !path.startsWith("/admin/verify")) : path.startsWith(n.href);
               return (
                 <Link
                   key={n.href}

@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CornerDownRight, MapPin, RotateCcw, X, MessageSquare, ThumbsDown, AlertCircle, Clock, Bot, Sparkles, ChevronDown, ChevronRight, Eye, EyeOff, PenLine } from "lucide-react";
-import { setCommentsHidden, useEditor, type CommentPin } from "../store";
+import { Check, CornerDownRight, MapPin, RotateCcw, X, MessageSquare, ThumbsDown, AlertCircle, Clock, Bot, Sparkles, ChevronDown, ChevronRight, Eye, EyeOff, PenLine, Eraser } from "lucide-react";
+import { ClearAiFindings } from "./WorkflowCard";
+import { setAiHidden, setCommentsHidden, useEditor, type CommentPin } from "../store";
 import { useEditorUI } from "./context";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -12,7 +13,6 @@ import { cn, relTime, fmtDate } from "@/lib/utils";
 import { emptySel } from "@/core/ops";
 import { ChangeList, locateChange } from "./HistoryPanel";
 import type { Change } from "@/core/diff";
-import { WorkflowCard } from "./WorkflowCard";
 import { refreshFlow } from "./flow";
 
 /** versions whose threads can still be resolved or reopened (lib/comment-actions › OPEN_FOR_COMMENTS) */
@@ -40,7 +40,7 @@ type AiStatus = {
   last: { at: string; status: "DONE" | "FAILED"; summary: string; findings: number; errors: number; warnings: number; suggestions: number; model: string | null; error: string | null; truncated: boolean } | null;
 };
 
-type ReviewInfo = {
+export type ReviewInfo = {
   review: {
     id: string;
     status: string;
@@ -64,14 +64,15 @@ type ReviewInfo = {
   signing?: { statement: string; name: string };
 };
 
+/** The Comments panel: threads on the drawing (the review itself is in the Review panel, ReviewProcess.tsx). */
 export function ReviewPanel() {
   const v = useEditor((s) => s.version);
   const active = useEditor((s) => s.activeComment);
   const commentsHidden = useEditor((s) => s.commentsHidden);
+  const aiHidden = useEditor((s) => s.aiHidden);
   const [list, setList] = useState<C[] | null>(null);
   const [filter, setFilter] = useState<"open" | "ai" | "all">("open");
   const [draft, setDraft] = useState<{ pageId: string; anchor: C["anchor"] } | null>(null);
-  const [review, setReview] = useState<ReviewInfo | null>(null);
   const [bulk, setBulk] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const focus = useEditor((s) => s.reviewFocus);
@@ -82,18 +83,22 @@ export function ReviewPanel() {
     try {
       const j = await api<{ comments: C[] }>(`/api/versions/${v.versionId}/comments`);
       setList(j.comments);
-      const roots = j.comments.filter((c) => !c.parentId);
-      useEditor.getState().set(
-        "comments",
-        roots.map<CommentPin>((c) => ({ id: c.id, pageId: c.pageId, anchor: c.anchor, status: c.status, body: c.body, author: c.author.name, createdAt: c.createdAt, replies: j.comments.filter((x) => x.parentId === c.id).length })),
-      );
     } catch (e) {
       setList([]);
       ui.toast((e as Error).message, { tone: "error" });
     }
-    api<ReviewInfo>(`/api/versions/${v.versionId}/review`).then(setReview).catch(() => setReview(null));
     void refreshFlow();
   }, [v, ui]);
+
+  // pins on the drawing (AI findings left out while they are hidden)
+  useEffect(() => {
+    if (!list) return;
+    const roots = list.filter((c) => !c.parentId && !(aiHidden && c.author.bot));
+    useEditor.getState().set(
+      "comments",
+      roots.map<CommentPin>((c) => ({ id: c.id, pageId: c.pageId, anchor: c.anchor, status: c.status, body: c.body, author: c.author.name, createdAt: c.createdAt, replies: list.filter((x) => x.parentId === c.id).length })),
+    );
+  }, [list, aiHidden]);
 
   useEffect(() => {
     void load();
@@ -109,20 +114,22 @@ export function ReviewPanel() {
   }, [pending]);
 
   const roots = useMemo(
-    () => (list ?? []).filter((c) => !c.parentId && (filter === "all" || ((c.status === "OPEN" || c.status === "REOPENED") && (filter === "open" || c.author.bot)))),
-    [list, filter],
+    () =>
+      (list ?? []).filter(
+        (c) => !c.parentId && !(aiHidden && c.author.bot && filter !== "ai") && (filter === "all" || ((c.status === "OPEN" || c.status === "REOPENED") && (filter === "open" || c.author.bot))),
+      ),
+    [list, filter, aiHidden],
   );
+  const hiddenAi = aiHidden ? (list ?? []).filter((c) => !c.parentId && c.author.bot && (c.status === "OPEN" || c.status === "REOPENED")).length : 0;
 
-  // "Review & approve" / "Go through open comments" from the workflow card or the header
+  // "Go through open comments" from the Review panel or the header
   useEffect(() => {
-    if (!focus) return;
-    if (focus.target === "comments" && filter !== "open") return setFilter("open");
-    const el = focus.target === "decide" ? document.getElementById("volt-review-decide") : listRef.current;
-    if (!el) return; // not rendered yet: tried again when the review / comments have loaded
-    el.scrollIntoView({ block: "start", behavior: "smooth" });
-    if (focus.target === "decide") el.querySelector("textarea")?.focus({ preventScroll: true });
+    if (!focus || focus.target !== "comments") return;
+    if (filter !== "open") return setFilter("open");
+    if (!listRef.current) return; // not rendered yet: tried again when the comments have loaded
+    listRef.current.scrollIntoView({ block: "start", behavior: "smooth" });
     useEditor.getState().set("reviewFocus", null);
-  }, [focus, filter, review, list]);
+  }, [focus, filter, list]);
 
   const closable = roots.filter((c) => c.status === "OPEN" || c.status === "REOPENED");
 
@@ -142,14 +149,10 @@ export function ReviewPanel() {
   if (!v) return null;
   return (
     <div className="flex h-full flex-col">
-      <WorkflowCard />
-      {review?.review && <ReviewBox info={review} reload={load} />}
-      <AiReviewBox versionId={v.versionId} onDone={load} />
-      <VersionChanges versionId={v.versionId} />
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex rounded-md border border-border p-0.5 text-2xs">
           {(["open", "ai", "all"] as const).map((k) => (
-            <button key={k} onClick={() => setFilter(k)} className={cn("rounded px-2 py-0.5", filter === k ? "bg-hover font-medium" : "text-subtle")}>
+            <button key={k} onClick={() => setFilter(k)} className={cn("whitespace-nowrap rounded px-2 py-0.5", filter === k ? "bg-hover font-medium" : "text-subtle")}>
               {k === "open" ? "Open" : k === "ai" ? "AI open" : "All"}
             </button>
           ))}
@@ -163,6 +166,16 @@ export function ReviewPanel() {
           <Button
             size="icon-sm"
             variant="ghost"
+            aria-pressed={aiHidden}
+            aria-label={aiHidden ? "Show AI reviewer findings" : "Hide AI reviewer findings"}
+            title={aiHidden ? "Show AI reviewer findings" : "Hide AI reviewer findings (list and drawing)"}
+            onClick={() => setAiHidden(!aiHidden)}
+          >
+            <Bot className={aiHidden ? "text-subtle" : undefined} />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
             aria-pressed={commentsHidden}
             aria-label={commentsHidden ? "Show comments on the drawing" : "Hide comments on the drawing"}
             title={commentsHidden ? "Show comments on the drawing (⇧C)" : "Hide comments on the drawing (⇧C)"}
@@ -172,12 +185,21 @@ export function ReviewPanel() {
           </Button>
           {v.canComment && (
             <Button size="xs" variant="secondary" onClick={() => setDraft({ pageId: useEditor.getState().pageId, anchor: null })}>
-              <MessageSquare /> Page comment
+              <MessageSquare /> Comment
             </Button>
           )}
         </div>
       </div>
       {commentsHidden && <p className="border-b border-border bg-panel-2 px-3 py-1.5 text-2xs text-muted">Comments are hidden on the drawing. They stay listed here.</p>}
+      {aiHidden && filter !== "ai" && (
+        <p className="flex items-center gap-1 border-b border-border bg-panel-2 px-3 py-1.5 text-2xs text-muted">
+          <Bot className="size-3 shrink-0" />
+          <span className="min-w-0 flex-1">AI reviewer findings are hidden{hiddenAi ? ` (${hiddenAi} open)` : ""}.</span>
+          <button className="font-medium text-accent hover:underline" onClick={() => setAiHidden(false)}>
+            Show
+          </button>
+        </p>
+      )}
       {bulk && closable.length > 0 && (
         <BulkClose
           versionId={v.versionId}
@@ -218,7 +240,7 @@ export function ReviewPanel() {
   );
 }
 
-function ReviewBox({ info, reload }: { info: ReviewInfo; reload: () => void }) {
+export function ReviewBox({ info, reload }: { info: ReviewInfo; reload: () => void }) {
   const r = info.review!;
   const [reason, setReason] = useState("");
   const [fullName, setFullName] = useState("");
@@ -548,7 +570,11 @@ function Composer({ onSubmit, onCancel, placeholder, compact }: { onSubmit: (bod
   );
 }
 
-function AiReviewBox({ versionId, onDone }: { versionId: string; onDone: () => void }) {
+export function AiReviewBox({ versionId, onDone }: { versionId: string; onDone: () => void }) {
+  const v = useEditor((s) => s.version);
+  const openAi = useEditor((s) => s.flow?.openAiComments ?? 0);
+  const aiHidden = useEditor((s) => s.aiHidden);
+  const [clearing, setClearing] = useState(false);
   const [st, setSt] = useState<AiStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -631,12 +657,28 @@ function AiReviewBox({ versionId, onDone }: { versionId: string; onDone: () => v
           )}
         </>
       )}
+      {!st.running && (
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          {openAi > 0 && v?.canComment && THREADS_OPEN.includes(v.status) && (
+            <Button size="xs" variant="secondary" onClick={() => setClearing((x) => !x)} aria-expanded={clearing}>
+              <Eraser /> Clear {openAi} open finding{openAi === 1 ? "" : "s"}…
+            </Button>
+          )}
+          <Button size="xs" variant="ghost" onClick={() => setAiHidden(!aiHidden)} aria-pressed={aiHidden}>
+            {aiHidden ? <Eye /> : <EyeOff />} {aiHidden ? "Show findings in comments" : "Hide findings from comments"}
+          </Button>
+        </div>
+      )}
+      {clearing && <ClearAiFindings count={openAi} onDone={() => setClearing(false)} />}
+      <p className="mt-2 text-[10px] leading-relaxed text-subtle">
+        Too many findings? Admins can turn the AI reviewer off, run it only on demand, or post errors only — Administration → General → AI reviewer.
+      </p>
     </div>
   );
 }
 
 /** what this version changes against where it started — the "files changed" of a pull request */
-function VersionChanges({ versionId }: { versionId: string }) {
+export function VersionChanges({ versionId }: { versionId: string }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<{ base: string; total: number; summary: Record<string, number>; changes: Change[]; initial: boolean } | null>(null);
   const ui = useEditorUI();

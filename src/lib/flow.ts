@@ -15,7 +15,7 @@ export type FlowStepKey = "draft" | "review" | "release";
 export type FlowStepState = "done" | "current" | "todo" | "failed";
 export type FlowStep = { key: FlowStepKey; label: string; state: FlowStepState; at: string | null };
 
-export type FlowActionKind = "submit" | "decide" | "comments" | "recall" | "release" | "newVersion" | "releasePdf";
+export type FlowActionKind = "submit" | "decide" | "comments" | "clearAi" | "recall" | "release" | "newVersion" | "releasePdf";
 export type FlowAction = { kind: FlowActionKind; label: string; primary?: boolean };
 
 /** action: the viewer has something to do · waiting: someone else has · done: released · stopped: ended */
@@ -189,6 +189,8 @@ export function computeFlow(i: FlowInput): Flow {
       if (i.can.closeComments) {
         if (!r?.canDecide) out.tone = "action";
         act({ kind: "comments", label: `Go through ${plural(open, "open comment")}`, primary: !out.actions.length });
+        // AI findings are often many and minor: clear them in one go (closed with a note, kept in the record)
+        if (i.openAiComments) act({ kind: "clearAi", label: `Clear ${plural(i.openAiComments, "AI finding")}` });
       }
     }
     out.notes.push(auto);

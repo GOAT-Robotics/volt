@@ -60,7 +60,7 @@ async function release(v: ReleasableVersion, actorId: string | null, note: strin
     type: "version.released",
     title: `${v.project.name} v${v.label} released`,
     body: `${note || v.summary}${note || v.summary ? " · " : ""}The digitally signed PDF is ready to download.`,
-    link: `/projects/${v.projectId}/v/${v.id}`,
+    link: `/projects/${v.projectId}/v/${v.id}?panel=process`,
     workspaceId: v.project.workspaceId,
   });
   if (prev.length) {

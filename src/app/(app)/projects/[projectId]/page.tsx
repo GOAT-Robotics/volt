@@ -48,7 +48,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     db.signature.findMany({ where: { version: { projectId } }, orderBy: [{ createdAt: "desc" }, { order: "asc" }] }),
     !full ? [] : db.auditEvent.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, take: 300, include: { actor: { select: { name: true } } } }),
     db.projectMember.findMany({ where: { projectId }, include: { user: true } }),
-    db.attachment.findMany({ where: { projectId, ...(full ? {} : { ownerType: { in: ["REVIEW", "COMMENT"] } }) }, omit: { data: true }, orderBy: { createdAt: "desc" } }),
+    // RELEASE_PDF: the stored release PDFs (lib/signing/release-signed) are not attachments people see
+    db.attachment.findMany({ where: { projectId, ownerType: full ? { not: "RELEASE_PDF" } : { in: ["REVIEW", "COMMENT"] } }, omit: { data: true }, orderBy: { createdAt: "desc" } }),
     db.importRecord.findMany({ where: { projectId }, omit: { original: true }, orderBy: { createdAt: "desc" } }),
     isOutsider(ctx) ? [] : db.folder.findMany({ where: { workspaceId: project.workspaceId }, orderBy: { name: "asc" } }),
     db.favorite.findUnique({ where: { userId_projectId: { userId: ctx.user.id, projectId } } }),

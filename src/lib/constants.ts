@@ -12,4 +12,7 @@ export const EXTRA_AUDIT_LABELS: Record<string, string> = {
   "admin.retention": "Ran retention cleanup",
   "admin.backup": "Backed up the database",
   "project.folder": "Changed folders",
+  "release.download": "Downloaded a signed release PDF",
+  "release.verify": "Verified a release PDF",
+  "admin.pdf_certificate": "Changed the release PDF certificate",
 };

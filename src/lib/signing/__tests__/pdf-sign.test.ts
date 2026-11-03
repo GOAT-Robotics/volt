@@ -3,7 +3,7 @@ import forge from "node-forge";
 import { createHash, X509Certificate } from "node:crypto";
 import { PDFDocument } from "pdf-lib";
 import { generateP12, openP12 } from "../pdf-cert";
-import { signPdf } from "../pdf-sign";
+import { checkPdfSignature, COPY_CODE, signPdf } from "../pdf-sign";
 
 /** The signed byte ranges and the CMS blob of a signed PDF. */
 function parseSignature(pdf: Buffer) {
@@ -64,5 +64,33 @@ describe("release PDF signing", () => {
     const tampered = Buffer.from(signed);
     tampered[range[1] + range[2] - range[1] + 10] ^= 1;
     expect(createHash("sha256").update(parseSignature(tampered).signed).digest("hex")).not.toBe(digest);
+  });
+
+  it("stamps every page of a copy, puts the copy code in the file and the checker verifies it", async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([1190.55, 841.89]);
+    doc.addPage([1190.55, 841.89]);
+    doc.addPage([595.28, 841.89]);
+    const signed = await signPdf(await doc.save(), { p12, passphrase }, { reason: "Released drawing Cobot Stand v1 - copy VLT-7KQ2-9XHM", name: "GOAT Robotics", location: "Coimbatore", contactInfo: "" }, {
+      stamp: { project: "Cobot Stand", label: "1", released: "3 Nov 2026", approvers: ["Asha Approver", "Riya Reviewer"], copy: { code: "VLT-7KQ2-9XHM", by: "Naveen Sakthivel", at: "2026-11-03 07:35 UTC" } },
+    });
+    const back = await PDFDocument.load(signed);
+    expect(back.getPageCount()).toBe(3);
+    // every page got the stamp's content stream on top of its own
+    for (const page of back.getPages()) expect(page.node.Contents()).toBeDefined();
+    expect(back.getKeywords()).toContain("volt-copy:VLT-7KQ2-9XHM");
+    expect(signed.toString("latin1").match(COPY_CODE)?.[0]).toBe("VLT-7KQ2-9XHM");
+
+    const ok = checkPdfSignature(signed);
+    expect(ok).toMatchObject({ present: true, intact: true, valid: true, coversWholeFile: true });
+    expect(ok.signer).toContain("GOAT Robotics");
+    expect(ok.certFingerprint).toBe(new X509Certificate(forge.pki.certificateToPem(openP12(p12, passphrase).cert)).fingerprint256);
+
+    // one changed byte in the signed range: not intact any more
+    const range = /\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/.exec(signed.toString("latin1"))!.slice(1).map(Number);
+    const tampered = Buffer.from(signed);
+    tampered[range[2] + 50] ^= 1;
+    expect(checkPdfSignature(tampered)).toMatchObject({ present: true, intact: false });
+    expect(checkPdfSignature(Buffer.from("%PDF-1.7 no signature"))).toMatchObject({ present: false });
   });
 });

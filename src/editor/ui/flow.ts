@@ -7,6 +7,8 @@ import type { EditorUI } from "./context";
 
 const WORKING = ["DRAFT", "CHANGES_REQUESTED"];
 let latest = 0;
+/** versions whose Review panel was opened automatically (once per page load) */
+const opened = new Set<string>();
 
 /**
  * Loads the version's next step into the store (and follows status changes made by others).
@@ -26,6 +28,10 @@ export async function refreshFlow(): Promise<Flow | null> {
   if (mine !== latest) return s.flow;
   if (!s.version || s.version.versionId !== v.versionId) return null;
   s.set("flow", flow);
+  if (!opened.has(v.versionId)) {
+    opened.add(v.versionId);
+    if (flow.tone === "action" && !WORKING.includes(flow.status) && s.panels.right !== "process" && s.panels.right !== "review") s.set("panels", { ...s.panels, right: "process" });
+  }
   const was = s.version.status;
   // frozen → frozen (in review → released …): just show the new status; frozen → working
   // (changes requested, recalled): reload so editing comes back. Working → frozen is handled by
@@ -54,10 +60,10 @@ export function useFlowSync() {
   }, [id, status]);
 }
 
-/** Opens the review panel and brings the decision box or the open comments into view. */
+/** Opens the Review panel (decision box) or the Comments panel (open comments). */
 export function focusReview(target: "decide" | "comments") {
   const s = useEditor.getState();
-  s.set("panels", { ...s.panels, right: "review" });
+  s.set("panels", { ...s.panels, right: target === "decide" ? "process" : "review" });
   s.set("reviewFocus", { target, at: Date.now() });
 }
 
@@ -81,6 +87,8 @@ export function runFlowAction(a: FlowAction, ui: EditorUI) {
       return focusReview("decide");
     case "comments":
       return focusReview("comments");
+    case "clearAi":
+      return focusReview("decide");
     case "release":
       return ui.openDialog("release");
     case "newVersion":

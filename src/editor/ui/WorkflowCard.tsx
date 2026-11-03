@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Check, X, Clock, RotateCcw, Send, PenLine, MessageSquare, Rocket, Plus, FileDown } from "lucide-react";
+import { Check, X, Clock, RotateCcw, Send, PenLine, MessageSquare, Rocket, Plus, FileDown, Bot } from "lucide-react";
 import { useEditor } from "../store";
 import { useEditorUI } from "./context";
-import { runFlowAction } from "./flow";
+import { refreshFlow, runFlowAction } from "./flow";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/misc";
@@ -16,6 +16,7 @@ export const FLOW_ICON: Record<FlowAction["kind"], ReactNode> = {
   submit: <Send />,
   decide: <PenLine />,
   comments: <MessageSquare />,
+  clearAi: <Bot />,
   recall: <RotateCcw />,
   release: <Rocket />,
   newVersion: <Plus />,
@@ -29,6 +30,7 @@ export function WorkflowCard() {
   const flow = useEditor((s) => s.flow);
   const ui = useEditorUI();
   const [recalling, setRecalling] = useState(false);
+  const [clearing, setClearing] = useState(false);
   if (!flow) return null;
   const recall = flow.actions.find((a) => a.kind === "recall");
   const actions = flow.actions.filter((a) => a.kind !== "recall");
@@ -65,12 +67,13 @@ export function WorkflowCard() {
       {actions.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1">
           {actions.map((a) => (
-            <Button key={a.kind} size="xs" variant={a.primary ? "primary" : "secondary"} onClick={() => runFlowAction(a, ui)}>
+            <Button key={a.kind} size="xs" variant={a.primary ? "primary" : "secondary"} onClick={() => (a.kind === "clearAi" ? setClearing((x) => !x) : runFlowAction(a, ui))} aria-expanded={a.kind === "clearAi" ? clearing : undefined}>
               {FLOW_ICON[a.kind]} {a.label}
             </Button>
           ))}
         </div>
       )}
+      {clearing && <ClearAiFindings count={flow.openAiComments} onDone={() => setClearing(false)} />}
       {recall &&
         (recalling ? (
           <RecallForm approved={flow.status === "APPROVED"} onCancel={() => setRecalling(false)} />
@@ -113,6 +116,54 @@ function Stepper({ steps }: { steps: FlowStep[] }) {
         );
       })}
     </ol>
+  );
+}
+
+/**
+ * Clears every open AI reviewer finding of the version: they are closed as won't fix with one note
+ * (kept in the record under All), so they no longer hold up the release.
+ */
+export function ClearAiFindings({ count, onDone }: { count: number; onDone: () => void }) {
+  const v = useEditor((s) => s.version);
+  const ui = useEditorUI();
+  const [note, setNote] = useState("AI reviewer findings checked and cleared");
+  const [busy, setBusy] = useState(false);
+  if (!v) return null;
+  return (
+    <div className="mt-2 space-y-1.5 rounded-md border border-border bg-panel p-2">
+      <p className="text-2xs text-muted">
+        Closes the {count === 1 ? "open AI finding" : `${count} open AI findings`} as won’t fix with this note. They stay in the record (Comments → All) and stop holding up the release. Comments from people are not touched.
+      </p>
+      <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} onKeyDown={(e) => e.stopPropagation()} aria-label="Note for the cleared findings" />
+      <div className="flex justify-end gap-1">
+        <Button size="xs" variant="ghost" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button
+          size="xs"
+          variant="primary"
+          disabled={busy || !note.trim()}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const j = await api<{ closed: number; skipped: number; errors: string[] }>(`/api/versions/${v.versionId}/comments/close`, { method: "POST", json: { ai: true, status: "REJECTED", note } });
+              const f = await refreshFlow();
+              ui.toast(
+                `${j.closed} AI finding${j.closed === 1 ? "" : "s"} cleared${j.skipped ? ` · ${j.skipped} skipped${j.errors[0] ? `: ${j.errors[0]}` : ""}` : ""}${f?.status === "RELEASED" ? " — the version is released and its PDF signed" : ""}`,
+                { tone: j.skipped ? "error" : "success" },
+              );
+              onDone();
+            } catch (e) {
+              ui.toast((e as Error).message, { tone: "error" });
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? <Spinner /> : <Bot />} Clear {count === 1 ? "finding" : `${count} findings`}
+        </Button>
+      </div>
+    </div>
   );
 }
 

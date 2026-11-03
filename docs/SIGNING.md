@@ -23,14 +23,29 @@ are read as Approver). There is no separate signing round:
 Approval signatures stop counting — status `INVALIDATED`, with the reason — when the review is recalled to draft,
 changes are requested, the version is rejected or withdrawn, or an approval expires (`approvalExpiryDays`).
 
-## Digitally signed release PDF
+## Digitally signed release PDF — tracked copies
 
-`src/lib/signing/release-signed.ts` builds the release PDF (canonical drawing pages + "Approval & signature
-record", which also describes the signing certificate), adds a signature field and signs it with
-`@signpdf/signpdf` (CMS / `adbe.pkcs7.detached`, SHA-256 over the byte range). The signed file is stored as an
-`Attachment` (`ownerType = RELEASE`, `ownerId` = the version) and audited (`release.pdf_signed` with its SHA-256),
-so `GET /api/versions/{id}/release.pdf` returns the same bytes every time. It is made in the background right
-after release and, if missing (e.g. versions released before this), on first download.
+`src/lib/signing/release-signed.ts` builds the release PDF once, right after release (canonical drawing pages +
+"Approval & signature record", which also describes the signing certificate), and stores it unsigned as an
+`Attachment` with `ownerType = RELEASE_PDF` (never listed or exported).
+
+Every `GET /api/versions/{id}/release.pdf` of a released version then makes **a new copy**:
+
+1. a copy code `VLT-XXXX-XXXX` (Crockford base32, random);
+2. every page is stamped in its top-right corner (`pdf-sign.ts › stampPages`): green tick, *APPROVED &
+   RELEASED*, project, version, release date, the approvers (from the approval signatures), the copy code,
+   who downloaded it, when (UTC) and *page n of N* — so any single printed page shows it is the release;
+3. the code is written to the PDF keywords (`volt-copy:<code>`);
+4. the copy is signed with `@signpdf/signpdf` (CMS / `adbe.pkcs7.detached`, SHA-256 over the byte range);
+5. a `ReleaseCopy` row records the code, the person, time, IP, user agent and the SHA-256 of exactly the file
+   handed out, and the download is audited (`release.download`).
+
+**Verify a PDF** (`/admin/verify`, `POST /api/admin/verify-pdf`, administrators only) identifies an uploaded file
+by its SHA-256 (the very file that was downloaded), else by the copy code in its metadata or content (a changed
+or re-saved file), and checks its digital signature (`pdf-sign.ts › checkPdfSignature`: digest over the byte
+range, RSA signature, whole-file coverage, whether it is this installation's certificate). A code read off a
+printed page is looked up with `GET /api/admin/verify-pdf?code=…`. Every verification is audited
+(`release.verify`). The file is not stored.
 
 The certificate (`src/lib/signing/pdf-cert.ts`), first match:
 
