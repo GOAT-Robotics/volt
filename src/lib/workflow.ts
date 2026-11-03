@@ -1,5 +1,5 @@
 import "server-only";
-import { db, J } from "./db";
+import { db, J, retryOnLock } from "./db";
 import type { AssignmentImport, ReviewImport } from "./voltfile/types";
 import { audit } from "./audit";
 import { notify } from "./notify";
@@ -272,11 +272,18 @@ export async function decide(ctx: Ctx, reviewId: string, projectRoles: Role[], d
     approval = await approvalSignature(ctx, { versionId: r.versionId, reviewId: r.id, requestedById: r.submittedById, order: Math.min(...targets.map((a) => a.order)), ...signing });
   }
   const at = new Date();
-  await db.$transaction(async (tx) => {
-    const u = await tx.reviewAssignment.updateMany({ where: { id: { in: targets.map((a) => a.id) }, decision: "PENDING" }, data: { decision, reason: reason.trim() || null, decidedById: ctx.user.id, decidedAt: at } });
-    if (!u.count) throw new HttpError(409, "This review changed meanwhile — reload and try again");
-    if (approval) await tx.signature.create({ data: approval });
-  });
+  // one short batch (no transaction held open across server work): the decision and its signature
+  const [u] = await retryOnLock(() =>
+    db.$transaction([
+      db.reviewAssignment.updateMany({ where: { id: { in: targets.map((a) => a.id) }, decision: "PENDING" }, data: { decision, reason: reason.trim() || null, decidedById: ctx.user.id, decidedAt: at } }),
+      ...(approval ? [db.signature.create({ data: approval })] : []),
+    ]),
+  );
+  if (!(u as { count: number }).count) {
+    // someone decided meanwhile: the signature must not stand without its decision
+    if (approval) await db.signature.deleteMany({ where: { versionId: r.versionId, kind: "APPROVAL", batch: r.id, signatoryId: ctx.user.id, signedAt: approval.signedAt } });
+    throw new HttpError(409, "This review changed meanwhile — reload and try again");
+  }
   const p = r.version.project;
   const base = { workspaceId: p.workspaceId, projectId: p.id, versionId: r.versionId, actorId: ctx.user.id };
   const link = editorLink(p.id, r.versionId);

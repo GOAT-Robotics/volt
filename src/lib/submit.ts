@@ -15,6 +15,7 @@ import { missingFields } from "./templates";
 import { liveReadonly } from "./live/hooks";
 import { runAiReview } from "./ai/review";
 import { createCommit } from "./commits";
+import { canonicalPdf } from "./signing/canonical";
 
 export type SubmitInput = { reviewers: { userId: string }[]; dueDate?: string | null; instructions?: string; commitMessage?: string; sequential?: boolean };
 
@@ -44,5 +45,7 @@ export async function submitForReview(ctx: Ctx, id: string, b: SubmitInput, o: {
   // the AI reviewer does the first pass in the background; its findings arrive as comments
   const ai = ctx.settings.aiReview;
   if (ai.enabled && ai.onSubmit) after(() => runAiReview(id, { trigger: "submit", actorId: null }));
+  // approving signs over the canonical PDF's hash: render it now, so approving is quick
+  after(() => canonicalPdf(doc, a.version.label).then(() => undefined, () => undefined));
   return { reviewId: review.id, aiReview: ai.enabled && ai.onSubmit, version: a };
 }

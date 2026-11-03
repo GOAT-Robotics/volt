@@ -3,7 +3,7 @@
  * so the same permission, notification and audit rules apply to both.
  */
 import "server-only";
-import { db } from "./db";
+import { db, retryOnLock } from "./db";
 import { HttpError, type Ctx } from "./session";
 import { loadVersion } from "./versioning";
 import { audit } from "./audit";
@@ -95,27 +95,35 @@ export async function setCommentStatus(ctx: Ctx, commentId: string, status: "OPE
 
 /**
  * Closes many open threads at once (Resolve / Won't fix) with one note, posted as a reply on each
- * so the review record says why. Threads the person may not close are skipped and reported; the
- * review completes as usual once the last open thread is closed.
+ * so the review record says why — in one short write, so it does not hold up others (e.g. the AI
+ * reviewer saving its findings). The same rules as closing one thread: AI findings by people who
+ * edit the drawing, others by their author, the version author or project owners; the rest are
+ * skipped and reported. The review completes as usual once nothing is open.
  */
 export async function closeThreads(ctx: Ctx, versionId: string, which: { ids: string[] } | { ai: true }, status: "RESOLVED" | "REJECTED", note: string) {
+  const a = await loadVersion(ctx, versionId, { withDoc: false });
+  if (!OPEN_FOR_COMMENTS.includes(a.version.status)) throw new HttpError(409, "This version is closed — its comments are part of the record");
   const roots = await db.comment.findMany({
     where: { versionId, parentId: null, status: { in: ["OPEN", "REOPENED"] }, ...("ids" in which ? { id: { in: which.ids } } : { author: { isBot: true } }) },
-    select: { id: true },
+    select: { id: true, authorId: true, pageId: true, author: { select: { isBot: true } } },
     orderBy: { createdAt: "asc" },
   });
-  const ids = roots.map((r) => r.id);
-  const errors = new Set<string>();
-  let closed = 0;
-  for (const r of roots) {
-    try {
-      await setCommentStatus(ctx, r.id, status, { via: "bulk close" });
-      closed++;
-    } catch (e) {
-      errors.add((e as Error).message);
-      continue;
+  const may = (r: (typeof roots)[number]) => (r.author.isBot && a.can("project.edit")) || r.authorId === ctx.user.id || a.version.createdById === ctx.user.id || a.can("project.manage");
+  const ok = roots.filter(may);
+  if (ok.length) {
+    const ids = ok.map((r) => r.id);
+    await retryOnLock(() =>
+      db.$transaction([
+        db.comment.updateMany({ where: { id: { in: ids }, status: { in: ["OPEN", "REOPENED"] } }, data: { status } }),
+        db.comment.createMany({ data: ok.map((r) => ({ projectId: a.project.id, versionId, pageId: r.pageId, parentId: r.id, body: note, authorId: ctx.user.id })) }),
+      ]),
+    );
+    await audit({ workspaceId: a.project.workspaceId, projectId: a.project.id, versionId, actorId: ctx.user.id, type: "comment.status", data: { count: ids.length, to: status, via: "bulk close", note: note.slice(0, 200), commentIds: ids.slice(0, 500) } });
+    if (a.version.status === "IN_REVIEW") {
+      const r = await db.review.findFirst({ where: { versionId, status: "OPEN" }, orderBy: { createdAt: "desc" } });
+      if (r) await evaluateReview(r.id, ctx.user.id);
     }
-    await addComment(ctx, versionId, { body: note, parentId: r.id }, { via: "bulk close", quiet: true }).catch(() => {});
   }
-  return { closed, skipped: ids.length - closed, errors: [...errors].slice(0, 3) };
+  const skipped = roots.length - ok.length;
+  return { closed: ok.length, skipped, errors: skipped ? ["Only the comment's author, the version author or project owners can close some of these"] : [] };
 }

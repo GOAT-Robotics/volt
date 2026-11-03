@@ -13,7 +13,7 @@
  * running and in the audit trail ("ai.review") afterwards.
  */
 import "server-only";
-import { db, J } from "../db";
+import { db, isLockTimeout, J, retryOnLock } from "../db";
 import { audit } from "../audit";
 import { notify } from "../notify";
 import { parseSettings } from "../settings";
@@ -295,14 +295,19 @@ export async function runAiReview(versionId: string, opts: { trigger: "submit" |
     const firstPage = [...doc.pages].filter((p) => !p.archived).sort((a, b) => a.order - b.order).find((p) => p.kind !== "cover" && p.kind !== "contents") ?? doc.pages[0];
     const now = new Date();
     const old = await db.comment.findMany({ where: { versionId, authorId: bot.id, parentId: null, status: { in: ["OPEN", "REOPENED"] } }, select: { id: true, pageId: true } });
+    // factories: a retried transaction needs new query objects
     const ops = [
-      ...old.map((c) => db.comment.update({ where: { id: c.id }, data: { status: "RESOLVED" } })),
-      ...old.map((c) => db.comment.create({ data: { projectId: project.id, versionId, pageId: c.pageId, parentId: c.id, body: `Superseded by the AI review of ${now.toISOString().slice(0, 16).replace("T", " ")} UTC — open findings were posted again if they still apply.`, authorId: bot.id } })),
-      ...posts.map((p) =>
+      ...old.map((c) => () => db.comment.update({ where: { id: c.id }, data: { status: "RESOLVED" } })),
+      ...old.map((c) => () => db.comment.create({ data: { projectId: project.id, versionId, pageId: c.pageId, parentId: c.id, body: `Superseded by the AI review of ${now.toISOString().slice(0, 16).replace("T", " ")} UTC — open findings were posted again if they still apply.`, authorId: bot.id } })),
+      ...posts.map((p) => () =>
         db.comment.create({ data: { projectId: project.id, versionId, pageId: p.pageId ?? firstPage?.id ?? null, anchor: p.anchor ? JSON.stringify(p.anchor) : null, body: commentBody(p).slice(0, 10_000), authorId: bot.id } }),
       ),
     ];
-    for (let i = 0; i < ops.length; i += 200) await db.$transaction(ops.slice(i, i + 200));
+    // short write transactions (others keep working meanwhile), retried if the database stays busy
+    for (let i = 0; i < ops.length; i += 50) {
+      const chunk = ops.slice(i, i + 50);
+      await retryOnLock(() => db.$transaction(chunk.map((op) => op())));
+    }
 
     const count = (l: Posted["level"]) => posts.filter((p) => p.level === l).length;
     const data = { status: "DONE", trigger: opts.trigger, summary, findings: posts.length, errors: count("error"), warnings: count("warning"), suggestions: count("suggestion") + count("info"), model, truncated, aiError, label: v.label };
@@ -317,7 +322,8 @@ export async function runAiReview(versionId: string, opts: { trigger: "submit" |
     });
   } catch (e) {
     console.error("[ai-review] failed", e);
-    if (v?.project) await audit({ workspaceId: v.project.workspaceId, projectId: v.project.id, versionId, actorId: opts.actorId, type: "ai.review", data: { status: "FAILED", error: (e as Error).message.slice(0, 300), label: v.label } }).catch(() => {});
+    const error = isLockTimeout(e) ? "The findings could not be saved because the database was busy. Run the AI review again." : (e as Error).message.slice(0, 300);
+    if (v?.project) await audit({ workspaceId: v.project.workspaceId, projectId: v.project.id, versionId, actorId: opts.actorId, type: "ai.review", data: { status: "FAILED", error, label: v.label } }).catch(() => {});
   } finally {
     running.delete(versionId);
   }

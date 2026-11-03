@@ -24,6 +24,23 @@ export async function ensurePragmas() {
   }
 }
 
+/** SQLite was busy longer than the busy timeout (another write held the lock) */
+export function isLockTimeout(e: unknown): boolean {
+  return /Socket timeout|database is locked|SQLITE_BUSY|P1008|Operations timed out/i.test(String((e as Error)?.message ?? e));
+}
+
+/** Runs a write again when SQLite stayed locked (1 s, then 3 s later); other errors are thrown at once. */
+export async function retryOnLock<T>(fn: () => Promise<T>, waits = [1000, 3000]): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= waits.length || !isLockTimeout(e)) throw e;
+      await new Promise((r) => setTimeout(r, waits[i]));
+    }
+  }
+}
+
 export const J = {
   parse<T>(s: string | null | undefined, fallback: T): T {
     if (!s) return fallback;
