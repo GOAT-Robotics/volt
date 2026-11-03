@@ -3,7 +3,7 @@ import { route, body } from "@/lib/api";
 import { apiCtx, HttpError } from "@/lib/session";
 import { db, J } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { notify } from "@/lib/notify";
+import { notify, rows, when } from "@/lib/notify";
 import { APPROVED_REV_KEY, REJECT_KEY, assertMember, loadElement, publishToOrg } from "@/lib/library/access";
 
 export const runtime = "nodejs";
@@ -50,7 +50,16 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
         type: "library.approval",
         title: `Approved: ${el.name}`,
         body: `${ctx.user.name} approved “${el.name}” (rev ${el.revision}). It is now available to the whole organization.${b.reason ? `\n\n${b.reason}` : ""}`,
+        details: rows(
+          [el.kind === "BLOCK" ? "Block" : "Component", el.name],
+          el.category && ["Category", el.category.split("/").map((c) => c.replace(/^\d+_/, "")).filter(Boolean).join(" › ")],
+          ["Revision", String(el.revision)],
+          ["Approved by", ctx.user.name],
+          ["On", when(new Date())],
+          b.reason?.trim() && ["Comment", b.reason.trim()],
+        ),
         link: `/library/${id}`,
+        action: "Open the " + (el.kind === "BLOCK" ? "block" : "component"),
         workspaceId: ctx.workspace.id,
       });
       await audit({ workspaceId: ctx.workspace.id, actorId: ctx.user.id, type: "library.approve", data: { id, name: el.name, revision: el.revision, comment: b.reason ?? null } });
@@ -67,7 +76,16 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
         type: "library.approval",
         title: `Changes needed: ${el.name}`,
         body: `${ctx.user.name} did not approve “${el.name}” (rev ${el.revision}): ${b.reason.trim()}`,
+        details: rows(
+          [el.kind === "BLOCK" ? "Block" : "Component", el.name],
+          el.category && ["Category", el.category.split("/").map((c) => c.replace(/^\d+_/, "")).filter(Boolean).join(" › ")],
+          ["Revision", String(el.revision)],
+          ["Reviewed by", ctx.user.name],
+          ["On", when(new Date())],
+          ["What now", "It is back in draft. Make the changes and publish it to the organization again."],
+        ),
         link: `/library/${id}`,
+        action: "Open the " + (el.kind === "BLOCK" ? "block" : "component"),
         workspaceId: ctx.workspace.id,
       });
       await audit({ workspaceId: ctx.workspace.id, actorId: ctx.user.id, type: "library.reject", data: { id, name: el.name, revision: el.revision, reason: b.reason.trim() } });

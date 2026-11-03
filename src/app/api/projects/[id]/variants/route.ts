@@ -4,7 +4,7 @@ import { apiCtx, HttpError, loadProject } from "@/lib/session";
 import { db } from "@/lib/db";
 import { docHash, parseDoc, reindexVersion } from "@/lib/versioning";
 import { audit } from "@/lib/audit";
-import { notify } from "@/lib/notify";
+import { notify, projectLabel, rows, versionLabel, when } from "@/lib/notify";
 import { flushLive } from "@/lib/live/hooks";
 import { VARIANT_CODE, nextLineLabel, variantsOf } from "@/lib/variants";
 
@@ -85,7 +85,19 @@ export const POST = route<{ id: string }>(async (req, { params }) => {
     type: "variant.created",
     title: `New variant of ${project.name}: ${variant.name}`,
     body: `${variant.customer ? `For ${variant.customer}. ` : ""}Based on v${base.label}; first version ${version.label}.`,
+    details: rows(
+      ["Project", projectLabel(project)],
+      ["Variant", `${variant.code} — ${variant.name}`],
+      variant.customer && ["Customer", variant.customer],
+      variant.description && ["Description", variant.description],
+      ["Based on", `v${base.label}`],
+      ["First version", versionLabel(version)],
+      ["Created by", ctx.user.name],
+      ["On", when(new Date())],
+    ),
     link: `/projects/${id}?tab=versions`,
+    action: "See the versions",
+    links: [{ label: `Open v${version.label}`, href: `/projects/${id}/v/${version.id}` }],
     workspaceId: project.workspaceId,
   });
   return { variant: { id: variant.id, code: variant.code }, version: { id: version.id, label: version.label } };

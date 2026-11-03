@@ -20,7 +20,7 @@ import { loadKeys } from "../signing/builtin";
 import { allowedMime, MAX_ATTACHMENT } from "../uploads";
 import { DOC_KINDS } from "../documents";
 import { audit } from "../audit";
-import { notify } from "../notify";
+import { notify, projectLabel, rows, when as stamp } from "../notify";
 import { projectManagers } from "../access";
 import { flushLive } from "../live/hooks";
 import { stableStringify } from "@/core/stable-json";
@@ -692,7 +692,18 @@ export async function mergeVolt(ctx: Ctx, p: ParsedVolt, targets: string[]): Pro
       type: "review.imported",
       title: `${plural(n, "review comment")} from ${p.manifest.server.name} on ${lp.project.name} v${cand.label}`,
       body: `${ctx.user.name} merged the reviewed copy ${p.filename}.`,
+      details: rows(
+        ["Project", projectLabel(lp.project)],
+        ["Version", `v${cand.label}`],
+        ["Reviewed at", p.manifest.server.name],
+        ["File", p.filename],
+        ["Merged", `${plural(created.threads, "new thread")}, ${plural(created.replies, "reply", "replies")}, ${plural(plan.decisions.length, "review decision")}${created.files ? `, ${plural(created.files, "file")}` : ""}`],
+        ["Merged by", ctx.user.name],
+        ["On", stamp(new Date())],
+        cand.drawingChanged && ["Note", "The drawing in the file differs from this version: comments were placed where they were made, drawing changes were not merged."],
+      ),
       link: `/projects/${cand.projectId}/v/${cand.versionId}?panel=review`,
+      action: "See the review",
       workspaceId: lp.project.workspaceId,
     });
   }

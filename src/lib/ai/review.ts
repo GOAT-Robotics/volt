@@ -15,7 +15,7 @@
 import "server-only";
 import { db, isLockTimeout, J, retryOnLock } from "../db";
 import { audit } from "../audit";
-import { notify } from "../notify";
+import { notify, projectLabel, rows, versionLabel, when } from "../notify";
 import { parseSettings } from "../settings";
 import { editorLink } from "../workflow";
 import { parseDoc } from "../versioning";
@@ -317,7 +317,21 @@ export async function runAiReview(versionId: string, opts: { trigger: "submit" |
       type: "ai.review",
       title: `AI review of ${project.name} v${v.label}: ${posts.length ? `${data.errors} error${data.errors === 1 ? "" : "s"}, ${data.warnings} warning${data.warnings === 1 ? "" : "s"}, ${data.suggestions} suggestion${data.suggestions === 1 ? "" : "s"}` : "no findings"}`,
       body: summary.slice(0, 400),
+      details: rows(
+        ["Project", projectLabel(project)],
+        ["Version", versionLabel(v)],
+        ["Errors", String(data.errors)],
+        ["Warnings", String(data.warnings)],
+        ["Suggestions", String(data.suggestions)],
+        ["Posted as comments", posts.length ? `${posts.length} finding${posts.length === 1 ? "" : "s"}, pinned to the components and wires concerned` : "none"],
+        model && ["Model", model],
+        truncated && ["Note", "The drawing was too large for one pass: not every page was reviewed."],
+        aiError && ["AI review", `Could not run — ${aiError}`],
+        ["Run on", when(now)],
+        old.length > 0 && ["Earlier findings", `${old.length} open thread${old.length === 1 ? "" : "s"} from the last run marked resolved; still-valid findings were posted again`],
+      ),
       link: editorLink(project.id, versionId, "?panel=review"),
+      action: "See the findings",
       workspaceId: project.workspaceId,
     });
   } catch (e) {

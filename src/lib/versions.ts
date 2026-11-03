@@ -6,7 +6,7 @@ import { docHash, parseDoc, reindexVersion, withStoredSource } from "./versionin
 import { unpackDoc } from "./commits";
 import type { Doc } from "@/core/model";
 import { nextLineLabel } from "./variants";
-import { notify } from "./notify";
+import { notify, projectLabel, rows, versionLabel, when } from "./notify";
 import { audit } from "./audit";
 import { WORKING } from "./projects";
 import { flushLive } from "./live/hooks";
@@ -85,7 +85,18 @@ export async function startVersion(ctx: Ctx, id: string, b: StartVersion) {
       type: "version.superseded",
       title: `${project.name} v${parent.label} is obsolete`,
       body: `It was signed and is being replaced by v${v.label}: ${b.summary}`,
+      details: rows(
+        ["Project", projectLabel(project)],
+        ["Obsolete", versionLabel(parent)],
+        ["Replaced by", versionLabel(v)],
+        b.ticket && ["Ticket", b.ticket],
+        ["Started by", ctx.user.name],
+        ["On", when(now)],
+        ["What now", `v${parent.label} stays on record but is no longer valid. v${v.label} is a draft: it goes through review and signing before release.`],
+      ),
       link: `/projects/${id}?tab=versions`,
+      action: "See the versions",
+      links: [{ label: `Open v${v.label}`, href: `/projects/${id}/v/${v.id}` }],
       workspaceId: project.workspaceId,
     });
   }

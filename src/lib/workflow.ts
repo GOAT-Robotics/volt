@@ -2,7 +2,7 @@ import "server-only";
 import { db, J, retryOnLock } from "./db";
 import type { AssignmentImport, ReviewImport } from "./voltfile/types";
 import { audit } from "./audit";
-import { notify } from "./notify";
+import { day, notify, projectLabel, rows, versionLabel, when } from "./notify";
 import { HttpError, type Ctx } from "./session";
 import { parseSettings, type ApprovalPolicy } from "./settings";
 import { effectivePolicy } from "./projects";
@@ -226,7 +226,16 @@ export async function evaluateReview(reviewId: string, actorId: string | null): 
   const note = `Approved and signed by ${approvers.length > 1 ? `${approvers.slice(0, -1).join(", ")} and ${approvers[approvers.length - 1]}` : approvers.join("")}`;
   const released = await releaseOnApproval(r.versionId, actorId, note).catch(async (e) => {
     // the approval stands; a project owner can release it from the versions list
-    await notify(await stakeholders(r), { type: "review.approved", title: `${p.name} v${r.version.label} approved — release failed`, body: (e as Error).message, link: editorLink(p.id, r.versionId), workspaceId: p.workspaceId });
+    await notify(await stakeholders(r), {
+      type: "review.approved",
+      title: `${p.name} v${r.version.label} approved — release failed`,
+      body: (e as Error).message,
+      details: rows(["Project", projectLabel(p)], ["Version", versionLabel(r.version)], ["Approved by", approvers.join(", ")], ["On", when(now)], ["What now", "The approval stands. A project owner can release the version from the versions list once the cause is fixed."]),
+      link: editorLink(p.id, r.versionId),
+      action: "Open the version",
+      links: [{ label: "See the versions", href: `/projects/${p.id}?tab=versions` }],
+      workspaceId: p.workspaceId,
+    });
     return null;
   });
   return released ? "RELEASED" : "APPROVED";
@@ -295,7 +304,15 @@ export async function decide(ctx: Ctx, reviewId: string, projectRoles: Role[], d
       db.version.update({ where: { id: r.versionId }, data: { status: "REJECTED", endedAt: at, endReason: reason.trim() } }),
     ]);
     await audit({ ...base, type: "review.reject", data: { label: r.version.label, reason } });
-    await notify(await stakeholders(r), { type: "review.rejected", title: `${p.name} v${r.version.label} was rejected`, body: `${ctx.user.name}: ${reason}`, link, workspaceId: p.workspaceId });
+    await notify(await stakeholders(r), {
+      type: "review.rejected",
+      title: `${p.name} v${r.version.label} was rejected`,
+      body: `${ctx.user.name}: ${reason.trim()}`,
+      details: rows(["Project", projectLabel(p)], ["Version", versionLabel(r.version)], ["Rejected by", ctx.user.name], ["On", when(at)], ["What now", "The version is closed and cannot be edited. Start a new version from it to continue the work."]),
+      link,
+      action: "Open the version",
+      workspaceId: p.workspaceId,
+    });
     return { versionStatus: "REJECTED" };
   }
   if (decision === "CHANGES_REQUESTED") {
@@ -304,7 +321,15 @@ export async function decide(ctx: Ctx, reviewId: string, projectRoles: Role[], d
       db.version.update({ where: { id: r.versionId }, data: { status: "CHANGES_REQUESTED" } }),
     ]);
     await audit({ ...base, type: "review.changes", data: { label: r.version.label, reason } });
-    await notify(await stakeholders(r), { type: "review.changes", title: `Changes requested on ${p.name} v${r.version.label}`, body: `${ctx.user.name}: ${reason}`, link, workspaceId: p.workspaceId });
+    await notify(await stakeholders(r), {
+      type: "review.changes",
+      title: `Changes requested on ${p.name} v${r.version.label}`,
+      body: `${ctx.user.name}: ${reason.trim()}`,
+      details: rows(["Project", projectLabel(p)], ["Version", versionLabel(r.version)], ["Requested by", ctx.user.name], ["On", when(at)], ["What now", "The version can be edited again. Make the changes and submit it for review once more; approvals given so far no longer count."]),
+      link,
+      action: "Open the version",
+      workspaceId: p.workspaceId,
+    });
     return { versionStatus: "CHANGES_REQUESTED" };
   }
   await audit({ ...base, type: "review.approve", data: { label: r.version.label, reason: reason || undefined, signed: true } });
@@ -330,13 +355,26 @@ export async function notifyAssignees(r: ReviewWithAssignments, list: ReviewWith
     else if (a.groupId) ids.push(...(await usersInGroup(a.groupId)));
   }
   const p = r.version.project;
+  const by = await db.user.findUnique({ where: { id: r.submittedById }, select: { name: true } });
+  const advisory = list.length > 0 && list.every((a) => !a.canApprove);
   await notify(
     ids.filter((i) => i !== r.submittedById),
     {
       type: "review.assigned",
       title: `Review requested: ${p.name} v${r.version.label}`,
-      body: r.dueDate ? `Due ${r.dueDate.toISOString().slice(0, 10)}. ${r.instructions}` : r.instructions,
+      body: r.instructions.trim() || (advisory ? "Please look at this version and leave your comments." : "Please check this version and approve it or request changes."),
+      details: rows(
+        ["Project", projectLabel(p)],
+        ["Version", versionLabel(r.version)],
+        r.version.ticket && ["Ticket", r.version.ticket],
+        by && ["Requested by", by.name],
+        ["Requested on", when(r.createdAt)],
+        r.dueDate && ["Due", day(r.dueDate)],
+        ["Your part", advisory ? "Comments only (advisory)" : "Approve, request changes or reject"],
+        r.sequential && ["Order", "Sequential review — it is your turn now"],
+      ),
       link: editorLink(p.id, r.versionId, "?panel=process"),
+      action: "Review now",
       workspaceId: p.workspaceId,
     },
   );

@@ -2,7 +2,7 @@ import "server-only";
 import type { Prisma, LibraryElement, Library } from "@prisma/client";
 import { db, J } from "@/lib/db";
 import { can, HttpError, type Ctx } from "@/lib/session";
-import { notify } from "@/lib/notify";
+import { notify, rows, when } from "@/lib/notify";
 import { parseRoles, rolesAllow } from "@/lib/roles";
 
 export type Visibility = "PRIVATE" | "SHARED" | "ORG";
@@ -211,7 +211,17 @@ export async function publishToOrg(ctx: Ctx, el: LibraryElement): Promise<LibSta
       type: "library.approval",
       title: `Approval requested: ${el.name}`,
       body: `${ctx.user.name} submitted “${el.name}” (rev ${el.revision}) for use across the organization.`,
+      details: rows(
+        [el.kind === "BLOCK" ? "Block" : "Component", el.name],
+        el.description && ["Description", el.description],
+        el.category && ["Category", el.category.split("/").map((c) => c.replace(/^\d+_/, "")).filter(Boolean).join(" › ")],
+        ["Revision", String(el.revision)],
+        ["Submitted by", ctx.user.name],
+        ["On", when(new Date())],
+        ["What now", "Approve it to make it available to everyone in the organization, or send it back with what to change."],
+      ),
       link: `/library/${el.id}`,
+      action: "Review the " + (el.kind === "BLOCK" ? "block" : "component"),
       workspaceId: ctx.workspace.id,
     });
   } else if (isApprover(ctx)) {

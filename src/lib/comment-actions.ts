@@ -7,7 +7,7 @@ import { db, retryOnLock } from "./db";
 import { HttpError, type Ctx } from "./session";
 import { loadVersion } from "./versioning";
 import { audit } from "./audit";
-import { notify } from "./notify";
+import { notify, projectLabel, rows, versionLabel, when } from "./notify";
 import { commentDto, guestMayComment } from "./comments";
 import { editorLink, evaluateReview } from "./workflow";
 
@@ -52,16 +52,29 @@ export async function addComment(ctx: Ctx, versionId: string, b: NewComment, opt
   const link = editorLink(a.project.id, versionId, `?${pageId ? `page=${encodeURIComponent(pageId)}&` : ""}comment=${b.parentId ?? c.id}`);
   const snippet = b.body.length > 160 ? b.body.slice(0, 157) + "…" : b.body;
   if (opts.quiet) return commentDto(c);
+  // page title and the pinned component / wire from the search index (best effort: the index follows the last save)
+  const idx = pageId ? await db.searchEntry.findMany({ where: { versionId, refId: { in: [pageId, ...(anchor?.id ? [anchor.id] : [])] }, kind: { in: ["PAGE", "ELEMENT", "WIRE"] } }, select: { kind: true, refId: true, text: true } }).catch(() => []) : [];
+  const page = idx.find((e) => e.kind === "PAGE")?.text;
+  const target = anchor?.id ? idx.find((e) => e.refId === anchor.id && e.kind !== "PAGE") : undefined;
+  const details = rows(
+    ["Project", projectLabel(a.project)],
+    ["Version", versionLabel(a.version)],
+    page && ["Page", page],
+    target && [target.kind === "WIRE" ? "Wire" : "Component", target.text.split(" ")[0]],
+    [b.parentId ? "Reply by" : "Comment by", ctx.user.name],
+    ["On", when(c.createdAt)],
+  );
+  const mail = { details, link, action: b.parentId ? "Open the thread" : "Open the comment", workspaceId: a.project.workspaceId };
   if (mentions.length) {
-    await notify(mentions, { type: "comment.mention", title: `${ctx.user.name} mentioned you on ${a.project.name} v${a.version.label}`, body: snippet, link, workspaceId: a.project.workspaceId });
+    await notify(mentions, { type: "comment.mention", title: `${ctx.user.name} mentioned you on ${a.project.name} v${a.version.label}`, body: snippet, ...mail });
   }
   if (b.parentId) {
     // notify thread participants (excluding mentions already notified and self)
     const thread = await db.comment.findMany({ where: { OR: [{ id: b.parentId }, { parentId: b.parentId }] }, select: { authorId: true } });
     const others = [...new Set(thread.map((t) => t.authorId))].filter((u) => u !== ctx.user.id && !mentions.includes(u));
-    await notify(others, { type: "comment.mention", title: `${ctx.user.name} replied on ${a.project.name} v${a.version.label}`, body: snippet, link, workspaceId: a.project.workspaceId });
+    await notify(others, { type: "comment.mention", title: `${ctx.user.name} replied on ${a.project.name} v${a.version.label}`, body: snippet, ...mail });
   } else if (a.version.createdById !== ctx.user.id && !mentions.includes(a.version.createdById)) {
-    await notify([a.version.createdById], { type: "comment.mention", title: `New comment on ${a.project.name} v${a.version.label}`, body: `${ctx.user.name}: ${snippet}`, link, workspaceId: a.project.workspaceId });
+    await notify([a.version.createdById], { type: "comment.mention", title: `New comment on ${a.project.name} v${a.version.label}`, body: `${ctx.user.name}: ${snippet}`, ...mail });
   }
   return commentDto(c);
 }

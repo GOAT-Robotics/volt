@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { db, J } from "../db";
 import { audit } from "../audit";
-import { notify } from "../notify";
+import { day, notify, projectLabel, rows, versionLabel, when } from "../notify";
 import { HttpError, type Ctx } from "../session";
 import { parseSettings } from "../settings";
 import { parseDoc, docHash } from "../versioning";
@@ -142,11 +142,26 @@ export async function requestSignatures(ctx: Ctx, versionId: string, input: { si
 async function notifySignatory(signatureId: string) {
   const s = await db.signature.findUnique({ where: { id: signatureId }, include: { version: { omit: { doc: true }, include: { project: true } } } });
   if (!s || s.status !== "REQUESTED") return;
+  const by = await db.user.findUnique({ where: { id: s.requestedById }, select: { name: true } });
+  const round = s.batch ? await db.signature.findMany({ where: { versionId: s.versionId, batch: s.batch }, select: { order: true, signatoryId: true, status: true } }) : [];
+  const others = round.length > 1 ? await db.user.findMany({ where: { id: { in: round.map((x) => x.signatoryId) } }, select: { id: true, name: true } }) : [];
+  const name = (id: string) => others.find((u) => u.id === id)?.name ?? "?";
   await notify([s.signatoryId], {
     type: "signature.requested",
     title: `Signature requested: ${s.version.project.name} v${s.version.label}`,
     body: s.purpose,
+    details: rows(
+      ["Project", projectLabel(s.version.project)],
+      ["Version", versionLabel(s.version)],
+      by && ["Requested by", by.name],
+      ["Requested on", when(s.createdAt)],
+      s.expiresAt && ["Sign by", day(s.expiresAt)],
+      round.length > 1 && ["Signing order", `${s.order + 1} of ${round.length}: ${[...round].sort((a, b) => a.order - b.order).map((x) => `${name(x.signatoryId)}${x.status === "SIGNED" ? " ✓" : ""}`).join(" → ")}`],
+      ["Document", `frozen at hash ${s.docHash.slice(0, 12)}… — what you sign is what was reviewed`],
+    ),
     link: `/sign/${s.id}`,
+    action: "Review and sign",
+    links: [{ label: "Open the drawing in Volt", href: `/projects/${s.version.projectId}/v/${s.versionId}` }],
     workspaceId: s.version.project.workspaceId,
   });
 }
@@ -223,11 +238,22 @@ export async function signSignature(ctx: Ctx, signatureId: string, input: { full
     if (done.count) {
       await audit({ workspaceId: v.project.workspaceId, projectId: v.projectId, versionId: v.id, actorId: ctx.user.id, type: "version.status", data: { from: "APPROVED", to: "SIGNED", label: v.label } });
       const mgr = await projectManagers(v.projectId, v.project.workspaceId);
+      const signers = await db.user.findMany({ where: { id: { in: round.map((x) => x.signatoryId) } }, select: { id: true, name: true } });
       await notify([s.requestedById, v.createdById, ...mgr], {
         type: "version.released",
         title: `${v.project.name} v${v.label} is fully signed`,
         body: "All requested signatures are complete. Next: release it.",
+        details: rows(
+          ["Project", projectLabel(v.project)],
+          ["Version", versionLabel(v)],
+          ["Purpose", s.purpose],
+          ["Signed by", [...round].sort((a, b) => a.order - b.order).map((x) => signers.find((u) => u.id === x.signatoryId)?.name ?? "?").join(", ")],
+          ["Completed on", when(signedAt)],
+          ["What now", "A project owner releases the version from the versions list; the release PDF carries the signatures."],
+        ),
         link: `/projects/${v.projectId}/v/${v.id}`,
+        action: "Open the version",
+        links: [{ label: "See the versions", href: `/projects/${v.projectId}?tab=versions` }],
         workspaceId: v.project.workspaceId,
       });
     }
@@ -252,8 +278,18 @@ export async function declineSignature(ctx: Ctx, signatureId: string, reason: st
   await notify([s.requestedById, v.createdById], {
     type: "signature.requested",
     title: `${ctx.user.name} declined to sign ${v.project.name} v${v.label}`,
-    body: reason,
+    body: `${ctx.user.name}: ${reason.trim()}`,
+    details: rows(
+      ["Project", projectLabel(v.project)],
+      ["Version", versionLabel(v)],
+      ["Purpose", s.purpose],
+      ["Declined by", ctx.user.name],
+      ["On", when(new Date())],
+      ["What now", "The other pending requests of this round were cancelled. Address the reason, then request the signatures again."],
+    ),
     link: `/projects/${v.projectId}?tab=signatures`,
+    action: "See the signatures",
+    links: [{ label: "Open the version", href: `/projects/${v.projectId}/v/${v.id}` }],
     workspaceId: v.project.workspaceId,
   });
 }

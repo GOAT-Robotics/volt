@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { audit } from "./audit";
-import { notify } from "./notify";
+import { notify, projectLabel, rows, versionLabel, when } from "./notify";
 import { HttpError, type Ctx } from "./session";
 import { effectivePolicy } from "./projects";
 import { docHash, parseDoc } from "./versioning";
@@ -56,11 +56,23 @@ async function release(v: ReleasableVersion, actorId: string | null, note: strin
   // the release PDF with the approval record, digitally signed — made in the background, stored for download
   scheduleSignedRelease(v.id);
   const who = await audience(v.projectId, [v.createdById]);
+  const actor = actorId ? await db.user.findUnique({ where: { id: actorId }, select: { name: true } }) : null;
+  const use = prev.length ? ` It replaces ${prev.map((p) => `v${p.label}`).join(", ")}: use this release for manufacturing and site work.` : "";
   await notify(who.filter((u) => u !== actorId), {
     type: "version.released",
     title: `${v.project.name} v${v.label} released`,
-    body: `${note || v.summary}${note || v.summary ? " · " : ""}The digitally signed PDF is ready to download.`,
+    body: `${(note || v.summary || "Released").replace(/[.\s]+$/, "")}.${use}`,
+    details: rows(
+      ["Project", projectLabel(v.project)],
+      ["Version", versionLabel(v)],
+      v.ticket && ["Ticket", v.ticket],
+      actor && ["Released by", actor.name],
+      ["Released on", when(now)],
+      prev.length > 0 && ["Replaces", prev.map((p) => `v${p.label}`).join(", ")],
+    ),
     link: `/projects/${v.projectId}/v/${v.id}?panel=process`,
+    action: "Open the release in Volt",
+    links: [{ label: "Download the signed release PDF (drawing + approval record)", href: `/api/versions/${v.id}/release.pdf` }],
     workspaceId: v.project.workspaceId,
   });
   if (prev.length) {
@@ -68,7 +80,15 @@ async function release(v: ReleasableVersion, actorId: string | null, note: strin
       type: "version.superseded",
       title: `${v.project.name} ${prev.map((p) => `v${p.label}`).join(", ")} superseded`,
       body: `Replaced by v${v.label}. Use the new release for manufacturing and site work.`,
+      details: rows(
+        ["Project", projectLabel(v.project)],
+        ["Superseded", prev.map((p) => versionLabel(p)).join("; ")],
+        ["Replaced by", versionLabel(v)],
+        ["On", when(now)],
+      ),
       link: `/projects/${v.projectId}?tab=versions`,
+      action: "See the versions",
+      links: [{ label: `Open the new release v${v.label}`, href: `/projects/${v.projectId}/v/${v.id}` }],
       workspaceId: v.project.workspaceId,
     });
   }
@@ -108,8 +128,17 @@ export async function withdrawVersion(ctx: Ctx, versionId: string, reason: strin
   await notify(who.filter((u) => u !== ctx.user.id), {
     type: "version.superseded",
     title: `${v.project.name} v${v.label} withdrawn`,
-    body: reason,
+    body: `${ctx.user.name}: ${reason.trim()}`,
+    details: rows(
+      ["Project", projectLabel(v.project)],
+      ["Version", versionLabel(v)],
+      ["Withdrawn from", v.status === "APPROVED" ? "Approval" : "Review"],
+      ["Withdrawn by", ctx.user.name],
+      ["On", when(now)],
+      ["What now", "The version is closed; open reviews and signature requests were cancelled. Start a new version to continue the work."],
+    ),
     link: `/projects/${v.projectId}?tab=versions`,
+    action: "See the versions",
     workspaceId: v.project.workspaceId,
   });
   return { status: "WITHDRAWN" };
@@ -123,7 +152,15 @@ export async function supersedeVersion(ctx: Ctx, versionId: string, reason: stri
   await db.version.update({ where: { id: v.id }, data: { status: "SUPERSEDED", endedAt: new Date(), endReason: reason.trim() } });
   await audit({ workspaceId: v.project.workspaceId, projectId: v.projectId, versionId: v.id, actorId: ctx.user.id, type: "version.supersede", data: { label: v.label, reason } });
   const who = await audience(v.projectId, [v.createdById]);
-  await notify(who.filter((u) => u !== ctx.user.id), { type: "version.superseded", title: `${v.project.name} v${v.label} superseded`, body: reason, link: `/projects/${v.projectId}?tab=versions`, workspaceId: v.project.workspaceId });
+  await notify(who.filter((u) => u !== ctx.user.id), {
+    type: "version.superseded",
+    title: `${v.project.name} v${v.label} superseded`,
+    body: `${ctx.user.name}: ${reason.trim()}`,
+    details: rows(["Project", projectLabel(v.project)], ["Version", versionLabel(v)], ["Superseded by", ctx.user.name], ["On", when(new Date())], ["What now", "Do not use this release for new manufacturing or site work."]),
+    link: `/projects/${v.projectId}?tab=versions`,
+    action: "See the versions",
+    workspaceId: v.project.workspaceId,
+  });
   return { status: "SUPERSEDED" };
 }
 
@@ -156,8 +193,16 @@ export async function recallVersion(ctx: Ctx, versionId: string, reason: string)
   await notify([...new Set([v.createdById, ...reviewers])].filter((u) => u !== ctx.user.id), {
     type: "version.recalled",
     title: `${v.project.name} v${v.label} was taken back${v.status === "APPROVED" ? " from approval" : " from review"}`,
-    body: `${ctx.user.name}: ${reason}`,
+    body: `${ctx.user.name}: ${reason.trim()}`,
+    details: rows(
+      ["Project", projectLabel(v.project)],
+      ["Version", versionLabel(v)],
+      ["Taken back by", ctx.user.name],
+      ["On", when(now)],
+      ["What now", "The version is a draft again and can be edited. The review was closed; approvals given so far no longer count."],
+    ),
     link: `/projects/${v.projectId}/v/${v.id}`,
+    action: "Open the version",
     workspaceId: v.project.workspaceId,
   });
   return { status: "DRAFT" };
@@ -176,6 +221,14 @@ export async function obsoleteVersion(ctx: Ctx, versionId: string, reason: strin
   ]);
   await audit({ workspaceId: v.project.workspaceId, projectId: v.projectId, versionId: v.id, actorId: ctx.user.id, type: "version.obsolete", data: { label: v.label, from: v.status, reason } });
   const who = await audience(v.projectId, [v.createdById]);
-  await notify(who.filter((u) => u !== ctx.user.id), { type: "version.superseded", title: `${v.project.name} v${v.label} is obsolete`, body: reason, link: `/projects/${v.projectId}?tab=versions`, workspaceId: v.project.workspaceId });
+  await notify(who.filter((u) => u !== ctx.user.id), {
+    type: "version.superseded",
+    title: `${v.project.name} v${v.label} is obsolete`,
+    body: `${ctx.user.name}: ${reason.trim()}`,
+    details: rows(["Project", projectLabel(v.project)], ["Version", versionLabel(v)], ["Marked obsolete by", ctx.user.name], ["On", when(now)], ["What now", "The version stays on record but is no longer valid. Do not use it for manufacturing or site work."]),
+    link: `/projects/${v.projectId}?tab=versions`,
+    action: "See the versions",
+    workspaceId: v.project.workspaceId,
+  });
   return { status: "OBSOLETE" };
 }

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { HttpError, type Ctx } from "@/lib/session";
 import { db, J } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { notify } from "@/lib/notify";
+import { notify, rows, when } from "@/lib/notify";
 import { APPROVED_REV_KEY, REJECT_KEY, approverIds, isApprover, tagsIn, writableLibrary, type Access } from "./access";
 import { checkElmt } from "./store";
 import { normCategory } from "./elmt-tools";
@@ -102,7 +102,16 @@ export async function updateElement(ctx: Ctx, a: Access, b: z.infer<typeof Patch
         type: "library.approval",
         title: `Re-approval requested: ${el.name}`,
         body: `${ctx.user.name} changed “${el.name}” (now rev ${revision}). Organization users keep using the approved revision until you approve.`,
+        details: rows(
+          [el.kind === "BLOCK" ? "Block" : "Component", el.name],
+          el.category && ["Category", el.category.split("/").map((c) => c.replace(/^\d+_/, "")).filter(Boolean).join(" › ")],
+          ["Revision", `${revision} (approved: ${el.revision})`],
+          b.note?.trim() && ["Change note", b.note.trim()],
+          ["Changed by", ctx.user.name],
+          ["On", when(new Date())],
+        ),
         link: `/library/${el.id}`,
+        action: "Review the changes",
         workspaceId: ctx.workspace.id,
       });
     }
