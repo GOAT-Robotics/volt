@@ -48,3 +48,14 @@ export function canvasFont(size: number, font: string, weight = 400, italic = fa
 
 /** Faces worth fetching before the first paint (the rest load when a drawing uses them). */
 export const PRELOAD_FONTS = [`400 16px "${BUNDLED_FONTS.iso}"`, `400 16px "${BUNDLED_FONTS.sans}"`, `700 16px "${BUNDLED_FONTS.sans}"`];
+
+/**
+ * Where the alphabetic baseline sits for each text anchor, as a fraction of the font size below the
+ * anchor point. Painters never use the browser's "top" / "middle" baselines: those come from each
+ * font's ascent/descent tables, which browsers read differently per operating system (osifont's
+ * caps sit above the "top" line on Linux and well below it on macOS). The PDF export has always
+ * used these numbers, so screen, PDF and pictures place text the same way.
+ */
+export const BASELINE_DROP = { top: 0.76, middle: 0.36, bottom: -0.22, alphabetic: 0 } as const;
+export type TextBaseline = keyof typeof BASELINE_DROP;
+export const baselineDrop = (baseline: TextBaseline | undefined, size: number) => BASELINE_DROP[baseline ?? "alphabetic"] * size;

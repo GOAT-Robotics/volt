@@ -2,7 +2,7 @@ import type { Mat } from "../geometry";
 import { mulMat } from "../geometry";
 import type { ImageDraw, Painter, PathData, StrokeStyle, TextDraw } from "./painter";
 import { bumpFontEpoch } from "./fonts";
-import { canvasFont, PRELOAD_FONTS } from "./drawing-fonts";
+import { BASELINE_DROP, baselineDrop, canvasFont, PRELOAD_FONTS } from "./drawing-fonts";
 
 /** Decoded images by key; listeners are told when one finishes loading so views can repaint. */
 const images = new Map<string, HTMLImageElement | "error">();
@@ -198,14 +198,16 @@ export class CanvasPainter implements Painter {
       c.translate(t.x, t.y);
       c.rotate((t.rotation! * Math.PI) / 180);
     }
-    const x = rotated ? 0 : t.x, y = rotated ? 0 : t.y;
+    const x = rotated ? 0 : t.x;
+    // always the alphabetic baseline, placed by Volt's own numbers (see BASELINE_DROP)
+    const y = (rotated ? 0 : t.y) + baselineDrop(t.baseline, t.size);
     if (t.alpha !== undefined && t.alpha !== 1) c.globalAlpha = t.alpha;
     c.textAlign = t.align ?? "left";
-    c.textBaseline = t.baseline ?? "alphabetic";
+    c.textBaseline = "alphabetic";
     if (t.background) {
       const w = this.measure(t.text, t.size, t.font, t.weight);
       const ax = t.align === "center" ? x - w / 2 : t.align === "right" ? x - w : x;
-      const ay = t.baseline === "top" ? y : t.baseline === "middle" ? y - t.size / 2 : y - t.size * 0.8;
+      const ay = y - BASELINE_DROP.top * t.size;
       c.fillStyle = t.background;
       c.fillRect(ax - 1, ay - 0.5, w + 2, t.size * 1.15);
     }

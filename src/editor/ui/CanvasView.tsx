@@ -22,8 +22,6 @@ import {
   Maximize,
   Network,
   Boxes,
-  AlignHorizontalJustifyCenter,
-  AlignVerticalJustifyCenter,
   Scissors,
   ClipboardPaste,
   Layers,
@@ -47,6 +45,8 @@ import {
   X,
 } from "lucide-react";
 import { Engine, type EditRequest } from "../engine/Engine";
+import { ALIGN_ACTIONS, CENTRE_ON, DISTRIBUTE_ACTIONS } from "./ArrangeSection";
+import { arrangeCount } from "@/core/arrange";
 import { toast } from "sonner";
 import { useEditor, type DrawKind } from "../store";
 import { NativeSelect } from "@/components/ui/input";
@@ -204,6 +204,7 @@ function SelectionBar() {
   const place = useEditor((s) => s.place);
   const ui = useEditorUI();
   const n = selSize(sel);
+  const arrangeN = useEditor((s) => arrangeCount(s.page(), s.sel));
   const run = (id: string) => runCommand(id, ui);
   if (tool === "wire")
     return (
@@ -243,10 +244,15 @@ function SelectionBar() {
           <B id="mirror" icon={<FlipHorizontal2 />} label="Mirror (X)" />
         </>
       )}
-      {sel.elements.length > 1 && (
+      {arrangeN > 1 && (
         <>
-          <B id="align-center" icon={<AlignHorizontalJustifyCenter />} label="Align centers horizontally" />
-          <B id="align-middle" icon={<AlignVerticalJustifyCenter />} label="Align centers vertically" />
+          <div className="mx-0.5 h-4 w-px bg-border" />
+          {ALIGN_ACTIONS.map((a) => (
+            <B key={a.id} id={a.id} icon={a.icon} label={a.label} />
+          ))}
+          {sel.elements.length > 0 && <B id={CENTRE_ON.id} icon={CENTRE_ON.icon} label={CENTRE_ON.label} />}
+          {arrangeN > 2 && DISTRIBUTE_ACTIONS.map((a) => <B key={a.id} id={a.id} icon={a.icon} label={a.label} />)}
+          <div className="mx-0.5 h-4 w-px bg-border" />
         </>
       )}
       {sel.elements.length + sel.wires.length + sel.junctions.length > 0 && <B id="selectNet" icon={<Network />} label="Select connected net (N)" />}

@@ -28,6 +28,9 @@ import { INFO_BLOCK, MATE_LABEL, resetLabel, XREF_LABEL } from "@/core/label-pla
 import { freePins, setNoConnect } from "@/core/noconnect";
 import { projectNets } from "@/core/erc";
 import { uid } from "@/core/ids";
+import { alignItems, arrangeCount, arrangeItems, centreOn, distributeItems, referenceItem, type AlignMode, type Axis } from "@/core/arrange";
+import { docStyles } from "@/core/render/scene";
+import { measureText } from "@/core/render/canvas";
 
 export type Command = {
   id: string;
@@ -236,10 +239,22 @@ export const COMMANDS: Command[] = [
       id: "align-" + a,
       label: `Align ${a}`,
       section: "Arrange",
-      enabled: (s) => editable(s) && s.sel.elements.length > 1,
+      enabled: alignable,
       run: (_, s) => void s.apply(`Align ${a}`, (d) => alignSel(d, s, a)),
     }),
   ),
+  {
+    id: "centreOn",
+    label: "Centre on component (horizontally and vertically)",
+    section: "Arrange",
+    enabled: (s) => editable(s) && s.sel.elements.length > 0 && arrangeCount(s.page(), s.sel) - (s.page().elements.some((e) => e.id === s.sel.elements[0] && !e.locked) ? 1 : 0) > 0,
+    run: (_, s) =>
+      void s.apply("Centre on component", (d) => {
+        const p = getPage(d, s.pageId);
+        const ref = referenceItem(d, p, s.sel);
+        if (ref) centreOn(d, p, arrangeItems(d, p, s.sel, docStyles(d), measureText), ref);
+      }),
+  },
   {
     id: "straighten",
     label: "Straighten wires (line the selected components up with what they connect to)",
@@ -255,8 +270,8 @@ export const COMMANDS: Command[] = [
     enabled: editable,
     run: (ui, s) => straighten(ui, s, s.page().elements.filter((e) => !e.locked).map((e) => e.id)),
   },
-  { id: "distH", label: "Distribute horizontally", section: "Arrange", enabled: (s) => editable(s) && s.sel.elements.length > 2, run: (_, s) => void s.apply("Distribute", (d) => distribute(d, s, "x")) },
-  { id: "distV", label: "Distribute vertically", section: "Arrange", enabled: (s) => editable(s) && s.sel.elements.length > 2, run: (_, s) => void s.apply("Distribute", (d) => distribute(d, s, "y")) },
+  { id: "distH", label: "Distribute horizontally (equal gaps)", section: "Arrange", enabled: (s) => editable(s) && arrangeCount(s.page(), s.sel) > 2, run: (_, s) => void s.apply("Distribute", (d) => distribute(d, s, "x")) },
+  { id: "distV", label: "Distribute vertically (equal gaps)", section: "Arrange", enabled: (s) => editable(s) && arrangeCount(s.page(), s.sel) > 2, run: (_, s) => void s.apply("Distribute", (d) => distribute(d, s, "y")) },
   {
     id: "resetText",
     label: "Restore default label placement",
@@ -628,27 +643,23 @@ export function runCommand(id: string, ui: EditorUI) {
   return true;
 }
 
-function alignSel(d: import("@/core/model").Doc, s: EditorStore, a: "left" | "center" | "right" | "top" | "middle" | "bottom") {
-  const p = getPage(d, s.pageId);
-  const els = p.elements.filter((e) => s.sel.elements.includes(e.id) && !e.locked);
-  const xs = els.map((e) => e.x), ys = els.map((e) => e.y);
-  const target = a === "left" ? Math.min(...xs) : a === "right" ? Math.max(...xs) : a === "center" ? Math.round((Math.min(...xs) + Math.max(...xs)) / 20) * 10 + 5 : a === "top" ? Math.min(...ys) : a === "bottom" ? Math.max(...ys) : Math.round((Math.min(...ys) + Math.max(...ys)) / 20) * 10 + 5;
-  for (const e of els) {
-    const dx = a === "left" || a === "right" || a === "center" ? target - e.x : 0;
-    const dy = a === "top" || a === "bottom" || a === "middle" ? target - e.y : 0;
-    moveSelection(d, p, { ...emptySel(), elements: [e.id] }, { x: dx, y: dy });
-  }
+/** two or more things to line up — or, aligning to a component, that component and at least one other */
+function alignable(s: EditorStore) {
+  if (!editable(s)) return false;
+  const n = arrangeCount(s.page(), s.sel);
+  if (s.alignTo === "component" && s.sel.elements.length > 0) return n - (s.page().elements.some((e) => e.id === s.sel.elements[0] && !e.locked) ? 1 : 0) > 0;
+  return n > 1;
 }
 
-function distribute(d: import("@/core/model").Doc, s: EditorStore, axis: "x" | "y") {
+function alignSel(d: import("@/core/model").Doc, s: EditorStore, a: AlignMode) {
   const p = getPage(d, s.pageId);
-  const els = p.elements.filter((e) => s.sel.elements.includes(e.id) && !e.locked).sort((a, b) => a[axis] - b[axis]);
-  if (els.length < 3) return;
-  const first = els[0][axis], last = els[els.length - 1][axis];
-  const step = (last - first) / (els.length - 1);
-  els.forEach((e, i) => {
-    const target = Math.round((first + step * i - 5) / 10) * 10 + 5;
-    const delta = target - e[axis];
-    moveSelection(d, p, { ...emptySel(), elements: [e.id] }, axis === "x" ? { x: delta, y: 0 } : { x: 0, y: delta });
-  });
+  const items = arrangeItems(d, p, s.sel, docStyles(d), measureText);
+  // "component": the first selected component is the anchor; with none selected, the selection is
+  alignItems(d, p, items, a, s.alignTo === "component" ? referenceItem(d, p, s.sel) : null);
+}
+
+/** Equal gaps between the selected things, or exactly `gap` drawing units when given. */
+export function distribute(d: import("@/core/model").Doc, s: EditorStore, axis: Axis, gap?: number) {
+  const p = getPage(d, s.pageId);
+  distributeItems(d, p, arrangeItems(d, p, s.sel, docStyles(d), measureText), axis, gap);
 }
