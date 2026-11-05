@@ -1,3 +1,4 @@
+import { BASELINE_DROP, baselineDrop } from "./drawing-fonts";
 import type { Mat } from "../geometry";
 import type { Doc, Page, Rect } from "../model";
 import type { ImageDraw, Painter, PathData, StrokeStyle, TextDraw } from "./painter";
@@ -55,16 +56,17 @@ export class SvgPainter implements Painter {
   }
   text(t: TextDraw) {
     const anchor = t.align === "center" ? "middle" : t.align === "right" ? "end" : "start";
-    const base = t.baseline === "top" ? "text-before-edge" : t.baseline === "middle" ? "central" : t.baseline === "bottom" ? "text-after-edge" : "alphabetic";
+    // alphabetic baseline at Volt's own offset: dominant-baseline values depend on the viewer and font tables
+    const ty = t.y + baselineDrop(t.baseline, t.size);
     const tr = t.rotation ? ` transform="rotate(${f(t.rotation)} ${f(t.x)} ${f(t.y)})"` : "";
     if (t.background) {
       const w = this.measure(t.text, t.size, t.font, t.weight);
       const ax = t.align === "center" ? t.x - w / 2 : t.align === "right" ? t.x - w : t.x;
-      const ay = t.baseline === "top" ? t.y : t.baseline === "middle" ? t.y - t.size / 2 : t.y - t.size * 0.8;
+      const ay = ty - BASELINE_DROP.top * t.size;
       this.out.push(`<rect x="${f(ax - 1)}" y="${f(ay - 0.5)}" width="${f(w + 2)}" height="${f(t.size * 1.15)}" fill="${a(t.background)}"${tr}/>`);
     }
     this.out.push(
-      `<text x="${f(t.x)}" y="${f(t.y)}" font-family="${esc(t.font)}" font-size="${f(t.size)}" font-weight="${f(t.weight ?? 400)}"${t.italic ? ' font-style="italic"' : ""} fill="${a(t.color)}" text-anchor="${anchor}" dominant-baseline="${base}"${tr}${t.alpha !== undefined && t.alpha !== 1 ? ` opacity="${f(t.alpha)}"` : ""} xml:space="preserve">${esc(t.text)}</text>`,
+      `<text x="${f(t.x)}" y="${f(ty)}" font-family="${esc(t.font)}" font-size="${f(t.size)}" font-weight="${f(t.weight ?? 400)}"${t.italic ? ' font-style="italic"' : ""} fill="${a(t.color)}" text-anchor="${anchor}"${tr}${t.alpha !== undefined && t.alpha !== 1 ? ` opacity="${f(t.alpha)}"` : ""} xml:space="preserve">${esc(t.text)}</text>`,
     );
   }
   image(d: ImageDraw) {

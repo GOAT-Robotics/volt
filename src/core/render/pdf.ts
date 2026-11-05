@@ -1,3 +1,4 @@
+import { BASELINE_DROP, baselineDrop } from "./drawing-fonts";
 import {
   PDFDocument,
   PDFPage,
@@ -210,8 +211,8 @@ export class PdfPainter implements Painter {
     if (!c) return;
     const w = font.widthOfTextAtSize(str, t.size);
     let dx = t.align === "center" ? -w / 2 : t.align === "right" ? -w : 0;
-    const asc = t.size * 0.76;
-    let dy = t.baseline === "top" ? asc : t.baseline === "middle" ? t.size * 0.36 : t.baseline === "bottom" ? -t.size * 0.22 : 0;
+    const asc = t.size * BASELINE_DROP.top;
+    let dy = baselineDrop(t.baseline, t.size);
     const a = ((t.rotation ?? 0) * Math.PI) / 180;
     const cos = Math.cos(a), sin = Math.sin(a);
     const ox = t.x + cos * dx - sin * dy;

@@ -16,6 +16,8 @@ import { PartDocuments } from "@/components/volt/PartDocuments";
 import { StylePicker } from "./StylePicker";
 import { TitleBlockLogos } from "./TitleBlockLogos";
 import { FreeTextInspector } from "./FreeTextInspector";
+import { ArrangeControls } from "./ArrangeSection";
+import { arrangeCount } from "@/core/arrange";
 import { MatingSection } from "./MatingSection";
 import { ReportSection } from "./ReportSection";
 import { TerminalDiagramSection } from "./TerminalDiagramSection";
@@ -1367,6 +1369,7 @@ function MultiInspector() {
   const editable = useEditor((s) => !!s.version?.editable);
   const ui = useEditorUI();
   const [loc, setLoc] = useState("");
+  const arrangeN = arrangeCount(page, sel);
   const run = (id: string) => runCommand(id, ui);
   return (
     <div>
@@ -1407,23 +1410,9 @@ function MultiInspector() {
         )}
       </Section>
       {selWires.length > 0 && <ConductorSection wires={selWires} page={page} doc={doc} editable={editable} />}
-      {editable && sel.elements.length > 1 && (
-        <Section title="Arrange">
-          <div className="grid grid-cols-3 gap-1">
-            {(["left", "center", "right", "top", "middle", "bottom"] as const).map((a) => (
-              <Button key={a} size="xs" variant="secondary" onClick={() => run("align-" + a)}>
-                {a}
-              </Button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-1">
-            <Button size="xs" variant="secondary" onClick={() => run("distH")} disabled={sel.elements.length < 3}>
-              Distribute ↔
-            </Button>
-            <Button size="xs" variant="secondary" onClick={() => run("distV")} disabled={sel.elements.length < 3}>
-              Distribute ↕
-            </Button>
-          </div>
+      {editable && arrangeN + (sel.elements.length ? 1 : 0) > 1 && (
+        <Section title="Align & space">
+          <ArrangeControls count={arrangeN} components={sel.elements.length} />
         </Section>
       )}
       {editable && sel.elements.length > 0 && (

@@ -97,6 +97,8 @@ type State = {
   /** shape tool: kind to draw and the style new shapes get (last used) */
   shapeKind: DrawKind;
   shapeStyle: DrawStyle;
+  /** align / centre commands line things up with the whole selection or with the selected component */
+  alignTo: "selection" | "component";
   /** live collaboration */
   live: LiveState;
   peers: Record<string, Peer>;
@@ -195,6 +197,7 @@ export const useEditor = create<EditorStore>((set, get) => ({
   gridVisible: true,
   commentsHidden: readCommentsHidden(),
   aiHidden: readAiHidden(),
+  alignTo: "selection",
   shapeKind: "rect",
   shapeStyle: { color: "#111827", width: 1, dash: "solid", fill: null },
   live: { status: "off", clientId: null, color: null },
