@@ -1,6 +1,8 @@
 import type { Mat } from "../geometry";
 import { mulMat } from "../geometry";
 import type { ImageDraw, Painter, PathData, StrokeStyle, TextDraw } from "./painter";
+import { bumpFontEpoch } from "./fonts";
+import { canvasFont, PRELOAD_FONTS } from "./drawing-fonts";
 
 /** Decoded images by key; listeners are told when one finishes loading so views can repaint. */
 const images = new Map<string, HTMLImageElement | "error">();
@@ -65,8 +67,31 @@ function mctx() {
   return measureCtx;
 }
 
+/** true once the bundled drawing fonts have loaded (or after 3 s, so a failed download cannot block the editor) */
+let fontsReady = typeof document === "undefined" || !document.fonts;
+export const drawingFontsReady = () => fontsReady;
+
+if (typeof document !== "undefined" && document.fonts) {
+  // widths measured while a font was still loading belong to the fallback font: measure again and repaint
+  const changed = () => {
+    measureCache.clear();
+    bumpFontEpoch();
+    imageLoadListeners.forEach((f) => f());
+  };
+  document.fonts.addEventListener("loadingdone", changed);
+  // the bundled drawing fonts (see drawing-fonts.ts), asked for up front: canvas text alone may not fetch them
+  const ready = () => {
+    if (fontsReady) return;
+    fontsReady = true;
+    changed();
+  };
+  Promise.all(PRELOAD_FONTS.map((f) => document.fonts.load(f).catch(() => []))).then(ready, ready);
+  setTimeout(ready, 3000);
+}
+
+/** Canvas font for a style's font name: always one of the app's own fonts, never one installed on this computer. */
 export function fontString(size: number, font: string, weight = 400, italic = false) {
-  return `${italic ? "italic " : ""}${weight} ${size}px ${font}`;
+  return canvasFont(size, font, weight, italic);
 }
 
 export function measureText(text: string, size: number, font: string, weight = 400): number {
@@ -90,7 +115,9 @@ export class CanvasPainter implements Painter {
   readonly kind = "canvas" as const;
   private stack: Mat[] = [];
   private m: Mat;
+  /** font last set through this painter, and the context's own reading of it right after */
   private lastFont = "";
+  private lastCtxFont = "";
   constructor(private ctx: CanvasRenderingContext2D, base: Mat, private dpr = 1) {
     this.m = base;
     ctx.setTransform(base[0], base[1], base[2], base[3], base[4], base[5]);
@@ -158,9 +185,12 @@ export class CanvasPainter implements Painter {
   text(t: TextDraw) {
     const c = this.ctx;
     const f = fontString(t.size, t.font, t.weight, t.italic);
-    if (f !== this.lastFont) {
+    // ctx.restore() and code drawing on the same context change the font behind the painter's back:
+    // set it again unless the context still holds exactly the font this painter last set
+    if (f !== this.lastFont || c.font !== this.lastCtxFont) {
       c.font = f;
       this.lastFont = f;
+      this.lastCtxFont = c.font;
     }
     const rotated = !!t.rotation;
     if (rotated) {

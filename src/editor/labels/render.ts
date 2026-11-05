@@ -3,7 +3,8 @@
 import type { LaidLabel, LabelMedia, Measure } from "@/core/labels";
 import { headArea, mmToDots, PT_DPI, type PtBitmap } from "@/core/ptouch";
 
-const FONT = `"Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif`;
+// the app's own Liberation Sans (see core/render/drawing-fonts.ts): labels print the same from every computer
+const FONT = `"Volt Sans"`;
 const font = (px: number, bold: boolean) => `${bold ? 700 : 500} ${px}px ${FONT}`;
 
 let mctx: CanvasRenderingContext2D | null = null;

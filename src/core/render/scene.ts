@@ -1,3 +1,4 @@
+import { fontEpoch } from "./fonts";
 import { COMPONENT_INFO } from "../model";
 import { layoutRich, type RichLayout } from "../richtext";
 import { drawContents, drawCoverSheet } from "./cover";
@@ -277,7 +278,8 @@ export function layoutPinTexts(e: ElemInst, pin: PinDef, styles: Styles, showNum
 const freeLayouts = new WeakMap<FreeText, { key: string; l: RichLayout }>();
 export function freeTextLayout(t: FreeText, styles: Styles, measure: Painter["measure"]): { l: RichLayout; st: TextStyle } {
   const st = effectiveText(styles, t.role, t.override);
-  const key = JSON.stringify(st) + (t.rich ? JSON.stringify(t.rich) : "");
+  // per measuring backend and font state (screen, PDF and pictures measure differently; web fonts load late)
+  const key = `${JSON.stringify(st)}|${t.rich ? JSON.stringify(t.rich) : ""}|${fontEpoch()}|${measure("Mg ·", 10, st.font, st.weight)}`;
   const hit = freeLayouts.get(t);
   if (hit && hit.key === key) return { l: hit.l, st };
   let l: RichLayout;
@@ -537,6 +539,7 @@ const textLayoutCache = new WeakMap<ElemInst, { styles: Styles; def: ElementDef;
 /** `key` identifies the measuring backend (text metrics differ between canvas and PDF fonts). */
 export function cachedElementTexts(e: ElemInst, sym: CompiledSymbol, styles: Styles, measure: Painter["measure"], key = "canvas"): LaidText[] {
   const c = textLayoutCache.get(e);
+  key = `${key}|${fontEpoch()}`;
   if (c && c.styles === styles && c.def === sym.def && c.key === key) return c.laid;
   const laid = layoutElementTexts(e, sym, styles, measure);
   textLayoutCache.set(e, { styles, def: sym.def, laid, key });
@@ -760,7 +763,7 @@ export function reportLabelLayout(doc: Doc, e: ElemInst, def: ElementDef, styles
   const text = reportTarget(doc, e);
   if (!text) return null;
   const st = styles.text.componentName;
-  const key = `${text}|${e.x},${e.y},${e.rot},${e.mirror},${e.scale ?? 1}|${JSON.stringify(e.xrefPos ?? null)}|${measure("Mg", 10, st.font, 400)}|${styleId(styles)}`;
+  const key = `${text}|${e.x},${e.y},${e.rot},${e.mirror},${e.scale ?? 1}|${JSON.stringify(e.xrefPos ?? null)}|${measure("Mg", 10, st.font, 400)}|${styleId(styles)}|${fontEpoch()}`;
   const hit = reportLabels.get(e);
   if (hit && hit.key === key) return hit.out;
   const b = elementBounds(e, def);
