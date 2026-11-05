@@ -1,6 +1,13 @@
 # syntax=docker/dockerfile:1.7
 # ── deps ──────────────────────────────────────────────────────────────
 FROM node:22-bookworm-slim AS deps
+
+# Disable retries before updating APT (CVE-2026-109518), then apply available OS fixes.
+RUN printf '%s\n' 'Acquire::Retries "0";' > /etc/apt/apt.conf.d/99security-no-retries \
+  && apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+  && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' apt)" ge 2.6.2 \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
@@ -20,6 +27,13 @@ RUN npm prune --omit=dev
 
 # ── runtime ───────────────────────────────────────────────────────────
 FROM node:22-bookworm-slim AS runner
+
+# Disable retries before updating APT (CVE-2026-109518), then apply available OS fixes.
+RUN printf '%s\n' 'Acquire::Retries "0";' > /etc/apt/apt.conf.d/99security-no-retries \
+  && apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+  && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' apt)" ge 2.6.2 \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates tini && rm -rf /var/lib/apt/lists/* \
   && groupadd -r volt && useradd -r -g volt -d /app volt
