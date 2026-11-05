@@ -45,7 +45,7 @@ import {
   X,
 } from "lucide-react";
 import { Engine, type EditRequest } from "../engine/Engine";
-import { ALIGN_ACTIONS, CENTRE_ON, DISTRIBUTE_ACTIONS } from "./ArrangeSection";
+import { ALIGN_ACTIONS, CENTRE_LABELS, CENTRE_ON, DISTRIBUTE_ACTIONS } from "./ArrangeSection";
 import { arrangeCount } from "@/core/arrange";
 import { toast } from "sonner";
 import { useEditor, type DrawKind } from "../store";
@@ -257,6 +257,7 @@ function SelectionBar() {
       )}
       {sel.elements.length + sel.wires.length + sel.junctions.length > 0 && <B id="selectNet" icon={<Network />} label="Select connected net (N)" />}
       <B id="duplicate" icon={<Copy />} label="Duplicate (⌘D)" />
+      {sel.elements.length > 0 && <B id={CENTRE_LABELS.id} icon={CENTRE_LABELS.icon} label={CENTRE_LABELS.label} />}
       {sel.elements.length > 0 && <B id="lock" icon={<Lock />} label="Lock / unlock (⌘L)" />}
       {sel.elements.length > 0 && <B id="block" icon={<Boxes />} label="Create reusable block" />}
       <div className="mx-0.5 h-4 w-px bg-border" />

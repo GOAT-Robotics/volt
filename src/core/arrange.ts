@@ -9,7 +9,12 @@
  */
 import type { Doc, Page, Rect, Styles } from "./model";
 import type { Painter } from "./render/painter";
-import { elementBounds, freeTextBounds } from "./render/scene";
+import { elementBounds, freeTextBounds, layoutElementTexts, reportLabelLayout } from "./render/scene";
+import { symbolFor } from "./render/symbol";
+import { capCentreDrop } from "./render/drawing-fonts";
+import { toScene } from "./geometry";
+import { isReportDef } from "./reports";
+import { moveLabel, XREF_LABEL } from "./label-place";
 import { shapeBounds } from "./shape-geom";
 import { emptySel, moveSelection, type Sel } from "./ops";
 
@@ -121,4 +126,50 @@ export function distributeItems(doc: Doc, page: Page, items: ArrangeItem[], axis
 /** Centre the items on the reference component, horizontally and vertically (an x move leaves y boxes valid). */
 export function centreOn(doc: Doc, page: Page, items: ArrangeItem[], ref: ArrangeItem): number {
   return alignItems(doc, page, items, "center", ref) + alignItems(doc, page, items, "middle", ref);
+}
+
+/**
+ * Put each selected component's reference label (and a folio arrow's cross-reference) on the
+ * symbol's centre line: the middle of the capital letters sits on the line through the pin of a
+ * one-pin symbol (going / coming arrows) or through the middle of the symbol otherwise. Only the
+ * axis across the text moves; how far the label sits from the symbol stays. Locked components are
+ * left alone. Returns how many labels moved.
+ */
+export function centreLabels(doc: Doc, page: Page, elementIds: string[], styles: Styles, measure: Painter["measure"]): number {
+  let moved = 0;
+  const ids = new Set(elementIds);
+  for (const e of page.elements) {
+    if (!ids.has(e.id) || e.locked) continue;
+    const def = doc.defs[e.defId];
+    if (!def) continue;
+    const bb = elementBounds(e, def);
+    const centre = def.pins.length === 1 ? toScene(e, def.pins[0]) : { x: bb.x + bb.w / 2, y: bb.y + bb.h / 2 };
+    const refIds = new Set(e.texts.filter((t) => t.info === "label").map((t) => t.id));
+    for (const lt of layoutElementTexts(e, symbolFor(def), styles, measure)) {
+      if (!lt.textId || !refIds.has(lt.textId)) continue;
+      const size = lt.h / lt.style.lineHeight;
+      // middle of the capitals, in scene coordinates: box origin + (half width, cap-centre drop) turned with the text
+      const a = (lt.rotation * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
+      const lx = lt.w / 2, ly = capCentreDrop(size, lt.style.font);
+      const mid = { x: lt.x + lx * c - ly * sn, y: lt.y + lx * sn + ly * c };
+      // text across the page (0° / 180°): move up/down; standing text (90° / 270°): move sideways
+      const across = Math.abs(sn) < 0.5 ? { x: 0, y: centre.y - mid.y } : { x: centre.x - mid.x, y: 0 };
+      if (Math.hypot(across.x, across.y) < 0.05) continue;
+      moveLabel(doc, page, e, lt.textId, across, styles, measure);
+      moved++;
+    }
+    if (isReportDef(def)) {
+      const rl = reportLabelLayout(doc, e, def, styles, measure);
+      const pin = def.pins[0] ? toScene(e, def.pins[0]) : null;
+      // only beside a horizontal arrow: above / below a standing one it is centred already
+      if (rl && pin && Math.abs(pin.y - (bb.y + bb.h / 2)) <= Math.abs(pin.x - (bb.x + bb.w / 2))) {
+        const dy = centre.y - (rl.y + capCentreDrop(rl.size, rl.font));
+        if (Math.abs(dy) >= 0.05) {
+          moveLabel(doc, page, e, XREF_LABEL, { x: 0, y: dy }, styles, measure);
+          moved++;
+        }
+      }
+    }
+  }
+  return moved;
 }

@@ -657,6 +657,11 @@ function ElementInspector({ e, page, doc, editable }: { e: ElemInst; page: Page;
           </div>
         </Row>
         <FrameRow e={e} styles={styles} editable={editable} upd={upd} />
+        {editable && !e.locked && (
+          <Button size="xs" variant="secondary" className="w-full" onClick={() => runCommand("centreLabels", ui)} title="Move the reference (and an arrow's cross-reference) onto the symbol's centre line">
+            Centre labels on symbol
+          </Button>
+        )}
       </Section>
       <Section title="Definition" defaultOpen={false}>
         <Row label="Type">

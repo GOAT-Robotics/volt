@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { alignItems, arrangeCount, arrangeItems, centreOn, distributeItems, referenceItem } from "../arrange";
+import { alignItems, arrangeCount, arrangeItems, centreLabels, centreOn, distributeItems, referenceItem } from "../arrange";
+import { layoutElementTexts } from "../render/scene";
+import { symbolFor } from "../render/symbol";
+import { capCentreDrop } from "../render/drawing-fonts";
+import { toScene } from "../geometry";
 import { emptySel, newElement } from "../ops";
 import { docStyles } from "../render/scene";
 import { approxMeasure } from "../render/svg";
@@ -82,5 +86,23 @@ describe("align & distribute", () => {
     const ref = referenceItem(doc, page, sel)!;
     alignItems(doc, page, arrangeItems(doc, page, sel, styles, approxMeasure), "left", ref);
     expect(arrangeItems(doc, page, { ...emptySel(), texts: ["t3"] }, styles, approxMeasure)[0].box.x).toBeCloseTo(ref.box.x, 2);
+  });
+
+  it("centres a one-pin symbol's reference on its pin line, at any rotation", () => {
+    for (const rot of [0, 2] as const) {
+      const { doc, page, styles } = setup();
+      const arrow = mkDef("arrow", [{ id: "1", x: -10, y: 0, orient: "w" }]);
+      doc.defs[arrow.id] = arrow;
+      const e = newElement(doc, page, arrow, { x: 300, y: 500 }, rot);
+      e.info.label = "BASE";
+      e.texts = [{ id: "ref", role: "componentRef", info: "label", text: "", x: 12, y: -14 }];
+      expect(centreLabels(doc, page, [e.id], styles, approxMeasure)).toBe(1);
+      const lt = layoutElementTexts(e, symbolFor(arrow), styles, approxMeasure).find((t) => t.textId === "ref")!;
+      const size = lt.h / lt.style.lineHeight;
+      const a = (lt.rotation * Math.PI) / 180;
+      const midY = lt.y + (lt.w / 2) * Math.sin(a) + capCentreDrop(size, lt.style.font) * Math.cos(a);
+      expect(Math.abs(midY - toScene(e, arrow.pins[0]).y)).toBeLessThanOrEqual(0.5);
+      expect(centreLabels(doc, page, [e.id], styles, approxMeasure)).toBe(0);
+    }
   });
 });

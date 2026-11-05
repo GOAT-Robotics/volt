@@ -59,3 +59,11 @@ export const PRELOAD_FONTS = [`400 16px "${BUNDLED_FONTS.iso}"`, `400 16px "${BU
 export const BASELINE_DROP = { top: 0.76, middle: 0.36, bottom: -0.22, alphabetic: 0 } as const;
 export type TextBaseline = keyof typeof BASELINE_DROP;
 export const baselineDrop = (baseline: TextBaseline | undefined, size: number) => BASELINE_DROP[baseline ?? "alphabetic"] * size;
+
+/** Capital-letter height of each bundled family, as a fraction of the font size (from the font files). */
+export const CAP_HEIGHT: Record<BundledFont, number> = { "Volt ISO": 0.74, "Volt Sans": 0.688, "Volt Serif": 0.655, "Volt Mono": 0.659 };
+/**
+ * Distance from the top of a text box ("top" anchor) to the middle of its capital letters, in scene
+ * units — where the eye reads a label's centre (descender room below the baseline is ignored).
+ */
+export const capCentreDrop = (size: number, font: string) => (BASELINE_DROP.top - CAP_HEIGHT[bundledFamily(font)] / 2) * size;

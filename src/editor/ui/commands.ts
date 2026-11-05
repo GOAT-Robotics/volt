@@ -28,7 +28,7 @@ import { INFO_BLOCK, MATE_LABEL, resetLabel, XREF_LABEL } from "@/core/label-pla
 import { freePins, setNoConnect } from "@/core/noconnect";
 import { projectNets } from "@/core/erc";
 import { uid } from "@/core/ids";
-import { alignItems, arrangeCount, arrangeItems, centreOn, distributeItems, referenceItem, type AlignMode, type Axis } from "@/core/arrange";
+import { alignItems, arrangeCount, arrangeItems, centreLabels, centreOn, distributeItems, referenceItem, type AlignMode, type Axis } from "@/core/arrange";
 import { docStyles } from "@/core/render/scene";
 import { measureText } from "@/core/render/canvas";
 
@@ -243,6 +243,17 @@ export const COMMANDS: Command[] = [
       run: (_, s) => void s.apply(`Align ${a}`, (d) => alignSel(d, s, a)),
     }),
   ),
+  {
+    id: "centreLabels",
+    label: "Centre labels on symbol (reference and cross-reference on the arrow / symbol centre line)",
+    section: "Arrange",
+    enabled: (s) => editable(s) && s.sel.elements.length > 0,
+    run: (ui, s) =>
+      void s.apply("Centre labels", (d) => {
+        const n = centreLabels(d, getPage(d, s.pageId), s.sel.elements, docStyles(d), measureText);
+        if (!n) ui.toast("Labels are already centred");
+      }),
+  },
   {
     id: "centreOn",
     label: "Centre on component (horizontally and vertically)",

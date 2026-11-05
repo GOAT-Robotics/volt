@@ -10,6 +10,7 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalDistributeCenter,
+  Baseline,
   Crosshair,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,8 @@ export const ALIGN_ACTIONS = [
 ] as const;
 
 export const CENTRE_ON = { id: "centreOn", label: "Centre on component — horizontally and vertically", icon: <Crosshair /> } as const;
+
+export const CENTRE_LABELS = { id: "centreLabels", label: "Centre labels on symbol — reference and cross-reference on the centre line", icon: <Baseline /> } as const;
 
 export const DISTRIBUTE_ACTIONS = [
   { id: "distH", label: "Distribute horizontally — equal gaps", short: "Space ↔", icon: <AlignHorizontalDistributeCenter /> },
@@ -74,6 +77,12 @@ export function ArrangeControls({ count, components }: { count: number; componen
           </Tip>
         ))}
       </div>
+      {components > 0 && (
+        <Button size="xs" variant="secondary" className="w-full" onClick={() => run(CENTRE_LABELS.id)} title="Each component's reference (and an arrow's cross-reference) moves onto its symbol's centre line">
+          {CENTRE_LABELS.icon}
+          Centre labels on their symbols
+        </Button>
+      )}
       {components > 0 && (
         <Button size="xs" variant="secondary" className="w-full" onClick={() => run(CENTRE_ON.id)} title="The first selected component stays put; everything else is centred on it">
           {CENTRE_ON.icon}
