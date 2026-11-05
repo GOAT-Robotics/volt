@@ -3,7 +3,8 @@ import RBush from "rbush";
 import { produce } from "immer";
 import type { Doc, ElemInst, ElementDef, Page, Pt, Rect, Shape, Styles, TextRole } from "@/core/model";
 import { inflate, normRect, rectInside, rectsIntersect, rotOrient, snapGrid, toScene, toLocal, eqPt, dist, unionRect } from "@/core/geometry";
-import { CanvasPainter, imageLoadListeners, measureText } from "@/core/render/canvas";
+import { CanvasPainter, drawingFontsReady, imageLoadListeners, measureText } from "@/core/render/canvas";
+import { fontEpoch } from "@/core/render/fonts";
 import { DASHES, PathBuilder } from "@/core/render/painter";
 import { cableLabelRect, contentBounds, docStyles, drawPage, drawShape, elementBounds, layoutElementTexts, mateLabelLayout, NC_HALF, pageGeometry, reportLabelLayout, shapeLabelLayout, shapeLabelStyle, textBounds, freeTextBounds, wireStroke, drawElement } from "@/core/render/scene";
 import { INFO_BLOCK, MATE_LABEL, moveLabel, XREF_LABEL } from "@/core/label-place";
@@ -105,6 +106,7 @@ export class Engine {
   private h = 0;
   view = { s: 1, tx: 0, ty: 0 };
   private index = new RBush<IndexItem>(16);
+  private indexedFontEpoch = -1;
   private indexed = new Map<string, { ref: unknown; items: IndexItem[] }>();
   private indexedPage: Page | null = null;
   private indexedDefs: Doc["defs"] | null = null;
@@ -336,7 +338,8 @@ export class Engine {
     const page = this.page;
     const styles = this.styles;
     if (!page) return;
-    const full = this.indexedDefs !== this.doc.defs || this.indexedStyles !== styles;
+    // text boxes measured before a web font finished loading have the fallback font's size
+    const full = this.indexedDefs !== this.doc.defs || this.indexedStyles !== styles || this.indexedFontEpoch !== fontEpoch();
     if (page === this.indexedPage && !full) return;
     if (full || (this.indexedPage && this.indexedPage.id !== page.id)) {
       this.index.clear();
@@ -345,6 +348,7 @@ export class Engine {
     this.indexedPage = page;
     this.indexedDefs = this.doc.defs;
     this.indexedStyles = styles;
+    this.indexedFontEpoch = fontEpoch();
     this.elById = new Map(page.elements.map((e) => [e.id, e]));
     const seen = new Set<string>();
     const upsert = (key: string, ref: unknown, make: () => IndexItem[]) => {
@@ -1765,6 +1769,8 @@ export class Engine {
     if (this.destroyed) return;
     this.raf = requestAnimationFrame(this.loop);
     if (!this.s.doc) return;
+    // nothing is drawn in a font of this computer: wait for the app's own drawing fonts
+    if (!drawingFontsReady()) return;
     if (!this.fitted) {
       this.resize();
       if (!this.fitted) this.fit();

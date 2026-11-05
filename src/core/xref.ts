@@ -11,6 +11,7 @@
  * reading order (page → column → row). Used by the editor (⌘/Ctrl-click, or plain click on
  * read-only versions) and by PDF export (internal link annotations).
  */
+import { fontEpoch } from "./render/fonts";
 import type { Doc, ElemInst, Page, Pt, Rect, Styles } from "./model";
 import { docStyles, elementBounds, layoutElementTexts, pageGeometry, textBounds, wireTexts } from "./render/scene";
 import { symbolFor } from "./render/symbol";
@@ -225,6 +226,7 @@ const center = (r: Rect): Pt => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
 /** Cached per document object. */
 const cache = new WeakMap<Doc, { key: string; x: Xref }>();
 export function cachedXref(doc: Doc, measure: Painter["measure"], key = "canvas"): Xref {
+  key = `${key}|${fontEpoch()}`;
   const c = cache.get(doc);
   if (c && c.key === key) return c.x;
   const x = buildXref(doc, measure);

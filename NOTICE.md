@@ -69,10 +69,14 @@ If you redistribute Volt, keep these notices and `seed/ELEMENTS.LICENSE` with it
 
 ## Fonts
 
-- **Liberation Sans** (`public/fonts/LiberationSans-*.ttf`) — SIL Open Font License 1.1, see
-  `public/fonts/LiberationSans-LICENSE.txt`.
+- **Liberation Sans, Serif and Mono** (`public/fonts/Liberation{Sans,Serif,Mono}-*.ttf`, 2.1.5) — SIL
+  Open Font License 1.1, see `public/fonts/LiberationSans-LICENSE.txt` (one licence for the whole
+  Liberation family). Served as the drawing families "Volt Sans", "Volt Serif" and "Volt Mono".
 - **Work Sans** (`public/fonts/WorkSans-*.ttf`) — © The Work Sans Project Authors, SIL Open Font
   License 1.1, see `public/fonts/WorkSans-OFL.txt`.
+- **osifont** (`public/fonts/osifont*.{ttf,woff}`) — ISO 3098 font by the osifont contributors
+  (https://github.com/hikikomori82/osifont), GNU GPL v3 with the GPL font exception, see
+  `public/fonts/osifont-LICENSE.txt`. Served as the drawing family "Volt ISO" (stands in for ISOCPEUR).
 
 ## npm packages
 
