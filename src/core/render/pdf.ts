@@ -1,9 +1,9 @@
 import { BASELINE_DROP, baselineDrop } from "./drawing-fonts";
+import { PdfFontSet, type FontLoader } from "./pdf-fonts";
 import {
   PDFDocument,
   PDFPage,
   PDFFont,
-  StandardFonts,
   LineCapStyle,
   LineJoinStyle,
   pushGraphicsState,
@@ -26,6 +26,8 @@ import {
   setFontAndSize,
   setTextMatrix,
   showText,
+  setTextRenderingMode,
+  TextRenderingMode,
   rectangle,
   PDFName,
   PDFNull,
@@ -125,23 +127,47 @@ function pathOps(p: PathData) {
 }
 
 const WINANSI_EXTRA: Record<string, string> = { "Ω": "Ohm", "−": "-", "→": "->", "←": "<-", "≥": ">=", "≤": "<=", "✓": "v", "…": "..." };
+const charsets = new WeakMap<PDFFont, Set<number>>();
+function hasGlyph(font: PDFFont, ch: string) {
+  let set = charsets.get(font);
+  if (!set) charsets.set(font, (set = new Set(font.getCharacterSet())));
+  return set.has(ch.codePointAt(0)!);
+}
+/** Characters the face cannot draw become ASCII stand-ins (or "?") instead of blank boxes. */
 function sanitize(font: PDFFont, s: string): string {
   let out = "";
   for (const ch of s) {
-    const rep = WINANSI_EXTRA[ch];
-    if (rep) {
-      out += rep;
+    if (ch === " " || hasGlyph(font, ch)) {
+      out += ch;
       continue;
     }
-    try {
-      font.encodeText(ch);
-      out += ch;
-    } catch {
-      out += "?";
-    }
+    out += WINANSI_EXTRA[ch] ?? "?";
   }
   return out;
 }
+
+/** Records which faces a page uses, so the export embeds only those (dry run before drawing). */
+class FaceCollector implements Painter {
+  readonly kind = "pdf" as const;
+  uses = new Map<string, { font: string; weight?: number; italic?: boolean }>();
+  text(t: TextDraw) {
+    this.uses.set(`${t.font}|${t.weight ?? 400}|${t.italic ? 1 : 0}`, { font: t.font, weight: t.weight, italic: t.italic });
+  }
+  measure(text: string, size: number) {
+    return text.length * size * 0.55;
+  }
+  scale() {
+    return 100;
+  }
+  save() {}
+  restore() {}
+  transform() {}
+  stroke() {}
+  fill() {}
+  image() {}
+}
+
+const ITALIC_SLANT = Math.tan((12 * Math.PI) / 180);
 
 export class PdfPainter implements Painter {
   readonly kind = "pdf" as const;
@@ -149,7 +175,7 @@ export class PdfPainter implements Painter {
   private imageKeys = new Map<string, PDFName>();
   constructor(
     private page: PDFPage,
-    private fonts: { regular: PDFFont; bold: PDFFont; italic: PDFFont },
+    private fonts: PdfFontSet,
     private images: Map<string, PDFImage> = new Map(),
   ) {}
   image(d: ImageDraw) {
@@ -204,7 +230,8 @@ export class PdfPainter implements Painter {
     return k;
   }
   text(t: TextDraw) {
-    const font = (t.weight ?? 400) >= 600 ? this.fonts.bold : t.italic ? this.fonts.italic : this.fonts.regular;
+    const face = this.fonts.face(t.font, t.weight, t.italic);
+    const font = face.font;
     const str = sanitize(font, t.text);
     if (!str) return;
     const c = rgb(t.color, t.alpha ?? 1);
@@ -233,22 +260,34 @@ export class PdfPainter implements Painter {
     }
     dx = 0;
     dy = 0;
+    // faces the family lacks are synthesized like the browser does: slant for italic, outline for bold
+    const k = face.fakeItalic ? ITALIC_SLANT : 0;
+    const bold = face.fakeBold
+      ? [setTextRenderingMode(TextRenderingMode.FillAndOutline), setStrokingRgbColor(...c), setLineWidth(t.size * 0.035), setLineJoin(LineJoinStyle.Round)]
+      : [];
     this.page.pushOperators(
+      pushGraphicsState(),
       beginText(),
       setFillingRgbColor(...c),
+      ...bold,
       setFontAndSize(this.key(font), t.size),
-      setTextMatrix(cos, sin, sin, -cos, ox, oy),
+      setTextMatrix(cos, sin, k * cos + sin, k * sin - cos, ox, oy),
       showText(font.encodeText(str)),
       endText(),
+      popGraphicsState(),
     );
   }
-  measure(text: string, size: number, _font: string, weight?: number) {
-    const f = (weight ?? 400) >= 600 ? this.fonts.bold : this.fonts.regular;
-    try {
-      return f.widthOfTextAtSize(sanitize(f, text), size);
-    } catch {
-      return text.length * size * 0.55;
-    }
+  measure(text: string, size: number, font: string, weight?: number) {
+    return measureWith(this.fonts, text, size, font, weight);
+  }
+}
+
+function measureWith(fonts: PdfFontSet, text: string, size: number, font: string, weight?: number) {
+  try {
+    const f = fonts.face(font, weight).font;
+    return f.widthOfTextAtSize(sanitize(f, text), size);
+  } catch {
+    return text.length * size * 0.55;
   }
 }
 
@@ -281,6 +320,8 @@ export type PdfExportOptions = {
   links?: boolean;
   /** turns an SVG logo into PNG bytes (browser: canvas; server: sharp); SVG logos are skipped without it */
   rasterizeSvg?: (svg: string, w: number, h: number) => Promise<Uint8Array | null>;
+  /** reads a file from public/fonts (default: fetch in the browser, filesystem on the server) */
+  loadFont?: FontLoader;
 };
 
 /** Embeds the title block logos and page pictures of the exported pages, keyed like ImageDraw.key. */
@@ -313,12 +354,15 @@ async function embedLogos(pdf: PDFDocument, doc: Doc, pages: Page[], raster: Pdf
 /** Vector PDF export; one PDF page per drawing page, scaled to fit the paper. */
 export async function exportPdf(doc: Doc, o: PdfExportOptions): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
-  const fonts = {
-    regular: await pdf.embedFont(StandardFonts.Helvetica),
-    bold: await pdf.embedFont(StandardFonts.HelveticaBold),
-    italic: await pdf.embedFont(StandardFonts.HelveticaOblique),
-  };
   const sorted = [...doc.pages].sort((a, b) => a.order - b.order);
+  // embed the bundled fonts the drawing is laid out in (same as the canvas), not a PDF standard font
+  const fonts = new PdfFontSet(pdf, o.loadFont);
+  const collector = new FaceCollector();
+  for (const page of o.pages) {
+    drawPage(collector, { doc, page, lod: 100, pageIndex: sorted.findIndex((p) => p.id === page.id), pageCount: sorted.length, version: o.version, ...(o.drawOpts ?? {}) });
+    o.overlay?.(collector, page);
+  }
+  await fonts.prepare(collector.uses.values());
   const placed = new Map<string, { pp: PDFPage; s: number; ox: number; oy: number; H: number; W: number }>();
   const images = await embedLogos(pdf, doc, o.pages, o.rasterizeSvg);
   for (const page of o.pages) {
@@ -346,7 +390,7 @@ export async function exportPdf(doc: Doc, o: PdfExportOptions): Promise<Uint8Arr
     placed.set(page.id, { pp, s, ox, oy, H, W });
   }
   if (o.links !== false) addCrossReferenceLinks(pdf, doc, placed, fonts);
-  if (o.append) await o.append(pdf, fonts);
+  if (o.append) await o.append(pdf, await fonts.sans());
   pdf.setTitle(o.title ?? doc.meta.title);
   if (o.subject) pdf.setSubject(o.subject);
   if (o.author) pdf.setAuthor(o.author);
@@ -369,16 +413,9 @@ function addCrossReferenceLinks(
   pdf: PDFDocument,
   doc: Doc,
   placed: Map<string, { pp: PDFPage; s: number; ox: number; oy: number; H: number; W: number }>,
-  fonts: { regular: PDFFont; bold: PDFFont },
+  fonts: PdfFontSet,
 ) {
-  const measure = (text: string, size: number, _font: string, weight?: number) => {
-    const f = (weight ?? 400) >= 600 ? fonts.bold : fonts.regular;
-    try {
-      return f.widthOfTextAtSize(sanitize(f, text), size);
-    } catch {
-      return text.length * size * 0.55;
-    }
-  };
+  const measure = (text: string, size: number, font: string, weight?: number) => measureWith(fonts, text, size, font, weight);
   const x = buildXref(doc, measure);
   const toPdf = (m: { s: number; ox: number; oy: number }, p: { x: number; y: number }) => ({ x: m.ox + m.s * p.x, y: m.oy - m.s * p.y });
   for (const occ of x.occ) {

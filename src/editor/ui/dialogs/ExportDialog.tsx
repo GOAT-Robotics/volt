@@ -181,11 +181,11 @@ export function ExportDialog({ onClose, arg }: { onClose: () => void; arg?: { fo
         if (bomFile === "csv") downloadBlob(new Blob([bomToCsv(b)], { type: "text/csv;charset=utf-8" }), `${base}_BOM.csv`);
         else if (bomFile === "xlsx") downloadBlob(new Blob([bomToXlsx(b, bomMeta()) as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${base}_BOM.xlsx`);
         else {
-          const { PDFDocument, StandardFonts } = await import("pdf-lib");
+          const [{ PDFDocument }, { embedSans }] = await Promise.all([import("pdf-lib"), import("@/core/render/pdf-fonts")]);
           const pdf = await PDFDocument.create();
           pdf.setTitle(`Bill of materials — ${bomMeta().title}`);
           pdf.setCreator("Volt");
-          const fonts = { regular: await pdf.embedFont(StandardFonts.Helvetica), bold: await pdf.embedFont(StandardFonts.HelveticaBold) };
+          const fonts = await embedSans(pdf);
           appendBomPages(pdf, fonts, b, bomMeta());
           downloadBlob(new Blob([(await pdf.save()) as BlobPart], { type: "application/pdf" }), `${base}_BOM.pdf`);
         }

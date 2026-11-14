@@ -151,11 +151,11 @@ export function TerminalStripDialog({ onClose, arg }: { onClose: () => void; arg
       );
       return downloadBlob(new Blob([bytes as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${base}.xlsx`);
     }
-    const [{ PDFDocument, StandardFonts }, { appendTerminalPlanPages }] = await Promise.all([import("pdf-lib"), import("@/core/render/bom-pdf")]);
+    const [{ PDFDocument }, { appendTerminalPlanPages }, { embedSans }] = await Promise.all([import("pdf-lib"), import("@/core/render/bom-pdf"), import("@/core/render/pdf-fonts")]);
     const pdf = await PDFDocument.create();
     pdf.setTitle(`Terminal plan — ${title}`);
     pdf.setCreator("Volt");
-    const fonts = { regular: await pdf.embedFont(StandardFonts.Helvetica), bold: await pdf.embedFont(StandardFonts.HelveticaBold) };
+    const fonts = await embedSans(pdf);
     appendTerminalPlanPages(pdf, fonts, rows, { title, subtitle: new Date().toISOString().slice(0, 10) });
     downloadBlob(new Blob([(await pdf.save()) as BlobPart], { type: "application/pdf" }), `${base}.pdf`);
   };
